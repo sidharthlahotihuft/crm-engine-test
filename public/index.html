@@ -1,0 +1,1917 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>HUFT CRM Creative Engine</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.10/babel.min.js"></script>
+<style>
+  *{box-sizing:border-box} html,body{margin:0;background:#F6F7FA;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+  input,textarea,button,select{font-family:inherit}
+  .msg-anim{animation:fadeUp .25s ease}
+  .typing span{display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;margin:0 2px;animation:pulse 1.2s infinite}
+  .typing span:nth-child(2){animation-delay:.2s}
+  .typing span:nth-child(3){animation-delay:.4s}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef, useCallback } = React;
+
+/* ===== api =============================================================== */
+const API_BASE = "";
+let TOKEN = localStorage.getItem("huft_token") || null;
+const api = {
+  async req(method, path, body) {
+    const res = await fetch(API_BASE + path, {
+      method,
+      headers:{"content-type":"application/json",...(TOKEN?{Authorization:"Bearer "+TOKEN}:{})},
+      body:body?JSON.stringify(body):undefined,
+    });
+    if (res.status===401){TOKEN=null;localStorage.removeItem("huft_token");window.location.reload();return;}
+    if (!res.ok){const e=await res.json().catch(()=>({}));const err=new Error(e.error||"HTTP "+res.status);err.status=res.status;throw err;}
+    return res.json();
+  },
+  get(p){return this.req("GET",p)},post(p,b){return this.req("POST",p,b)},
+  put(p,b){return this.req("PUT",p,b)},del(p){return this.req("DELETE",p)},
+};
+async function callClaude(system,prompt,expectJson){
+  const data=await api.post("/api/generate",{system,prompt});
+  const text=data.text||"";
+  if(!expectJson)return text;
+  const clean=text.replace(/```json|```/g,"").trim();
+  const s=clean.search(/[\[{]/);
+  return JSON.parse(s>=0?clean.slice(s):clean);
+}
+// Role-based default tab
+const ROLE_TAB={admin:"dashboard",business:"dashboard",content:"content",design:"design"};
+const normCrmType=(t)=>(t||"D2C").replace(" (Store-led)","").replace(" (store-led)","");
+
+/* ===== TAT + Calendar helpers =========================================== */
+const TAT_HOURS={brief:24,content:48,design:48}; // target hours per stage
+const fmtDate=(d)=>{if(!d)return"";const dt=new Date(d);return dt.toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"});};
+const fmtTime=(ts)=>{if(!ts)return"";const d=new Date(ts);return d.toLocaleDateString("en-IN",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"});};
+const hoursAgo=(ts)=>ts?Math.round((Date.now()-new Date(ts).getTime())/36e5):null;
+const tatStatus=(startedAt,dueAt,done)=>{
+  if(done)return{label:"Done",color:"#16A34A",bg:"#DCFCE7"};
+  if(!startedAt)return{label:"Not started",color:"#6B7280",bg:"#F3F4F6"};
+  const now=Date.now();const due=new Date(dueAt||0).getTime();
+  if(due&&now>due)return{label:"Overdue",color:"#B91C1C",bg:"#FEF2F2"};
+  const h=hoursAgo(startedAt);
+  if(h!==null&&h>TAT_HOURS[Object.keys(TAT_HOURS).find(k=>TAT_HOURS[k]===TAT_HOURS.brief)||"brief"])return{label:"Running late",color:"#D97706",bg:"#FEF3C7"};
+  return{label:"On track",color:"#0E9488",bg:"#E2F4F1"};
+};
+const weekOfMonth=(d)=>{const dt=new Date(d);const day=dt.getDate();return`W${Math.ceil(day/7)}`;};
+const monthLabel=(d)=>{if(!d)return"";const dt=new Date(d);return dt.toLocaleDateString("en-IN",{month:"short",year:"numeric"});};
+const isLastWeekOfMonth=()=>{const now=new Date();const lastDay=new Date(now.getFullYear(),now.getMonth()+1,0).getDate();return now.getDate()>=lastDay-6;};
+const isFirstWeekOfMonth=()=>new Date().getDate()<=7;
+
+const C={navy:"#15192B",navy2:"#1E2538",coral:"#F2603A",coralSoft:"#FDEAE4",
+  teal:"#0E9488",tealSoft:"#E2F4F1",ink:"#1F2734",sub:"#6B7280",line:"#E6E8EE",
+  paper:"#F6F7FA",white:"#FFFFFF",purple:"#7C4DFF",purpleSoft:"#EDE9FE",
+  green:"#16A34A",greenSoft:"#DCFCE7",orange:"#FF6A13"};
+
+/* ===== BRAND CONTEXT (full — sourced from all 5 brand docs) ============= */
+const BRAND_CONTEXT = `
+HUFT (Heads Up For Tails) — India's leading purpose-led pet care brand. 100+ retail stores, D2C, grooming & spa, nutrition, lifestyle products, and the HUFT Foundation. Founded because the founder couldn't find a thoughtful gift for her Labrador, Sara. That emotional origin informs everything — the warmth, the honesty, the obsession with quality.
+
+NORTH STAR: "Pets are family." Every product, service, and word flows from this. Family isn't defined by species, but by the love we share.
+
+CORE PROMISE: We never compromise on quality. Every product is designed for pets as family — because family deserves only the best.
+MISSION: Strengthen the bond between pets and their families by providing the best quality of products and services that make the lives of pets happier, healthier and more comfortable at accessible price points.
+VISION: For every home to experience the joy of raising pets as family.
+
+BRAND ARCHITECTURE: Endorsed brand structure — each sub-brand has a distinct personality while sharing HUFT's core "For Family" promise. The master brand communicates family bonds, quality commitment, trust, and community.
+
+MARKETING FLYWHEEL: Care → Trust → Love → Advocacy → Reach → Care again.
+PRIMARY CRM EMOTIONAL PILLAR: Importance (40%) — make every customer feel their pet and their story matter. CRM also carries Trust (30%), Edutainment (20%), Brand Values (10%).
+
+THE BELONGING LADDER: Discover → Relate → Trust → Belong → Advocate. Every CRM campaign should move the customer one rung up.
+
+FOUR PILLARS + VOICE:
+• Trust — calm, transparent, quietly confident. "honest, reliable, made with love." Never overclaim. Never compare negatively.
+• Importance — warm, personal, inclusive. "Your pet's story matters to us. We built this for you." Never generic or robotic.
+• Edutainment — joyful, curious, kind. "Did you know…?" Never preachy or superior.
+• Brand Values — purposeful, empathetic. "Born in India, built with kindness." Never self-praise or 'hero' language.
+
+BRAND PERSONALITY: Caring · Knowledgeable · Honest · Thoughtful · Joyful. Feels like "a trusted friend who deeply understands pets." Not a corporate marketer.
+
+TONE: Warm · Human · Empathetic · Trustworthy · Positive · Approachable. Write like a human — natural sentences, clear language, emotion where appropriate.
+
+EMOTIONAL TERRITORY: love, trust, companionship, joy, responsibility, kindness. Key truths: pets make life better; caring for pets makes us better people; small acts of kindness toward animals matter.
+
+WORDS TO USE: thoughtful, gentle, trusted, honest, real, care, comfort, love, joy, family, better.
+WORDS TO AVOID: premium, luxury, cutting-edge, state-of-the-art, revolutionary, game-changing, consumers (always "pet parents"), fur baby (use "furry family" or "pet parent"). No corporate jargon, no marketing clichés, no fear-based messaging, no shame, no exaggerated claims.
+
+LANGUAGE: British English only. Clarity first, warmth second, cleverness only if clarity stays intact.
+
+GUARDRAILS:
+• No medical/cure claims — use "supportive," "gentle," "vet-aware."
+• Never invent prices or discounts — write "Rs.XX [confirm]."
+• Never shame pet parents for feeding choices or care mistakes. Always guide kindly.
+• Real pets, real moments — avoid stock-photo generic scenarios.
+• One message rule — one clear takeaway per asset.
+• Retail CRM: NO website/app deep links — lead with store or NSO context.
+• D2C CRM: app and website deep links are fine.
+
+WRITING STYLE (WhatsApp CRM):
+• Header (image overlay): 2–3 very short, punchy lines. Lead with emotion or truth, NOT product name.
+• Body: 1 warm opener → 3–5 scannable bullets (✓) → short sign-off. One CTA.
+• Emoji: sparing — 1–2 max (🐾 💛 👀 ✓ are fine).
+• Short sentences convert better. Simplicity wins.
+• Push: title MAX 50 chars, body MAX 90 chars, max 1 emoji.
+
+PERFORMANCE AD FRAMEWORKS (for brief context):
+• Problem→Relief: Problem / Emotion / HUFT solution / Benefit / CTA
+• Pet-first: Pet moment / HUFT solution / Benefit / CTA
+• Emotional storytelling: Observation / Emotion / Brand belief / HUFT role / CTA
+• Product spotlight: Headline / Hero benefit / Supporting proof / CTA
+• Retail experience: Store moment / Feeling / Invitation
+
+HIGH-CONVERTING HEADLINE STYLES:
+• Pet benefit: "Better meals for happier dogs" — Benefit + Pet
+• Curiosity: "Why dogs struggle with most kibble" — Unexpected insight
+• Emotional: "Because pets are family" — Love + responsibility
+• Problem-solving: "Struggling with picky eaters?" — Problem + solution
+
+COPY TEST: Before finalising, ask — Does this sound human? Does this reflect love for pets? Would a pet parent trust this? Is the message simple and clear? If not — rewrite.
+
+SUB-BRANDS:
+• Sara's Wholesome Food (SWF) — Position: Family Nutrition Expert. "Inspired by Home. Backed by Science." / "Real Food. Real Love." / Booster: "Step Stronger. Live Longer." 0% preservatives, 100% natural. Voice: nurturing, expert. Exemplifies HUFT's commitment to family through premium nutrition.
+• Hearty by HUFT — Position: Family Care Essentials. "Made with all our heart for complete nutrition." Oven-baked, human-grade, real ingredients. Voice: reliable, accessible. Mass-premium — quality nutrition at accessible prices.
+• Meowsi by HUFT — Position: Feline Family Specialist. "For the Love of Cats: A Better Bowl, A Happier Purr." Complete cat nutrition, science-backed. Voice: witty, sophisticated. Extends HUFT's family promise to cat parents.
+• NutriMeow — value cat food (~Rs.65). Taurine-rich. "Roz ka Khana, Done Right." No-frills, honest, daily nutrition.
+• DashDog — Position: Family Style & Joy. "Let's chase fun." Fashion-forward accessories, quality everyday essentials. Voice: playful, stylish. Celebrates pet personality.
+• Yakies — Himalayan cheese chew. "A MUCH better alternative to Rawhide. 100% natural." Long-lasting, natural.
+• HUFT Spa & Grooming — "Expert care, everyday prices." / "Grooming that feels like care." Calm, expert, comforting. Certified groomers, breed-specific techniques, stress-free. Voice: reassuring, gentle, care-focused.
+• HUFT Stores — "Love for every pet, prices for every pocket." / "Every visit feels like home." Welcoming, personal, community-driven. Voice: service-oriented, inclusive, knowledgeable.
+• HUFT Originals (Accessories & Essentials) — "Designed for love." Simple, expert, elevated, purposeful.
+• HUFT Foundation — feeding programs, reflective collars for street dogs, vaccination, adoption drives, animal welfare education. Brand belief: businesses should help create kinder communities for animals.
+
+CRM CAMPAIGN NAMING CONVENTION: MonYY_SubBrand/Product_Hook_AudienceCode. Example: Jun26_Meowsi_Winback_LapsedCat`.trim();
+
+/* ===== Guided brief chat steps ========================================== */
+const BRIEF_STEPS = [
+  {
+    key:"crmType", question:"Is this D2C or Retail?",
+    hint:"Sets the channel rules. Retail = WhatsApp only, no web/app links. D2C = all channels, app and website links OK.",
+    options:["D2C","Retail","Hybrid"],
+    suggest:"D2C",
+  },
+  {
+    key:"channel", question:"Which channel?",
+    hint:"Pick one — the copy format, length, and emoji rules all change by channel.",
+    options:["WhatsApp","Email","Push notification","WhatsApp + Email"],
+    suggest:"WhatsApp",
+  },
+  {
+    key:"product",
+    question:"Which product, sub-brand, or category?",
+    hint:"Tap a quick option or type a specific variant/SKU. Each sub-brand has a different tone — Sara's is warm and home-style, Meowsi is witty and feline-first, Hearty is bold and energetic.",
+    options:[
+      "Sara's Wholesome Food","Hearty","Meowsi","NutriMeow","Yakies",
+      "HUFT Spa / Grooming","HUFT Stores / Retail","HUFT Originals (Accessories)",
+      "HUFT Foundation","Lifestyle / Beds & Bowls","Clothing & Raincoats",
+    ],
+    freeText:true,
+    placeholder:"Or type a specific SKU / variant e.g. Sara's Chicken & Rice 150g…",
+  },
+  {
+    key:"pillar", question:"Which HUFT pillar should lead?",
+    hint:"Trust = calm & honest. Importance = personal & warm. Edutainment = joyful & curious. Values = purpose-led. CRM typically leads with Importance (40%).",
+    options:["Importance","Trust","Edutainment","Brand Values"],
+    suggest:"Importance",
+  },
+  {
+    key:"audience", question:"Who's the audience and what's their trigger?",
+    hint:"The more specific the better — lapsed buyers, first-time cat parents, post-grooming no-show, etc.",
+    options:[
+      "Lapsed buyers (60–90d)","First-time buyers","High-value loyalists",
+      "Post-purchase (follow-up)","Post-spa / grooming","New store opening (NSO) segment",
+      "Cat parents","Dog parents","Puppy / kitten parents","Senior pet parents",
+    ],
+    freeText:true,
+    placeholder:"Or describe your own segment + trigger…",
+  },
+  {
+    key:"objective", question:"What's the objective?",
+    hint:"Pick the one that best fits your audience. Win-back = lapsed buyers. Conversion = new/trial. Upsell = existing buyers. Retention = loyalists.",
+    options:[
+      "Win-back / Reactivation",
+      "Conversion (first purchase)",
+      "Upsell / Cross-sell",
+      "Retention / Loyalty",
+      "Product education",
+      "Seasonal / topical",
+      "Awareness / Brand",
+    ],
+    freeText:true,
+    placeholder:"Or describe your own…",
+  },
+  {
+    key:"offer", question:"Is there an offer or incentive?",
+    hint:"If yes, give the exact value or write [confirm]. If none, say none — the engine will lean on brand and product story instead.",
+    options:["None — brand/product story only","Free shipping","Free gift with purchase"],
+    freeText:true,
+    placeholder:"e.g. Flat 10% off [confirm] · Rs.65 intro price [confirm] · Free grooming add-on…",
+    optional:true,
+  },
+  {
+    key:"hook", question:"Any specific angle or creative hook to explore?",
+    hint:"Optional — leave blank and the engine derives one. Or steer it: 'the dinner-bowl routine', 'first monsoon walk', 'made in India angle', 'vet-trusted proof'.",
+    options:["No specific angle — derive from brief"],
+    freeText:true,
+    placeholder:"Or type a specific direction…",
+    optional:true,
+  },
+  {
+    key:"go_live_date", question:"When does this asset go live?",
+    hint:"Pick the planned live date — sets the campaign week, month, and TAT deadlines.",
+    dateInput:true,
+    optional:true,
+  },
+];
+
+const uid=()=>Math.random().toString(36).slice(2,9);
+const parseName=(name)=>{
+  if(!name)return{date:"",product:"",hook:"",full:"Untitled asset"};
+  const parts=name.split("_");
+  const dateMatch=parts[0]&&/^[A-Z][a-z]{2}\d{2}$/.test(parts[0]);
+  const date=dateMatch?parts[0]:"";
+  const rest=dateMatch?parts.slice(1):parts;
+  const product=rest[0]||"";
+  const hook=rest.slice(1).join(" ");
+  return{date,product,hook,full:name};
+};
+const displayName=(name)=>{
+  if(!name)return"Untitled asset";
+  const{date,product,hook}=parseName(name);
+  if(!date&&!product)return name.replace(/_/g," ");
+  return[date,product,hook].filter(Boolean).join(" · ");
+};
+const STAGE_LABEL={brief:"Brief",content:"Copy",design:"Design",done:"Ready"};
+const activeRuleText=(rules)=>rules.filter(r=>r.active).map(r=>"- "+r.text).join("\n")||"(none yet)";
+
+/* ===== SVG icons ========================================================= */
+function Svg({size=18,color,style,children}){return<svg width={size}height={size}viewBox="0 0 24 24"fill="none"stroke={color||"currentColor"}strokeWidth="2"strokeLinecap="round"strokeLinejoin="round"style={style}>{children}</svg>;}
+const LayoutDashboard=p=><Svg{...p}><rect x="3"y="3"width="7"height="9"/><rect x="14"y="3"width="7"height="5"/><rect x="14"y="12"width="7"height="9"/><rect x="3"y="16"width="7"height="5"/></Svg>;
+const FileText=p=><Svg{...p}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h8"/></Svg>;
+const MessageSquare=p=><Svg{...p}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></Svg>;
+const Palette=p=><Svg{...p}><circle cx="12"cy="12"r="9"/><circle cx="8"cy="10"r="1"fill="currentColor"/><circle cx="12"cy="8"r="1"fill="currentColor"/><circle cx="16"cy="10"r="1"fill="currentColor"/></Svg>;
+const Sparkles=p=><Svg{...p}><path d="M12 3l1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8z"/><path d="M19 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></Svg>;
+const Plus=p=><Svg{...p}><path d="M12 5v14M5 12h14"/></Svg>;
+const Check=p=><Svg{...p}><path d="M20 6L9 17l-5-5"/></Svg>;
+const RefreshCw=p=><Svg{...p}><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5M3 21v-5h5"/></Svg>;
+const BookMarked=p=><Svg{...p}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M10 3v8l3-2 3 2V3"/></Svg>;
+const ImageIcon=p=><Svg{...p}><rect x="3"y="3"width="18"height="18"rx="2"/><circle cx="9"cy="9"r="1.6"/><path d="M21 15l-5-5L5 21"/></Svg>;
+const Wand2=p=><Svg{...p}><path d="M15 4V2M15 10V8M11 6H9M21 6h-2"/><path d="M3 21l12-12 2 2L5 23z"transform="translate(0,-2)"/></Svg>;
+const ArrowRight=p=><Svg{...p}><path d="M5 12h14M13 6l6 6-6 6"/></Svg>;
+const Trash2=p=><Svg{...p}><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></Svg>;
+const X=p=><Svg{...p}><path d="M18 6L6 18M6 6l12 12"/></Svg>;
+const PenLine=p=><Svg{...p}><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></Svg>;
+const Bot=p=><Svg{...p}><rect x="4"y="8"width="16"height="11"rx="2"/><path d="M12 8V5M9 13h.01M15 13h.01"/></Svg>;
+const ExternalLink=p=><Svg{...p}><path d="M15 3h6v6"/><path d="M10 14L21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></Svg>;
+const Lightbulb=p=><Svg{...p}><path d="M9 18h6M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1V17h6v-.2c0-.8.4-1.6 1-2.1A7 7 0 0 0 12 2z"/></Svg>;
+const CheckCircle2=p=><Svg{...p}><circle cx="12"cy="12"r="10"/><path d="M8 12l3 3 5-6"/></Svg>;
+const Loader2=p=><Svg{...p}><path d="M21 12a9 9 0 1 1-6.2-8.5"/></Svg>;
+const Save=p=><Svg{...p}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></Svg>;
+const FolderOpen=p=><Svg{...p}><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></Svg>;
+const ChevronRight=p=><Svg{...p}><path d="M9 6l6 6-6 6"/></Svg>;
+const ChevronDown=p=><Svg{...p}><path d="M6 9l6 6 6-6"/></Svg>;
+const Circle=p=><Svg{...p}><circle cx="12"cy="12"r="9"/></Svg>;
+const Users=p=><Svg{...p}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9"cy="7"r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.9M16 3.1A4 4 0 0 1 16 11"/></Svg>;
+const Eye=p=><Svg{...p}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12"cy="12"r="3"/></Svg>;
+const Copy=p=><Svg{...p}><rect x="9"y="9"width="13"height="13"rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></Svg>;
+const Download=p=><Svg{...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></Svg>;
+const ThumbsUp=p=><Svg{...p}><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.3a2 2 0 0 0 2-1.7l1.4-9a2 2 0 0 0-2-2.3H14z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></Svg>;
+const Star=p=><Svg{...p}><path d="M12 2l3.1 6.3L22 9.3l-5 4.9 1.2 6.9L12 17.8l-6.2 3.3 1.2-6.9L2 9.3l6.9-1z"/></Svg>;
+const Send=p=><Svg{...p}><path d="M22 2L11 13"/><path d="M22 2L15 22l-4-9-9-4 20-7z"/></Svg>;
+const RotateCcw=p=><Svg{...p}><path d="M1 4v6h6"/><path d="M3.5 15A9 9 0 1 0 6 6.3L1 10"/></Svg>;
+const LogOut=p=><Svg{...p}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></Svg>;
+const Target=p=><Svg{...p}><circle cx="12"cy="12"r="10"/><circle cx="12"cy="12"r="6"/><circle cx="12"cy="12"r="2"/></Svg>;
+const CalendarIcon=p=><Svg{...p}><rect x="3"y="4"width="18"height="18"rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></Svg>;
+const UploadIcon=p=><Svg{...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5M12 3v12"/></Svg>;
+const BellIcon=p=><Svg{...p}><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></Svg>;
+const ClockIcon=p=><Svg{...p}><circle cx="12"cy="12"r="10"/><path d="M12 6v6l4 2"/></Svg>;
+
+/* ===== UI atoms ========================================================= */
+function Btn({children,onClick,variant="primary",disabled,small,style}){
+  const base={display:"inline-flex",alignItems:"center",gap:7,cursor:disabled?"not-allowed":"pointer",fontWeight:600,borderRadius:10,border:"1px solid transparent",padding:small?"7px 12px":"10px 16px",fontSize:small?13:14,opacity:disabled?0.5:1,whiteSpace:"nowrap",transition:"opacity .15s"};
+  const v={primary:{background:C.coral,color:"#fff"},dark:{background:C.navy,color:"#fff"},ghost:{background:"transparent",color:C.ink,border:`1px solid ${C.line}`},teal:{background:C.teal,color:"#fff"},softcoral:{background:C.coralSoft,color:C.coral},purple:{background:C.purple,color:"#fff"},softpurple:{background:C.purpleSoft,color:C.purple},green:{background:C.green,color:"#fff"}}[variant];
+  return<button onClick={disabled?undefined:onClick}disabled={disabled}style={{...base,...v,...style}}>{children}</button>;
+}
+function Card({children,style,onClick}){return<div onClick={onClick}style={{background:C.white,border:`1px solid ${C.line}`,borderRadius:14,padding:18,boxShadow:"0 1px 2px rgba(16,24,40,.04)",...style}}>{children}</div>;}
+function Eyebrow({children,color=C.coral}){return<div style={{color,fontSize:12,fontWeight:700,letterSpacing:1,textTransform:"uppercase"}}>{children}</div>;}
+function StageBadge({stage}){const col={brief:C.coral,content:C.purple,design:C.teal,done:C.green}[stage]||C.sub;return<span style={{background:col+"1A",color:col,fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:999}}>{STAGE_LABEL[stage]}</span>;}
+function ApproverChip({name,at,color=C.teal}){if(!name)return null;return<span style={{display:"inline-flex",alignItems:"center",gap:5,background:color+"18",color:color,fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={12}/>{name} · {fmtTime(at)}</span>;}
+function Field({label,value,onChange,placeholder,textarea,rows=2}){return<label style={{display:"block",marginBottom:12}}><div style={{fontSize:12.5,fontWeight:600,color:C.sub,marginBottom:5}}>{label}</div>{textarea?<textarea value={value}onChange={e=>onChange(e.target.value)}placeholder={placeholder}rows={rows}style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:10,padding:"9px 11px",fontSize:14,color:C.ink,resize:"vertical",boxSizing:"border-box"}}/>:<input value={value}onChange={e=>onChange(e.target.value)}placeholder={placeholder}style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:10,padding:"9px 11px",fontSize:14,color:C.ink,boxSizing:"border-box"}}/>}</label>;}
+function Spin({label}){return<div style={{display:"flex",alignItems:"center",gap:9,color:C.sub,fontSize:14,padding:"10px 0"}}><Loader2 size={16}style={{animation:"spin 1s linear infinite"}}/>{label}</div>;}
+function Empty({icon,title,sub}){return<div style={{textAlign:"center",padding:"48px 20px",color:C.sub}}><div style={{display:"inline-flex",padding:16,borderRadius:999,background:C.paper,marginBottom:12}}>{icon}</div><div style={{fontWeight:700,color:C.ink,fontSize:16}}>{title}</div><div style={{fontSize:14,marginTop:4,maxWidth:380,marginInline:"auto"}}>{sub}</div></div>;}
+function Header({eyebrow,title,right}){return<div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:16}}><div><Eyebrow>{eyebrow}</Eyebrow><h1 style={{margin:"4px 0 0",fontSize:24,fontWeight:800}}>{title}</h1></div>{right}</div>;}
+function Step({n,title,done}){return<div style={{display:"flex",alignItems:"center",gap:10}}><span style={{width:24,height:24,borderRadius:999,background:done?C.teal:C.navy,color:"#fff",fontSize:12.5,fontWeight:700,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>{done?<Check size={14}/>:n}</span><span style={{fontWeight:700,fontSize:15.5}}>{title}</span></div>;}
+
+function FeedbackBar({stage,by,onSave}){
+  const[open,setOpen]=useState(false);const[text,setText]=useState("");const[sent,setSent]=useState(false);
+  const send=async()=>{if(!text.trim())return;try{await api.post("/api/feedback",{stage,text:text.trim(),by});}catch(e){}if(onSave)onSave({stage,text:text.trim()});setSent(true);setText("");setTimeout(()=>{setSent(false);setOpen(false);},2000);};
+  if(sent)return<div style={{marginTop:10,display:"flex",alignItems:"center",gap:7,color:C.teal,fontSize:13,fontWeight:600}}><CheckCircle2 size={15}/>Feedback saved — thanks!</div>;
+  return<div style={{marginTop:10,borderTop:`1px solid ${C.line}`,paddingTop:10}}>{!open?<button onClick={()=>setOpen(true)}style={{background:"none",border:"none",cursor:"pointer",color:C.sub,fontSize:12.5,display:"flex",alignItems:"center",gap:6}}><Star size={13}/>Leave feedback on this generation</button>:<div style={{display:"flex",gap:8,alignItems:"flex-end",flexWrap:"wrap"}}><textarea value={text}onChange={e=>setText(e.target.value)}placeholder={`What was good or off about this ${stage} generation?`}rows={2}style={{flex:1,minWidth:200,border:`1px solid ${C.line}`,borderRadius:9,padding:"8px 10px",fontSize:13,resize:"none",boxSizing:"border-box"}}/><div style={{display:"flex",gap:6}}><Btn small variant="softcoral"onClick={send}disabled={!text.trim()}><ThumbsUp size={13}/>Send</Btn><Btn small variant="ghost"onClick={()=>{setOpen(false);setText("");}}>Cancel</Btn></div></div>}</div>;
+}
+
+/* ===== Helper export functions (keep out of JSX to avoid spread-in-array parse issues) */
+function exportBriefTxt(active){
+  const b=active.data?.brief||{};
+  const proofLines=(b.proofPoints||[]).map(p=>"• "+p);
+  const base=[`HUFT CRM BRIEF — ${active.name||"Untitled"}`,``,`Product: ${active.product}  |  Channel: ${active.channel}`,`Segment: ${active.audience||active.segment}  |  Objective: ${active.objective}`,active.offer?`Offer: ${active.offer}`:"",`Pillar: ${b.pillar||"—"}`,``,`STRATEGIC INSIGHT`,b.strategicInsight,``,`THE IDEA`,b.idea,``,`PROOF POINTS`];
+  const mid=proofLines;
+  const tail=[``,b.copyDirection?`COPY DIRECTION\n${b.copyDirection}`:"",``,b.whatsappNote?`WHATSAPP\n${b.whatsappNote}`:"",``,`Generated: ${new Date().toLocaleDateString("en-IN")}`];
+  const lines=base.concat(mid).concat(tail).filter(l=>l!==undefined);
+  const blob=new Blob([lines.join("\n")],{type:"text/plain"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`${(active.name||"brief").replace(/\s+/g,"_")}.txt`;a.click();
+}
+function exportDesignBriefTxt(active,copy,approvedPrompt){
+  const d=active.data?.design||{};
+  const LIBRARY=[{id:"l1",label:"Nuri × Sara's bowl"},{id:"l2",label:"Meowsi hero pack"},{id:"l3",label:"Cat + parent moment"},{id:"l4",label:"Win-back warm shot"},{id:"l5",label:"NutriMeow value flat-lay"},{id:"l6",label:"Festive WhatsApp frame"}];
+  const noteLines=(d.notes||[]).map((n,i)=>`${i+1}. ${n}`);
+  const imgLines=approvedPrompt?[``,`IMAGE PROMPT (${approvedPrompt.label})`,`Tool: ${approvedPrompt.tool} | Aspect ratio: ${approvedPrompt.aspectRatio}`,``,approvedPrompt.prompt,``,`Negative prompt:`,approvedPrompt.negativePrompt]:[``,`IMAGE: ${(LIBRARY.find(x=>x.id===d.libraryPick)||{}).label} (from Drive library)`];
+  const lines=[`HUFT DESIGN BRIEF — ${active.name||"Untitled"}`,``,`COPY (${copy.direction})`,`Header:`,copy.header,``,`Body:`,copy.body,``,`CTA: ${copy.cta}`,``,`ART DIRECTION`].concat(noteLines).concat(imgLines).concat([``,`Generated: ${new Date().toLocaleDateString("en-IN")}`]);
+  const blob=new Blob([lines.join("\n")],{type:"text/plain"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`${(active.name||"design").replace(/\s+/g,"_")}_design-brief.txt`;a.click();
+}
+
+/* ===== Login ============================================================ */
+function Login({onAuth}){
+  const[email,setEmail]=useState("");
+  const[password,setPassword]=useState("");
+  const[busy,setBusy]=useState(false);
+  const[err,setErr]=useState("");
+  const go=async()=>{
+    if(!email.trim()||!password.trim())return;
+    setBusy(true);setErr("");
+    try{
+      const data=await api.post("/api/auth/login",{email:email.trim(),password});
+      if(!data||!data.token){setErr("Login failed — please try again.");setBusy(false);return;}
+      TOKEN=data.token;
+      localStorage.setItem("huft_token",data.token);
+      onAuth(data.user);
+    }catch(e){setErr(e.message||"Login failed");}
+    setBusy(false);
+  };
+  return<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.navy}}>
+    <div style={{background:"#fff",borderRadius:18,padding:"40px 36px",width:400,boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
+      <div style={{textAlign:"center",marginBottom:28}}>
+        <div style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:48,height:48,borderRadius:14,background:C.coral,color:"#fff",marginBottom:14}}><Sparkles size={24}/></div>
+        <h1 style={{margin:"0 0 6px",fontSize:22,fontWeight:800,color:C.ink}}>CRM Creative Engine</h1>
+        <div style={{color:C.sub,fontSize:14}}>Sign in to your HUFT account</div>
+      </div>
+      <Field label="Email" value={email} onChange={setEmail} placeholder="you@headsupfortails.com"/>
+      <label style={{display:"block",marginBottom:20}}>
+        <div style={{fontSize:12.5,fontWeight:600,color:C.sub,marginBottom:5}}>Password</div>
+        <input type="password" value={password} onChange={e=>setPassword(e.target.value)}
+          onKeyDown={e=>e.key==="Enter"&&go()}
+          placeholder="••••••••"
+          style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:10,padding:"9px 11px",fontSize:14,color:C.ink,boxSizing:"border-box"}}/>
+      </label>
+      {err&&<div style={{background:"#FEF2F2",color:"#B91C1C",borderRadius:8,padding:"9px 12px",fontSize:13,marginBottom:14}}>{err}</div>}
+      <Btn onClick={go} disabled={busy||!email.trim()||!password.trim()} style={{width:"100%",justifyContent:"center"}}>
+        {busy?<><Loader2 size={15} style={{animation:"spin 1s linear infinite"}}/>Signing in…</>:"Sign in"}
+      </Btn>
+      <div style={{marginTop:18,fontSize:12,color:C.sub,textAlign:"center"}}>Contact your admin to get access.</div>
+    </div>
+  </div>;
+}
+
+/* ===== App ============================================================== */
+function App(){
+  const[me,setMe]=useState(null);
+  const[checking,setChecking]=useState(true);
+  const[tab,setTab]=useState("dashboard");
+  const[campaigns,setCampaigns]=useState([]);
+  const[rules,setRules]=useState([]);
+  const[feedback,setFeedback]=useState([]);
+  const[audiences,setAudiences]=useState([]);
+  const[activeId,setActiveId]=useState(null);
+  const[drawer,setDrawer]=useState(null);
+  const[showMonthlyPrompt,setShowMonthlyPrompt]=useState(true);
+
+  // Auto-login from stored token
+  useEffect(()=>{
+    if(TOKEN){
+      api.get("/api/auth/me")
+        .then(user=>{
+          setMe(user);
+          setTab(ROLE_TAB[user.role]||"dashboard");
+          // Load all data on refresh
+          Promise.all([
+            api.get("/api/campaigns"),
+            api.get("/api/rules"),
+            api.get("/api/feedback").catch(()=>[]),
+            api.get("/api/audiences").catch(()=>[]),
+          ]).then(([cs,rs,fb,auds])=>{
+            setCampaigns(cs);setRules(rs);setFeedback(fb);setAudiences(auds);
+          }).finally(()=>setChecking(false));
+        })
+        .catch(()=>{TOKEN=null;localStorage.removeItem("huft_token");setChecking(false);});
+    } else { setChecking(false); }
+  },[]);
+
+  const loadAll=async()=>{
+    const[cs,rs,fb,auds]=await Promise.all([
+      api.get("/api/campaigns"),api.get("/api/rules"),
+      api.get("/api/feedback").catch(()=>[]),api.get("/api/audiences").catch(()=>[]),
+    ]);
+    setCampaigns(cs);setRules(rs);setFeedback(fb);setAudiences(auds);
+  };
+
+  const onAuth=(user)=>{setMe(user);setTab(ROLE_TAB[user.role]||"dashboard");loadAll();};
+  const safeData=(cs)=>cs.map(c=>({...c,data:c.data?(typeof c.data==="string"?JSON.parse(c.data):c.data):{}}));
+
+  const logout=()=>{TOKEN=null;localStorage.removeItem("huft_token");setMe(null);setCampaigns([]);setRules([]);setFeedback([]);setAudiences([]);};
+
+  if(checking)return<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.navy}}><Loader2 size={32} color="#fff" style={{animation:"spin 1s linear infinite"}}/></div>;
+  if(!me)return<Login onAuth={onAuth}/>;
+
+  const recentFeedback=(stage)=>feedback.filter(f=>f.stage===stage).slice(0,3).map(f=>`- ${f.text}`).join("\n")||"";
+  const saveFeedback=(f)=>setFeedback(x=>[{...f,at:Date.now()},...x]);
+  const copyRules=rules.filter(r=>r.type==="copy");
+  const promptRules=rules.filter(r=>r.type==="prompt");
+  const addRule=async(type,text)=>{const r=await api.post("/api/rules",{type,text});setRules(x=>[r,...x]);};
+  const toggleRule=async(id)=>{const r=rules.find(x=>x.id===id);const active=!r.active;setRules(x=>x.map(y=>y.id===id?{...y,active}:y));api.put("/api/rules/"+id,{active}).catch(()=>{});};
+  const delRule=async(id)=>{setRules(x=>x.filter(y=>y.id!==id));api.del("/api/rules/"+id).catch(()=>{});};
+  const active=campaigns.find(c=>c.id===activeId)||null;
+
+  const patch=(id,fields)=>{
+    const TOP=["name","channel","product","audience_id","audience_label","segment","objective","offer","crm_type","stage","copy_approver","design_approver","go_live_date","campaign_week","campaign_month","tat_brief_due","tat_content_due","tat_design_due","brief_started_at","content_started_at","design_started_at","went_live_at"];
+    const topFields={};const dataFields={};
+    Object.entries(fields).forEach(([k,v])=>{
+      if(k==="data"){Object.assign(dataFields,v);}
+      else if(TOP.includes(k)){topFields[k]=v;}
+      else{dataFields[k]=v;}
+    });
+    setCampaigns(cs=>{
+      const cur=cs.find(c=>c.id===id)||{};
+      // Always parse cur.data safely
+      const curData=cur.data?(typeof cur.data==="string"?JSON.parse(cur.data):cur.data):{};
+      const mergedData={...curData,...dataFields};
+      const next=cs.map(c=>c.id===id?{...c,...topFields,data:mergedData,updatedAt:Date.now()}:c);
+      const payload={...topFields};
+      if(Object.keys(dataFields).length)payload.data=mergedData;
+      api.put("/api/campaigns/"+id,payload).catch(e=>console.error("patch error:",e));
+      return next;
+    });
+  };
+
+  const newCampaign=async()=>{
+    const c=await api.post("/api/campaigns",{channel:"WhatsApp",stage:"brief"});
+    setCampaigns(cs=>[c,...cs]);setActiveId(c.id);setTab("brief");
+  };
+  const open=(id,jt)=>{const c=campaigns.find(x=>x.id===id);setActiveId(id);setTab(jt||(c?(c.stage==="done"?"design":c.stage):"brief"));};
+
+  // Pending counts per stage (for nav badges)
+  const pending={brief:campaigns.filter(c=>c.stage==="brief").length,content:campaigns.filter(c=>c.stage==="content").length,design:campaigns.filter(c=>c.stage==="design").length};
+
+  // Tabs visible per role
+  const allTabs=[
+    {k:"dashboard",label:"Dashboard",icon:<LayoutDashboard size={16}/>},
+    {k:"brief",label:"Brief",icon:<FileText size={16}/>},
+    {k:"content",label:"Copy",icon:<MessageSquare size={16}/>},
+    {k:"design",label:"Design",icon:<Palette size={16}/>},
+  ];
+  const TABS=me.role==="admin"?allTabs:allTabs.filter(t=>t.k==="dashboard"||t.k===ROLE_TAB[me.role]||me.role==="admin");
+
+  const RoleBadge=()=>{
+    const cols={admin:C.coral,business:C.teal,content:C.purple,design:C.green};
+    return<span style={{background:(cols[me.role]||C.sub)+"22",color:cols[me.role]||C.sub,fontSize:10.5,fontWeight:700,padding:"2px 8px",borderRadius:999,textTransform:"capitalize"}}>{me.role}</span>;
+  };
+
+  return<div style={{minHeight:"100vh",background:C.paper}}>
+    <div style={{background:C.navy,color:"#fff",position:"sticky",top:0,zIndex:30,boxShadow:"0 2px 8px rgba(0,0,0,.15)"}}>
+      <div style={{maxWidth:1120,margin:"0 auto",padding:"0 20px",display:"flex",alignItems:"center",height:54}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginRight:28}}>
+          <div style={{width:30,height:30,borderRadius:8,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center"}}><Sparkles size={16}color="#fff"/></div>
+          <span style={{fontWeight:800,fontSize:15,letterSpacing:-.3}}>CRM Engine</span>
+        </div>
+        <div style={{display:"flex",gap:2,flex:1}}>
+          {TABS.map(t=>{
+            const count=pending[t.k]||0;
+            return<button key={t.k}onClick={()=>setTab(t.k)}style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",borderRadius:8,border:"none",cursor:"pointer",fontSize:13.5,fontWeight:600,background:tab===t.k?"rgba(255,255,255,.13)":"transparent",color:tab===t.k?"#fff":"rgba(255,255,255,.6)",transition:"all .15s",position:"relative"}}>
+              {t.icon}{t.label}
+              {count>0&&t.k!=="dashboard"&&<span style={{background:C.coral,color:"#fff",fontSize:10,fontWeight:800,padding:"1px 6px",borderRadius:999,marginLeft:2}}>{count}</span>}
+            </button>;
+          })}
+        </div>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <button onClick={()=>setDrawer("rules")}style={{display:"flex",alignItems:"center",gap:6,padding:"7px 12px",borderRadius:8,border:"none",cursor:"pointer",background:"rgba(255,255,255,.1)",color:"rgba(255,255,255,.8)",fontSize:13,fontWeight:600}}><BookMarked size={14}/>Rulebook</button>
+          {me.role==="admin"&&<button onClick={()=>setDrawer("team")}style={{display:"flex",alignItems:"center",gap:6,padding:"7px 12px",borderRadius:8,border:"none",cursor:"pointer",background:"rgba(255,255,255,.1)",color:"rgba(255,255,255,.8)",fontSize:13,fontWeight:600}}><Users size={14}/>Team</button>}
+          <button onClick={()=>setDrawer("audiences")}style={{display:"flex",alignItems:"center",gap:6,padding:"7px 12px",borderRadius:8,border:"none",cursor:"pointer",background:"rgba(255,255,255,.1)",color:"rgba(255,255,255,.8)",fontSize:13,fontWeight:600}}><Target size={14}/>Audiences</button>
+          <div style={{fontSize:13,color:"rgba(255,255,255,.7)",paddingLeft:8,borderLeft:"1px solid rgba(255,255,255,.15)",display:"flex",alignItems:"center",gap:7}}>
+            <span>{me.name}</span><RoleBadge/>
+            <button onClick={logout}style={{background:"transparent",border:"none",cursor:"pointer",color:"rgba(255,255,255,.5)",padding:2}}><LogOut size={14}/></button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style={{maxWidth:1120,margin:"0 auto",padding:"28px 20px"}}>
+      {tab==="dashboard"&&<Dashboard campaigns={campaigns}onNew={newCampaign}onOpen={open}me={me}/>}
+      {tab==="brief"&&<BriefTab active={active}patch={patch}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}audiences={audiences}/>}
+      {tab==="content"&&<ContentTab active={active}patch={patch}copyRules={copyRules}addRule={addRule}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}/>}
+      {tab==="design"&&<DesignTab active={active}patch={patch}promptRules={promptRules}addRule={addRule}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}/>}
+    </div>
+    {showMonthlyPrompt&&<MonthlyPrompt me={me}campaigns={campaigns}onClose={()=>setShowMonthlyPrompt(false)}/>}
+    {drawer==="rules"&&<RulesDrawer onClose={()=>setDrawer(null)}copyRules={copyRules}promptRules={promptRules}addRule={addRule}toggleRule={toggleRule}delRule={delRule}me={me}feedback={feedback}/>}
+    {drawer==="team"&&<TeamDrawer onClose={()=>setDrawer(null)}me={me}/>}
+    {drawer==="audiences"&&<AudienceDrawer onClose={()=>setDrawer(null)}audiences={audiences}setAudiences={setAudiences}me={me}/>}
+  </div>;
+}
+
+/* ===== Monthly Prompt Popup ============================================= */
+function MonthlyPrompt({me,campaigns,onClose}){
+  const isLastWeek=isLastWeekOfMonth();
+  const isFirstWeek=isFirstWeekOfMonth();
+  if(!isLastWeek&&!isFirstWeek)return null;
+
+  // Last week — prompt content/design to close out campaigns
+  if(isLastWeek&&(me.role==="content"||me.role==="design"||me.role==="admin")){
+    const inProgress=campaigns.filter(c=>c.stage!=="done").length;
+    if(!inProgress)return null;
+    return<div style={{position:"fixed",inset:0,background:"rgba(15,18,30,.5)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{background:"#fff",borderRadius:18,padding:28,maxWidth:420,width:"90%",boxShadow:"0 20px 60px rgba(0,0,0,.25)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+          <div style={{width:36,height:36,borderRadius:10,background:C.coralSoft,display:"flex",alignItems:"center",justifyContent:"center"}}><BellIcon size={18}color={C.coral}/></div>
+          <div><div style={{fontWeight:800,fontSize:16}}>End of month — wrap it up!</div><div style={{fontSize:12.5,color:C.sub}}>Last week of the month</div></div>
+        </div>
+        <div style={{fontSize:14,color:C.ink,lineHeight:1.6,marginBottom:16}}>
+          You have <b style={{color:C.coral}}>{inProgress} asset{inProgress!==1?"s":""}</b> still in progress. Try to get everything to <b>Ready</b> before the month closes so the business team can upload performance reports.
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <Btn onClick={onClose}>Got it</Btn>
+          <Btn variant="ghost"onClick={onClose}>Remind me tomorrow</Btn>
+        </div>
+      </div>
+    </div>;
+  }
+
+  // First week — prompt business team to upload reports
+  if(isFirstWeek&&(me.role==="business"||me.role==="admin")){
+    const doneWithoutReport=campaigns.filter(c=>c.stage==="done"&&!c.has_report).length;
+    if(!doneWithoutReport)return null;
+    return<div style={{position:"fixed",inset:0,background:"rgba(15,18,30,.5)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{background:"#fff",borderRadius:18,padding:28,maxWidth:420,width:"90%",boxShadow:"0 20px 60px rgba(0,0,0,.25)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+          <div style={{width:36,height:36,borderRadius:10,background:C.tealSoft,display:"flex",alignItems:"center",justifyContent:"center"}}><UploadIcon size={18}color={C.teal}/></div>
+          <div><div style={{fontWeight:800,fontSize:16}}>Upload last month's reports</div><div style={{fontSize:12.5,color:C.sub}}>First week of new month</div></div>
+        </div>
+        <div style={{fontSize:14,color:C.ink,lineHeight:1.6,marginBottom:16}}>
+          <b style={{color:C.teal}}>{doneWithoutReport} completed asset{doneWithoutReport!==1?"s":""}</b> from last month still need performance data. Upload reports so the team can see what worked.
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <Btn variant="teal"onClick={onClose}><UploadIcon size={14}/>Upload reports</Btn>
+          <Btn variant="ghost"onClick={onClose}>Later</Btn>
+        </div>
+      </div>
+    </div>;
+  }
+  return null;
+}
+
+/* ===== TAT Status Badge ================================================= */
+function TATBadge({startedAt,dueAt,done}){
+  const s=tatStatus(startedAt,dueAt,done);
+  return<span style={{background:s.bg,color:s.color,fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:999,display:"inline-flex",alignItems:"center",gap:4}}>
+    <ClockIcon size={10}/>{s.label}
+  </span>;
+}
+
+/* ===== Performance Report Uploader ====================================== */
+function ReportUploader({campaign,me,onUploaded}){
+  const[open,setOpen]=useState(false);
+  const[metrics,setMetrics]=useState({opens:"",clicks:"",conversions:"",revenue:""});
+  const[notes,setNotes]=useState("");
+  const[file,setFile]=useState(null);
+  const[busy,setBusy]=useState(false);
+  const[err,setErr]=useState("");
+  const[done,setDone]=useState(false);
+
+  const mf=(k,v)=>setMetrics(m=>({...m,[k]:v}));
+
+  const handleFile=(e)=>{
+    const f=e.target.files[0];
+    if(!f)return;
+    if(f.size>5*1024*1024){setErr("File must be under 5MB");return;}
+    const reader=new FileReader();
+    reader.onload=(ev)=>setFile({name:f.name,type:f.type,data:ev.target.result.split(",")[1]});
+    reader.readAsDataURL(f);
+  };
+
+  const submit=async()=>{
+    setBusy(true);setErr("");
+    try{
+      const month=campaign.campaign_month||monthLabel(new Date().toISOString());
+      await api.post("/api/reports",{
+        campaign_id:campaign.id,
+        report_month:month,
+        file_name:file?.name||null,
+        file_data:file?.data||null,
+        file_type:file?.type||null,
+        notes,
+        metrics:{
+          opens:metrics.opens?Number(metrics.opens):null,
+          clicks:metrics.clicks?Number(metrics.clicks):null,
+          conversions:metrics.conversions?Number(metrics.conversions):null,
+          revenue:metrics.revenue?Number(metrics.revenue):null,
+        },
+      });
+      setDone(true);if(onUploaded)onUploaded();
+    }catch(e){setErr(e.message);}
+    setBusy(false);
+  };
+
+  if(done)return<div style={{display:"flex",alignItems:"center",gap:7,color:C.teal,fontSize:13,fontWeight:600,padding:"8px 0"}}><CheckCircle2 size={15}/>Report uploaded — thanks!</div>;
+
+  return<div style={{marginTop:10}}>
+    {!open
+      ?<button onClick={()=>setOpen(true)}style={{display:"flex",alignItems:"center",gap:6,background:C.tealSoft,border:`1px solid ${C.teal}22`,borderRadius:8,padding:"7px 12px",cursor:"pointer",color:C.teal,fontSize:13,fontWeight:600}}>
+        <UploadIcon size={13}/>Upload performance report
+      </button>
+      :<div style={{background:C.tealSoft,borderRadius:12,padding:14,border:`1px solid ${C.teal}33`}}>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:12,color:C.teal,display:"flex",alignItems:"center",gap:7}}><UploadIcon size={15}/>Performance Report — {campaign.campaign_month||"this campaign"}</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+          {[["opens","Opens / Impressions"],["clicks","Clicks"],["conversions","Conversions"],["revenue","Revenue (₹)"]].map(([k,l])=>(
+            <div key={k}>
+              <div style={{fontSize:11.5,fontWeight:600,color:C.sub,marginBottom:3}}>{l}</div>
+              <input value={metrics[k]}onChange={e=>mf(k,e.target.value)}type="number"placeholder="0"
+                style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 10px",fontSize:13,boxSizing:"border-box"}}/>
+            </div>
+          ))}
+        </div>
+        <Field label="Notes / learnings"textarea value={notes}onChange={setNotes}placeholder="What worked? What didn't? Key takeaway for next time…"rows={2}/>
+        <div style={{marginBottom:10}}>
+          <div style={{fontSize:11.5,fontWeight:600,color:C.sub,marginBottom:5}}>Attach report file (PDF, image, CSV — max 5MB)</div>
+          <input type="file"accept=".pdf,.png,.jpg,.jpeg,.csv,.xlsx"onChange={handleFile}
+            style={{fontSize:12.5,color:C.sub}}/>
+          {file&&<div style={{fontSize:12,color:C.teal,marginTop:4}}>✓ {file.name} ready to upload</div>}
+        </div>
+        {err&&<div style={{color:C.coral,fontSize:13,marginBottom:8}}>{err}</div>}
+        <div style={{display:"flex",gap:8}}>
+          <Btn variant="teal"onClick={submit}disabled={busy}><UploadIcon size={13}/>{busy?"Uploading…":"Upload report"}</Btn>
+          <Btn variant="ghost"onClick={()=>setOpen(false)}>Cancel</Btn>
+        </div>
+      </div>}
+  </div>;
+}
+
+
+/* ===== Calendar View ==================================================== */
+function CalendarView({campaigns,onOpen,filterStage}){
+  const now=new Date();
+  const[month,setMonth]=useState(now.getMonth());
+  const[year,setYear]=useState(now.getFullYear());
+
+  const MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const DAYS=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+
+  const firstDay=new Date(year,month,1).getDay();
+  const daysInMonth=new Date(year,month+1,0).getDate();
+
+  // Group campaigns by created_at date
+  const byDate={};
+  campaigns.forEach(c=>{
+    if(filterStage&&c.stage!==filterStage)return;
+    const d=new Date(c.created_at||c.updatedAt||Date.now());
+    if(d.getMonth()===month&&d.getFullYear()===year){
+      const key=d.getDate();
+      if(!byDate[key])byDate[key]=[];
+      byDate[key].push(c);
+    }
+  });
+
+  const stageCol={brief:C.coral,content:C.purple,design:C.teal,done:C.green};
+
+  const prev=()=>{if(month===0){setMonth(11);setYear(y=>y-1);}else setMonth(m=>m-1);};
+  const next=()=>{if(month===11){setMonth(0);setYear(y=>y+1);}else setMonth(m=>m+1);};
+
+  const cells=[];
+  for(let i=0;i<firstDay;i++)cells.push(null);
+  for(let i=1;i<=daysInMonth;i++)cells.push(i);
+  while(cells.length%7!==0)cells.push(null);
+
+  const isToday=(d)=>{
+    const t=new Date();
+    return d===t.getDate()&&month===t.getMonth()&&year===t.getFullYear();
+  };
+
+  return<div>
+    {/* Month nav */}
+    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}>
+      <button onClick={prev}style={{border:`1px solid ${C.line}`,borderRadius:8,padding:"6px 12px",cursor:"pointer",background:"#fff",fontWeight:600}}>←</button>
+      <span style={{fontWeight:700,fontSize:16,flex:1,textAlign:"center"}}>{MONTHS[month]} {year}</span>
+      <button onClick={next}style={{border:`1px solid ${C.line}`,borderRadius:8,padding:"6px 12px",cursor:"pointer",background:"#fff",fontWeight:600}}>→</button>
+    </div>
+    {/* Day headers */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:2}}>
+      {DAYS.map(d=><div key={d}style={{textAlign:"center",fontSize:11,fontWeight:700,color:C.sub,padding:"4px 0"}}>{d}</div>)}
+    </div>
+    {/* Calendar grid */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
+      {cells.map((d,i)=>{
+        const items=d?byDate[d]||[]:[];
+        const today=d&&isToday(d);
+        return<div key={i}style={{
+          minHeight:72,border:`1px solid ${C.line}`,borderRadius:8,padding:4,
+          background:today?"#FFF7F5":d?"#fff":"#f9f9f9",
+          borderColor:today?C.coral:C.line,
+        }}>
+          {d&&<div style={{fontSize:11,fontWeight:today?800:500,color:today?C.coral:C.sub,marginBottom:3}}>{d}</div>}
+          {items.slice(0,3).map((c,ci)=><div key={ci}
+            onClick={()=>onOpen(c.id)}
+            style={{
+              fontSize:9.5,fontWeight:600,padding:"2px 4px",borderRadius:4,marginBottom:1,
+              background:(stageCol[c.stage]||C.sub)+"18",color:stageCol[c.stage]||C.sub,
+              cursor:"pointer",lineHeight:1.3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"
+            }}
+            title={c.product||c.name}
+          >{c.product||parseName(c.name).product||"Asset"}</div>)}
+          {items.length>3&&<div style={{fontSize:9,color:C.sub}}>+{items.length-3} more</div>}
+        </div>;
+      })}
+    </div>
+    <div style={{marginTop:10,fontSize:12,color:C.sub,display:"flex",gap:12,flexWrap:"wrap"}}>
+      {Object.entries({brief:"Brief",content:"Copy",design:"Design",done:"Ready"}).map(([k,v])=>(
+        <span key={k}style={{display:"flex",alignItems:"center",gap:4}}>
+          <span style={{width:8,height:8,borderRadius:2,background:stageCol[k],display:"inline-block"}}/>
+          {v}
+        </span>
+      ))}
+      <span style={{color:C.sub}}>· Showing assets by date created</span>
+    </div>
+  </div>;
+}
+
+function Dashboard({campaigns,onNew,onOpen,me}){
+  const[view,setView]=useState("list");
+  const counts={brief:0,content:0,design:0,done:0};campaigns.forEach(c=>counts[c.stage]=(counts[c.stage]||0)+1);
+  const stat=[{k:"brief",label:"In Brief",color:C.coral},{k:"content",label:"In Copy",color:C.purple},{k:"design",label:"In Design",color:C.teal},{k:"done",label:"Ready",color:C.green}];
+  const pending=campaigns.filter(c=>c.stage!=="done").sort((a,b)=>{const so={brief:0,content:1,design:2};return(so[a.stage]||0)-(so[b.stage]||0)||(b.updatedAt||0)-(a.updatedAt||0);});
+  const done=campaigns.filter(c=>c.stage==="done").sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+  const CRow=({c,i})=><div style={{display:"flex",alignItems:"center",gap:14,padding:"14px 18px",borderTop:i?`1px solid ${C.line}`:"none",background:"#fff"}}>
+    <div onClick={()=>onOpen(c.id)}style={{width:38,height:38,borderRadius:10,background:C.coralSoft,color:C.coral,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,cursor:"pointer"}}><MessageSquare size={18}/></div>
+    <div onClick={()=>onOpen(c.id)}style={{flex:1,minWidth:0,cursor:"pointer"}}>
+      {/* Hero: Product · D2C/Retail · Channel */}
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+        <span style={{fontWeight:800,fontSize:15,color:C.ink}}>{c.product||parseName(c.name).product||"—"}</span>
+        <span style={{width:4,height:4,borderRadius:999,background:C.sub,flexShrink:0}}/>
+        <span style={{fontWeight:700,fontSize:13,color:C.coral}}>{normCrmType(c.crm_type)}</span>
+        <span style={{width:4,height:4,borderRadius:999,background:C.sub,flexShrink:0}}/>
+        <span style={{fontWeight:700,fontSize:13,color:C.teal}}>{c.channel||"WhatsApp"}</span>
+      </div>
+      {/* Secondary: date · hook · audience · objective */}
+      <div style={{fontSize:12,color:C.sub,display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
+        {parseName(c.name).date&&<span style={{fontWeight:600,color:C.ink}}>{parseName(c.name).date}</span>}
+        {parseName(c.name).hook&&<span>{parseName(c.name).hook.replace(/_/g," ")}</span>}
+        {(c.audience_label||c.segment)&&<span>· {c.audience_label||c.segment}</span>}
+        {c.objective&&<span>· {c.objective}</span>}
+      </div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:4}}>
+        {c.stage!=="done"&&<TATBadge startedAt={c.brief_started_at||c.created_at}dueAt={c.stage==="brief"?c.tat_brief_due:c.stage==="content"?c.tat_content_due:c.tat_design_due}done={false}/>}
+        {c.copy_approver&&<ApproverChip name={`Copy: ${c.copy_approver}`}at={c.copy_approved_at}color={C.purple}/>}
+        {c.design_approver&&<ApproverChip name={`Design: ${c.design_approver}`}at={c.design_approved_at}color={C.teal}/>}
+      </div>
+    </div>
+    <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
+      <StageBadge stage={c.stage}/>
+      {c.stage==="brief"&&c.data?.brief&&<button onClick={e=>{e.stopPropagation();onOpen(c.id,"brief");}}style={{border:`1px solid ${C.line}`,borderRadius:7,padding:"4px 9px",cursor:"pointer",background:"#fff",color:C.sub,fontSize:11.5,fontWeight:600,display:"flex",alignItems:"center",gap:4}}><PenLine size={11}/>Edit brief</button>}
+      <ChevronRight size={18}color={C.sub}style={{cursor:"pointer"}}onClick={()=>onOpen(c.id)}/>
+    </div>
+  </div>;
+  return<div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:18}}>
+      <div><Eyebrow>Dashboard</Eyebrow><h1 style={{margin:"4px 0 0",fontSize:26,fontWeight:800}}>Every asset, one view</h1></div>
+      <div style={{display:"flex",gap:8,alignItems:"center"}}>
+        <div style={{display:"flex",border:`1px solid ${C.line}`,borderRadius:8,overflow:"hidden"}}>
+          <button onClick={()=>setView("list")}style={{padding:"6px 14px",border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:view==="list"?C.navy:"#fff",color:view==="list"?"#fff":C.sub,display:"flex",alignItems:"center",gap:5}}><LayoutDashboard size={13}/>List</button>
+          <button onClick={()=>setView("calendar")}style={{padding:"6px 14px",border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:view==="calendar"?C.navy:"#fff",color:view==="calendar"?"#fff":C.sub,display:"flex",alignItems:"center",gap:5}}><CalendarIcon size={13}/>Calendar</button>
+        </div>
+        {(me.role==="admin"||me.role==="business")&&<Btn onClick={onNew}><Plus size={16}/>New asset</Btn>}
+      </div>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:18}}>
+      {stat.map(s=><Card key={s.k}style={{padding:16}}><div style={{fontSize:30,fontWeight:800,color:s.color}}>{counts[s.k]||0}</div><div style={{fontSize:13,color:C.sub,fontWeight:600}}>{s.label}</div></Card>)}
+    </div>
+    {view==="calendar"
+      ?<CalendarView campaigns={campaigns}onOpen={onOpen}/>
+      :campaigns.length===0?<Card><Empty icon={<LayoutDashboard size={26}color={C.sub}/>}title="No assets yet"sub="Start one and the engine walks it through Brief → Copy → Design."/></Card>
+    :<div>
+      {pending.length>0&&<div style={{marginBottom:16}}>
+        <div style={{fontSize:12,fontWeight:700,color:C.coral,textTransform:"uppercase",letterSpacing:.5,marginBottom:8,display:"flex",alignItems:"center",gap:6}}><ClockIcon size={12}/>Pending · {pending.length}</div>
+        <Card style={{padding:0,overflow:"hidden"}}>{pending.map((c,i)=><CRow key={c.id}c={c}i={i}/>)}</Card>
+      </div>}
+      {done.length>0&&<div>
+        <div style={{fontSize:12,fontWeight:700,color:C.green,textTransform:"uppercase",letterSpacing:.5,marginBottom:8,display:"flex",alignItems:"center",gap:6}}><CheckCircle2 size={12}/>Completed · {done.length}</div>
+        <Card style={{padding:0,overflow:"hidden",opacity:.88}}>{done.map((c,i)=><CRow key={c.id}c={c}i={i}/>)}</Card>
+      </div>}
+    </div>}
+    <div style={{marginTop:16,display:"flex",gap:8,alignItems:"center",color:C.sub,fontSize:12.5}}><Bot size={14}/>Pending first · TAT clock starts at brief · Done assets stay below.</div>
+  </div>;
+}
+
+/* ===== CHAT-STYLE BRIEF INTAKE ========================================== */
+
+function Bubble({from,children}){
+  const isBot=from==="bot";
+  return<div className="msg-anim"style={{display:"flex",justifyContent:isBot?"flex-start":"flex-end",marginBottom:10,alignItems:"flex-end",gap:8}}>
+    {isBot&&<div style={{width:30,height:30,borderRadius:999,background:C.coral,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Bot size={15}/></div>}
+    <div style={{maxWidth:"76%",background:isBot?"#fff":C.navy,color:isBot?C.ink:"#fff",borderRadius:isBot?"2px 16px 16px 16px":"16px 2px 16px 16px",padding:"11px 15px",fontSize:14,lineHeight:1.6,boxShadow:isBot?"0 1px 3px rgba(0,0,0,.08)":"none",border:isBot?`1px solid ${C.line}`:"none"}}>
+      {children}
+    </div>
+    {!isBot&&<div style={{width:30,height:30,borderRadius:999,background:C.teal,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:12,fontWeight:700}}>U</div>}
+  </div>;
+}
+
+function TypingBubble(){
+  return<div className="msg-anim"style={{display:"flex",alignItems:"flex-end",gap:8,marginBottom:10}}>
+    <div style={{width:30,height:30,borderRadius:999,background:C.coral,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Bot size={15}/></div>
+    <div style={{background:"#fff",border:`1px solid ${C.line}`,borderRadius:"2px 16px 16px 16px",padding:"14px 18px",boxShadow:"0 1px 3px rgba(0,0,0,.08)"}}>
+      <div className="typing"style={{color:C.sub,display:"flex",alignItems:"center",gap:3}}><span/><span/><span/></div>
+    </div>
+  </div>;
+}
+
+function BriefChat({campaignId,patch,onBriefReady,me,recentFeedback}){
+  const[messages,setMessages]=useState([]);
+  const[stepIdx,setStepIdx]=useState(-1); // -1 = intro not done yet
+  const[answers,setAnswers]=useState({});
+  const[typing,setTyping]=useState(false);
+  const[freeInput,setFreeInput]=useState("");
+  const[done,setDone]=useState(false);
+  const[generating,setGenerating]=useState(false);
+  const[err,setErr]=useState("");
+  const[hoveredChip,setHoveredChip]=useState(null);
+  const scrollRef=useRef(null);
+  const inputRef=useRef(null);
+
+  useEffect(()=>{
+    if(scrollRef.current)scrollRef.current.scrollTop=scrollRef.current.scrollHeight;
+  },[messages,typing]);
+
+  // Queue helper — prevents state batching issues with sequential bot messages
+  const addBotMsg=(content)=>{
+    setMessages(m=>[...m,{id:uid(),from:"bot",content}]);
+  };
+  const addUserMsg=(text)=>{
+    setMessages(m=>[...m,{id:uid(),from:"user",content:<span>{text}</span>}]);
+  };
+
+  const showTypingThen=(content,delay)=>new Promise(res=>{
+    setTyping(true);
+    setTimeout(()=>{
+      setTyping(false);
+      addBotMsg(content);
+      setTimeout(res,80);
+    },delay||380);
+  });
+
+  // Boot: show intro then Q1
+  useEffect(()=>{
+    showTypingThen(
+      <div>
+        <div style={{fontWeight:700,marginBottom:4}}>Hey! Let's build your brief 🐾</div>
+        <div style={{fontSize:13,color:"#6B7280",lineHeight:1.5}}>I'll walk you through <b>8 quick questions</b>. Tap a quick-reply or type your own — both work. Under 2 minutes to a sharp brief.</div>
+      </div>, 700
+    ).then(()=>showNextStep(0));
+  },[]);
+
+  const showNextStep=(idx)=>{
+    if(idx>=BRIEF_STEPS.length){
+      // Show summary
+      setDone(true);
+      return;
+    }
+    const s=BRIEF_STEPS[idx];
+    setStepIdx(idx);
+    const prog=`${idx+1}/${BRIEF_STEPS.length}`;
+    showTypingThen(
+      <div>
+        <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:7}}>
+          <span style={{background:C.coralSoft,color:C.coral,fontSize:10,fontWeight:800,padding:"2px 8px",borderRadius:999,letterSpacing:.3}}>{prog}</span>
+          <span style={{fontWeight:700,fontSize:14.5}}>{s.question}</span>
+        </div>
+        {s.hint&&<div style={{fontSize:12.5,color:"#6B7280",lineHeight:1.45,borderLeft:`3px solid ${C.coralSoft}`,paddingLeft:8}}>{s.hint}</div>}
+        {s.suggest&&<div style={{marginTop:7,fontSize:12.5,display:"flex",alignItems:"center",gap:5}}><span style={{color:C.teal,fontSize:11}}>💡</span><span style={{color:C.teal,fontWeight:600}}>Suggested:</span><span style={{color:C.ink}}>{s.suggest}</span></div>}
+      </div>, 350
+    ).then(()=>{ if(inputRef.current)inputRef.current.focus(); });
+  };
+
+  const submitAnswer=(val)=>{
+    if(!val||!val.trim())return;
+    const s=BRIEF_STEPS[stepIdx];
+    addUserMsg(val.trim());
+    setFreeInput("");
+    const newAns={...answers,[s.key]:val.trim()};
+    setAnswers(newAns);
+    const next=stepIdx+1;
+    if(next>=BRIEF_STEPS.length){
+      // Show summary bot message then done
+      showTypingThen(
+        <div>
+          <div style={{fontWeight:700,marginBottom:8}}>Got everything I need ✓</div>
+          <div style={{display:"grid",gridTemplateColumns:"auto 1fr",gap:"5px 14px",fontSize:13,lineHeight:1.5}}>
+            {BRIEF_STEPS.filter(s=>newAns[s.key]).map(s=><React.Fragment key={s.key}>
+              <span style={{color:"#9CA3AF",fontWeight:600,whiteSpace:"nowrap"}}>{s.question.replace("?","")}</span>
+              <span style={{fontWeight:600,color:C.ink}}>{newAns[s.key]||<span style={{color:"#9CA3AF",fontStyle:"italic"}}>skipped</span>}</span>
+            </React.Fragment>)}
+          </div>
+          <div style={{marginTop:10,fontSize:12.5,color:"#6B7280"}}>Tap <b>Generate brief</b> or tap any field above to edit it.</div>
+        </div>, 400
+      ).then(()=>setDone(true));
+    } else {
+      showNextStep(next);
+    }
+  };
+
+  const skip=()=>{
+    const s=BRIEF_STEPS[stepIdx];
+    if(!s||!s.optional)return;
+    addUserMsg("(skip)");
+    const newAns={...answers,[s.key]:""};
+    setAnswers(newAns);
+    const next=stepIdx+1;
+    if(next>=BRIEF_STEPS.length){
+      setDone(true);
+    } else {
+      showNextStep(next);
+    }
+  };
+
+  const editAnswer=(key)=>{
+    const idx=BRIEF_STEPS.findIndex(s=>s.key===key);
+    setDone(false);
+    showTypingThen(
+      <div><span style={{color:"#9CA3AF"}}>Sure — let's update:</span><br/><b>{BRIEF_STEPS[idx].question}</b></div>,200
+    ).then(()=>setStepIdx(idx));
+  };
+
+  const startOver=()=>{
+    setDone(false);setAnswers({});setFreeInput("");setErr("");setGenerating(false);
+    setMessages([]);
+    setTimeout(()=>{
+      showTypingThen(<div><div style={{fontWeight:700,marginBottom:4}}>Starting fresh 🔄</div><div style={{fontSize:13,color:"#6B7280"}}>8 questions, same drill. Go.</div></div>,300).then(()=>showNextStep(0));
+    },100);
+  };
+
+  const generateBrief=async()=>{
+    setGenerating(true);setErr("");
+    addBotMsg(<div style={{display:"flex",alignItems:"center",gap:9,color:C.coral,fontWeight:600}}><Loader2 size={15}style={{animation:"spin 1s linear infinite"}}/>Writing your brief…</div>);
+    try{
+      const fb=recentFeedback("brief");
+      const sys=`You write tight WhatsApp CRM creative briefs for HUFT.\n${BRAND_CONTEXT}\n${fb?"Recent team feedback on Brief generations (incorporate):\n"+fb:""}\nReturn ONLY JSON:\n{"campaignName":"MonYY_Product_Hook_AudienceCode e.g. Jun26_Meowsi_Winback_LapsedCat","strategicInsight":"1-2 sharp lines: the consumer truth/trigger","idea":"single-minded message in one line","proofPoints":["3 short proof points"],"pillar":"Trust|Importance|Edutainment|Brand Values","copyDirection":"1-2 lines specific copy direction for WhatsApp CRM","whatsappNote":"one line channel/format direction"}`;
+      const usr=`CRM type: ${answers.crmType||"D2C"}\nChannel: ${answers.channel||"WhatsApp"}\nProduct/Brand: ${answers.product||""}\nPillar: ${answers.pillar||"Importance"}\nAudience/Trigger: ${answers.audience||""}\nObjective: ${answers.objective||""}\nOffer: ${answers.offer||"none"}\nHook/Angle: ${answers.hook||"derive"}\nGo-live date: ${answers.go_live_date||"not set"}`;
+      const j=await callClaude(sys,usr,true);
+      // Calculate TAT deadlines from now
+      const now=Date.now();
+      const briefDue=new Date(now+TAT_HOURS.brief*36e5).toISOString();
+      const contentDue=new Date(now+(TAT_HOURS.brief+TAT_HOURS.content)*36e5).toISOString();
+      const designDue=new Date(now+(TAT_HOURS.brief+TAT_HOURS.content+TAT_HOURS.design)*36e5).toISOString();
+      const glDate=answers.go_live_date||null;
+      const isRetail=answers.crmType==="Retail";
+      const channel=isRetail?"WhatsApp":(answers.channel||"WhatsApp");
+      patch(campaignId,{
+        name:j.campaignName,channel,product:answers.product||"", // naming convention stored as-is, displayName() makes it readable
+        audience_label:answers.audience||"",segment:answers.audience||"",objective:answers.objective||"",
+        offer:answers.offer||"",crm_type:answers.crmType||"D2C",
+        go_live_date:glDate,
+        campaign_week:glDate?weekOfMonth(glDate):null,
+        campaign_month:glDate?monthLabel(glDate):null,
+        tat_brief_due:briefDue,tat_content_due:contentDue,tat_design_due:designDue,
+        brief_started_at:new Date(now).toISOString(),
+        data:{brief:{...j,source:"chat"}},
+        stage:"brief",
+      });
+      onBriefReady();
+    }catch(e){setErr("Couldn't generate — check the connection and try again.");setGenerating(false);}
+  };
+
+  const curStep=stepIdx>=0?BRIEF_STEPS[stepIdx]:null;
+  const isWaiting=typing||generating;
+
+  return<div style={{display:"flex",flexDirection:"column",height:"calc(100vh - 180px)",minHeight:500,maxHeight:700}}>
+
+    {/* Progress bar */}
+    {stepIdx>=0&&<div style={{height:3,background:C.line,borderRadius:3,marginBottom:0,flexShrink:0}}>
+      <div style={{height:"100%",background:`linear-gradient(90deg,${C.coral},${C.orange||"#FF8C42"})`,borderRadius:3,width:`${Math.min(100,((stepIdx)/(BRIEF_STEPS.length))*100)}%`,transition:"width .4s ease"}}/>
+    </div>}
+
+    {/* Chat messages */}
+    <div ref={scrollRef}style={{flex:1,overflowY:"auto",padding:"16px 4px 8px",display:"flex",flexDirection:"column"}}>
+      {messages.map(m=><Bubble key={m.id}from={m.from}>{m.content}</Bubble>)}
+      {typing&&<TypingBubble/>}
+    </div>
+
+    {/* ── BOTTOM INPUT ZONE ──────────────────────────────── */}
+    {!done&&!generating&&curStep&&!typing&&(
+      <div style={{borderTop:`1px solid ${C.line}`,paddingTop:12,flexShrink:0}}>
+
+        {/* Date picker — for calendar steps */}
+        {curStep.dateInput&&(
+          <div style={{marginBottom:10}}>
+            <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,background:"#fff",border:`1.5px solid ${C.line}`,borderRadius:12,padding:"8px 14px"}}>
+                <CalendarIcon size={15}color={C.coral}/>
+                <input type="date" value={freeInput}onChange={e=>setFreeInput(e.target.value)}
+                  min={new Date().toISOString().slice(0,10)}
+                  style={{border:"none",outline:"none",fontSize:14,color:C.ink,background:"transparent"}}/>
+              </div>
+              <Btn small onClick={()=>{if(freeInput)submitAnswer(freeInput);}} disabled={!freeInput}>
+                <Check size={13}/>Confirm date
+              </Btn>
+              {curStep.optional&&<button onClick={skip}style={{padding:"5px 13px",borderRadius:20,fontSize:12.5,fontWeight:600,cursor:"pointer",border:`1.5px dashed ${C.line}`,background:"transparent",color:C.sub}}>Skip →</button>}
+            </div>
+            {freeInput&&<div style={{marginTop:6,fontSize:12.5,color:C.teal,display:"flex",alignItems:"center",gap:5}}><CalendarIcon size={11}/>Live date: <b>{fmtDate(freeInput)}</b> · {weekOfMonth(freeInput)} · {monthLabel(freeInput)}</div>}
+          </div>
+        )}
+
+        {/* Quick-reply chips — shown if options exist */}
+        {!curStep.dateInput&&curStep.options&&(
+          <div style={{marginBottom:10}}>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,maxHeight:90,overflowY:"auto",paddingBottom:2}}>
+              {curStep.options.map(o=>(
+                <button key={o}
+                  onClick={()=>submitAnswer(o)}
+                  onMouseEnter={()=>setHoveredChip(o)}
+                  onMouseLeave={()=>setHoveredChip(null)}
+                  style={{
+                    padding:"5px 13px",borderRadius:20,fontSize:12.5,fontWeight:600,cursor:"pointer",
+                    border:`1.5px solid ${hoveredChip===o?C.coral:C.line}`,
+                    background:hoveredChip===o?C.coralSoft:"#fff",
+                    color:hoveredChip===o?C.coral:C.ink,
+                    transition:"all .1s",flexShrink:0,
+                  }}>
+                  {o}
+                </button>
+              ))}
+              {curStep.optional&&(
+                <button onClick={skip}style={{padding:"5px 13px",borderRadius:20,fontSize:12.5,fontWeight:600,cursor:"pointer",border:`1.5px dashed ${C.line}`,background:"transparent",color:C.sub,flexShrink:0}}>
+                  Skip →
+                </button>
+              )}
+            </div>
+            {curStep.options.length>6&&<div style={{fontSize:11,color:C.sub,marginTop:3}}>↕ scroll to see all options</div>}
+          </div>
+        )}
+
+        {/* Text input — shown for non-date steps */}
+        {!curStep.dateInput&&(
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <input ref={inputRef}
+              value={freeInput}
+              onChange={e=>setFreeInput(e.target.value)}
+              onKeyDown={e=>{if(e.key==="Enter"&&freeInput.trim()){submitAnswer(freeInput);}}}
+              placeholder={curStep.options?"Or type a custom answer…":(curStep.placeholder||"Type your answer…")}
+              style={{flex:1,border:`1.5px solid ${C.line}`,borderRadius:24,padding:"10px 16px",fontSize:14,boxSizing:"border-box",outline:"none",background:"#fff",transition:"border-color .15s"}}
+              onFocus={e=>e.target.style.borderColor=C.coral}
+              onBlur={e=>e.target.style.borderColor=C.line}
+            />
+            <button
+              onClick={()=>{if(freeInput.trim())submitAnswer(freeInput);}}
+              disabled={!freeInput.trim()}
+              style={{
+                width:40,height:40,borderRadius:999,border:"none",cursor:freeInput.trim()?"pointer":"default",
+                background:freeInput.trim()?C.coral:"#E5E7EB",
+                display:"flex",alignItems:"center",justifyContent:"center",
+                flexShrink:0,transition:"background .15s",
+              }}>
+              <Send size={16}color="#fff"/>
+            </button>
+          </div>
+        )}
+
+        {curStep.suggest&&!curStep.options&&!curStep.dateInput&&(
+          <button
+            onClick={()=>submitAnswer(curStep.suggest)}
+            style={{marginTop:7,background:"none",border:"none",cursor:"pointer",color:C.teal,fontSize:12.5,display:"flex",alignItems:"center",gap:5,padding:0}}>
+            <Lightbulb size={12}/>Use suggested: <b>{curStep.suggest}</b>
+          </button>
+        )}
+      </div>
+    )}
+
+    {/* Done / summary footer */}
+    {done&&!generating&&(
+      <div style={{borderTop:`1px solid ${C.line}`,paddingTop:12,flexShrink:0}}>
+        {err&&<div style={{color:C.coral,fontSize:13,marginBottom:8,display:"flex",alignItems:"center",gap:6}}><AlertCircle size={14}/>{err}</div>}
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginBottom:8}}>
+          <Btn onClick={generateBrief}><Sparkles size={15}/>Generate brief</Btn>
+          <Btn variant="ghost"onClick={startOver}><RotateCcw size={13}/>Start over</Btn>
+        </div>
+        {/* Edit pills */}
+        <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+          {BRIEF_STEPS.filter(s=>answers[s.key]!==undefined).map(s=>(
+            <button key={s.key}onClick={()=>editAnswer(s.key)}
+              style={{background:C.paper,border:`1px solid ${C.line}`,borderRadius:6,padding:"3px 9px",fontSize:11.5,color:C.sub,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
+              <PenLine size={10}/>{s.key}: <b style={{color:C.ink,maxWidth:90,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"inline-block"}}>{answers[s.key]||"—"}</b>
+            </button>
+          ))}
+        </div>
+      </div>
+    )}
+
+    {generating&&<div style={{borderTop:`1px solid ${C.line}`,paddingTop:12}}><Spin label="Writing your brief…"/></div>}
+  </div>;
+}
+
+// AlertCircle icon (needed in BriefChat)
+const AlertCircle=p=><Svg{...p}><circle cx="12"cy="12"r="10"/><path d="M12 8v4M12 16h.01"/></Svg>;
+
+/* ===== Brief Tab ======================================================== */
+function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,onOpen}){
+  const[view,setView]=useState("list");
+  const allBriefs=(campaigns||[]).filter(c=>c.stage==="brief");
+  const done=(campaigns||[]).filter(c=>c.stage!=="brief"&&c.data?.brief);
+  const[openId,setOpenId]=useState(active?.id||null);
+  const[mode,setMode]=useState({}); // {[id]: 'view'|'chat'|'self'|'edit'}
+  const[genMap,setGenMap]=useState({}); // track generating per id
+
+  React.useEffect(()=>{
+    if(active?.id)setOpenId(active.id);
+  },[active?.id]);
+
+  const getMode=(c)=>mode[c.id]||(c.data?.brief?"view":null);
+  const setM=(id,m)=>setMode(x=>({...x,[id]:m}));
+
+  const AssetRow=({c})=>{
+    const isOpen=openId===c.id;
+    const brief=c.data?.brief;
+    const m=getMode(c);
+    const onBriefReady=()=>{
+      setM(c.id,"view");
+      patch(c.id,{stage:"content"});
+    };
+    return<div style={{borderBottom:`1px solid ${C.line}`}}>
+      {/* Row header — always visible */}
+      <div onClick={()=>setOpenId(isOpen?null:c.id)}
+        style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer",background:isOpen?"#FFFBF7":"#fff"}}>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3}}>
+            <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{c.product||parseName(c.name).product||"—"}</span>
+            <span style={{fontSize:11,fontWeight:700,color:C.coral}}>{normCrmType(c.crm_type)}</span>
+            <span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel||"WhatsApp"}</span>
+          </div>
+          <div style={{fontSize:12,color:C.sub,display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+            {parseName(c.name).date&&<span style={{fontWeight:600,color:C.ink}}>{parseName(c.name).date}</span>}
+            {parseName(c.name).hook&&<span>{parseName(c.name).hook.replace(/_/g," ")}</span>}
+            {c.audience_label&&<span>· {c.audience_label}</span>}
+            {c.created_at&&<span style={{marginLeft:"auto",fontSize:11,color:C.sub,background:"#F3F4F6",padding:"2px 7px",borderRadius:5,flexShrink:0}}>{fmtDate(c.created_at)}</span>}
+          </div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+          {brief&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#0F766E",background:"#CCFBF1",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>Brief done</span>}
+          {!brief&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#B91C1C",background:"#FEF2F2",padding:"3px 9px",borderRadius:999}}>No brief yet</span>}
+          {isOpen?<ChevronDown size={16}color={C.sub}/>:<ChevronRight size={16}color={C.sub}/>}
+        </div>
+      </div>
+
+      {/* Expanded content */}
+      {isOpen&&<div style={{padding:"0 18px 18px",background:"#FFFBF7"}}>
+        {/* Mode picker */}
+        {!brief&&!m&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+          <div onClick={()=>setM(c.id,"chat")}style={{border:`2px solid ${C.coral}`,borderRadius:12,padding:14,cursor:"pointer",background:C.coralSoft}}>
+            <div style={{fontWeight:700,fontSize:14,marginBottom:3}}><Bot size={14}color={C.coral}/> Chat with engine</div>
+            <div style={{fontSize:12.5,color:"#7D3D24"}}>8 guided questions → AI writes the brief</div>
+          </div>
+          <div onClick={()=>setM(c.id,"self")}style={{border:`1px solid ${C.line}`,borderRadius:12,padding:14,cursor:"pointer",background:"#fff"}}>
+            <div style={{fontWeight:700,fontSize:14,marginBottom:3}}><PenLine size={14}/> Write it myself</div>
+            <div style={{fontSize:12.5,color:C.sub}}>Fill in the brief directly</div>
+          </div>
+        </div>}
+
+        {m==="chat"&&!brief&&<div style={{background:"#fff",borderRadius:12,border:`1px solid ${C.line}`,overflow:"hidden",marginBottom:14}}>
+          <div style={{background:C.navy,color:"#fff",padding:"10px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontWeight:700,fontSize:13}}><Bot size={14}color={C.coral}/> Brief Builder</span>
+            <button onClick={()=>setM(c.id,null)}style={{background:"transparent",border:"none",cursor:"pointer",color:"rgba(255,255,255,.6)",fontSize:12}}>← Back</button>
+          </div>
+          <div style={{padding:"0 16px 16px"}}>
+            <BriefChat campaignId={c.id}patch={patch}onBriefReady={onBriefReady}me={me}recentFeedback={recentFeedback}/>
+          </div>
+        </div>}
+
+        {m==="self"&&!brief&&<div style={{background:"#fff",borderRadius:12,padding:14,border:`1px solid ${C.line}`,marginBottom:14}}>
+          <SelfBriefForm active={c}patch={patch}onDone={()=>setM(c.id,"view")}onBack={()=>setM(c.id,null)}/>
+        </div>}
+
+        {m==="edit"&&brief&&<div style={{background:"#fff",borderRadius:12,padding:14,border:`1px solid ${C.line}`,marginBottom:14}}>
+          <div style={{fontWeight:700,fontSize:14,marginBottom:12,display:"flex",alignItems:"center",gap:7}}><PenLine size={14}color={C.coral}/>Edit brief</div>
+          <EditBriefForm brief={brief}active={c}patch={patch}onDone={()=>setM(c.id,"view")}/>
+        </div>}
+
+        {m==="view"&&brief&&<div style={{marginBottom:14}}>
+          {/* Idea */}
+          <div style={{background:"#fff",borderRadius:12,padding:"12px 14px",border:`1px solid ${C.line}`,borderLeft:`3px solid ${C.coral}`,marginBottom:8}}>
+            <div style={{fontSize:10.5,fontWeight:700,color:C.coral,textTransform:"uppercase",letterSpacing:.5,marginBottom:3}}>The idea</div>
+            <div style={{fontSize:14,fontWeight:700,lineHeight:1.5}}>{brief.idea}</div>
+          </div>
+          {/* Collapsible sections */}
+          <div style={{background:"#fff",borderRadius:12,border:`1px solid ${C.line}`,overflow:"hidden",marginBottom:8}}>
+            <BriefSection label="Strategic insight" content={brief.strategicInsight}/>
+            <BriefSection label="Copy direction" content={brief.copyDirection}/>
+            <BriefSection label="Channel note" content={brief.whatsappNote}/>
+            {brief.proofPoints&&brief.proofPoints.length>0&&
+              <BriefSection label="Proof points" content={brief.proofPoints.join(" · ")}/>}
+          </div>
+          {/* Actions */}
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+            <Btn onClick={()=>{patch(c.id,{stage:"content"});setTab("content");onOpen(c.id,"content");}}>Move to Copy <ArrowRight size={14}/></Btn>
+            <Btn variant="ghost"onClick={()=>setM(c.id,"edit")}><PenLine size={13}/>Edit brief</Btn>
+            <Btn variant="ghost"onClick={()=>exportBriefTxt(c)}><Download size={13}/>Export</Btn>
+            <div style={{marginLeft:"auto",display:"flex",gap:6}}>
+              <button onClick={()=>{if(window.confirm("Archive this asset? It will move to Done."))patch(c.id,{stage:"done"});}}
+                style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.sub,fontWeight:600}}>Archive</button>
+              <button onClick={()=>{if(window.confirm("Delete permanently? Cannot be undone."))api.del("/api/campaigns/"+c.id).then(()=>window.location.reload()).catch(()=>alert("Delete failed"));}}
+                style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:"1px solid #FECACA",background:"#FFF5F5",cursor:"pointer",color:"#B91C1C",fontWeight:600}}>Delete</button>
+            </div>
+          </div>
+        </div>}
+      </div>}
+    </div>;
+  };
+
+  return<div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+      <div><Eyebrow>Brief</Eyebrow><h1 style={{margin:"4px 0 0",fontSize:24,fontWeight:800}}>Briefs</h1></div>
+      <div style={{display:"flex",border:`1px solid ${C.line}`,borderRadius:8,overflow:"hidden"}}>
+        <button onClick={()=>setView("list")}style={{padding:"6px 14px",border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:view==="list"?C.navy:"#fff",color:view==="list"?"#fff":C.sub,display:"flex",alignItems:"center",gap:5}}><LayoutDashboard size={13}/>List</button>
+        <button onClick={()=>setView("calendar")}style={{padding:"6px 14px",border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:view==="calendar"?C.navy:"#fff",color:view==="calendar"?"#fff":C.sub,display:"flex",alignItems:"center",gap:5}}><CalendarIcon size={13}/>Calendar</button>
+      </div>
+    </div>
+    {view==="calendar"
+      ?<CalendarView campaigns={allBriefs}onOpen={onOpen}filterStage="brief"/>
+      :allBriefs.length===0
+      ?<Card><Empty icon={<FileText size={26}color={C.sub}/>}title="No briefs pending"sub="Create a new asset from the Dashboard."/></Card>
+      :<div>
+        <div style={{fontSize:11,fontWeight:700,color:C.coral,textTransform:"uppercase",letterSpacing:.5,marginBottom:6}}>Pending · {allBriefs.length}</div>
+        <Card style={{padding:0,overflow:"hidden",marginBottom:16}}>
+          {allBriefs.map(c=><AssetRow key={c.id}c={c}/>)}
+        </Card>
+      </div>}
+  </div>;
+}
+
+
+function EditBriefForm({brief,active,patch,onDone}){
+  const[b,setB]=useState({
+    strategicInsight:brief.strategicInsight||"",
+    idea:brief.idea||"",
+    copyDirection:brief.copyDirection||"",
+    whatsappNote:brief.whatsappNote||"",
+    pillar:brief.pillar||"Importance",
+  });
+  const save=()=>{
+    patch(active.id,{data:{...(active.data||{}),brief:{...brief,...b}}});
+    onDone();
+  };
+  return<div>
+    <Field label="Strategic insight"textarea value={b.strategicInsight}onChange={v=>setB(x=>({...x,strategicInsight:v}))}rows={2}/>
+    <Field label="The idea"textarea value={b.idea}onChange={v=>setB(x=>({...x,idea:v}))}rows={2}/>
+    <Field label="Copy direction"textarea value={b.copyDirection}onChange={v=>setB(x=>({...x,copyDirection:v}))}rows={2}/>
+    <Field label="WhatsApp note"value={b.whatsappNote}onChange={v=>setB(x=>({...x,whatsappNote:v}))}/>
+    <label style={{display:"block",marginBottom:14}}>
+      <div style={{fontSize:12.5,fontWeight:600,color:C.sub,marginBottom:5}}>Pillar</div>
+      <select value={b.pillar}onChange={e=>setB(x=>({...x,pillar:e.target.value}))}style={{border:`1px solid ${C.line}`,borderRadius:10,padding:"9px 11px",fontSize:14,width:"100%"}}>
+        {["Importance","Trust","Edutainment","Brand Values"].map(p=><option key={p}value={p}>{p}</option>)}
+      </select>
+    </label>
+    <div style={{display:"flex",gap:8}}>
+      <Btn onClick={save}><Check size={14}/>Save changes</Btn>
+      <Btn variant="ghost"onClick={onDone}>Cancel</Btn>
+    </div>
+  </div>;
+}
+
+function SelfBriefForm({active,patch,onDone,onBack}){
+  const[draft,setDraft]=useState({name:active.name||"",product:active.product||"",audience_label:active.audience_label||active.segment||"",objective:active.objective||""});
+  const[self,setSelf]=useState({insight:"",idea:""});
+  const sync=(k,v)=>setDraft(d=>({...d,[k]:v}));
+  const save=()=>{
+    patch(active.id,{
+      ...draft,
+      data:{...(active.data||{}),brief:{strategicInsight:self.insight,idea:self.idea,proofPoints:[],pillar:"",whatsappNote:"Written by business team",source:"self"}}
+    });
+    onDone();
+  };
+  return<div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+      <Field label="Asset name"value={draft.name}onChange={v=>sync("name",v)}/>
+      <Field label="Product / Brand"value={draft.product}onChange={v=>sync("product",v)}/>
+      <Field label="Audience / Trigger"value={draft.audience_label}onChange={v=>sync("audience_label",v)}/>
+      <Field label="Objective"value={draft.objective}onChange={v=>sync("objective",v)}/>
+    </div>
+    <Field label="Strategic insight"textarea value={self.insight}onChange={v=>setSelf(s=>({...s,insight:v}))}placeholder="The consumer truth/trigger this should hook into."/>
+    <Field label="The idea (single-minded message)"textarea value={self.idea}onChange={v=>setSelf(s=>({...s,idea:v}))}/>
+    <div style={{display:"flex",gap:10}}>
+      <Btn onClick={save}disabled={!draft.name||!self.idea}><Check size={16}/>Save brief</Btn>
+      <Btn variant="ghost"onClick={onBack}>Back</Btn>
+    </div>
+  </div>;
+}
+
+/* ===== Content Tab ====================================================== */
+/* ===== Collapsible brief section ======================================= */
+function BriefSection({label,content}){
+  const[open,setOpen]=useState(true);
+  if(!content)return null;
+  return<div style={{borderBottom:`1px solid ${C.line}`}}>
+    <button onClick={()=>setOpen(v=>!v)}
+      style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:"none",border:"none",cursor:"pointer",textAlign:"left"}}>
+      <span style={{fontSize:10.5,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5}}>{label}</span>
+      {open?<ChevronDown size={13}color={C.sub}/>:<ChevronRight size={13}color={C.sub}/>}
+    </button>
+    {open&&<div style={{padding:"0 14px 12px",fontSize:13.5,lineHeight:1.55,color:C.ink}}>{content}</div>}
+  </div>;
+}
+
+/* ===== Brief Summary Card (used in Copy + Design tabs) ================== */
+function BriefSummaryCard({active,activeBrief,copyRules,busy,refineFor,gen,opts}){
+  const[expanded,setExpanded]=useState(true);
+  if(!activeBrief)return null;
+  const p=parseName(active.name);
+  return<div style={{marginBottom:16}}>
+    {/* Row 1: Identity bar */}
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,marginBottom:10,padding:"12px 16px",background:C.navy,borderRadius:12}}>
+      <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
+        <span style={{fontWeight:800,fontSize:16,color:"#fff"}}>{active.product||p.product||"—"}</span>
+        <span style={{color:"rgba(255,255,255,.4)",fontSize:14}}>·</span>
+        <span style={{fontWeight:700,fontSize:13,color:C.coral}}>{normCrmType(active.crm_type)}</span>
+        <span style={{color:"rgba(255,255,255,.4)",fontSize:14}}>·</span>
+        <span style={{fontWeight:700,fontSize:13,color:"#5EEAD4"}}>{active.channel||"WhatsApp"}</span>
+        {activeBrief.pillar&&<span style={{background:"rgba(255,255,255,.1)",color:"rgba(255,255,255,.65)",fontSize:11,padding:"2px 8px",borderRadius:5,marginLeft:4}}>{activeBrief.pillar}</span>}
+        {p.date&&<span style={{color:"rgba(255,255,255,.4)",fontSize:11,marginLeft:4}}>{p.date}</span>}
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+        <span style={{fontSize:11.5,color:"rgba(255,255,255,.6)",display:"flex",alignItems:"center",gap:4}}><BookMarked size={12}/>{(copyRules||[]).filter(r=>r.active).length} rules</span>
+        {busy&&!refineFor?<Spin label="Generating…"/>:<Btn onClick={e=>{e.stopPropagation();gen();}}style={{background:C.coral}}>{opts?<><RefreshCw size={14}/>Regenerate</>:<><Sparkles size={14}/>Generate 5 options</>}</Btn>}
+      </div>
+    </div>
+    {/* Row 2: The idea */}
+    <Card style={{padding:"12px 16px",marginBottom:6,borderLeft:`3px solid ${C.coral}`}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:10.5,fontWeight:700,color:C.coral,textTransform:"uppercase",letterSpacing:.5,marginBottom:3}}>The idea</div>
+          <div style={{fontSize:14.5,fontWeight:700,color:C.ink,lineHeight:1.5}}>{activeBrief.idea}</div>
+          <div style={{fontSize:12,color:C.sub,marginTop:5,display:"flex",gap:8,flexWrap:"wrap"}}>
+            {active.objective&&<span>{active.objective}</span>}
+            {active.audience_label&&<span>· {active.audience_label}</span>}
+            {active.go_live_date&&<span>· Live {fmtDate(active.go_live_date)}</span>}
+          </div>
+        </div>
+        <button onClick={()=>setExpanded(v=>!v)}style={{background:"none",border:`1px solid ${C.line}`,cursor:"pointer",color:C.sub,fontSize:12,display:"flex",alignItems:"center",gap:4,padding:"5px 10px",borderRadius:7,flexShrink:0,marginLeft:12}}>
+          {expanded?<><ChevronDown size={12}/>Less</>:<><Eye size={12}/>Full brief</>}
+        </button>
+      </div>
+    </Card>
+    {/* Row 3: Expanded brief details */}
+    {expanded&&<Card style={{padding:0,marginBottom:6,overflow:"hidden"}}>
+      <BriefSection label="Strategic insight" content={activeBrief.strategicInsight}/>
+      <BriefSection label="Copy direction" content={activeBrief.copyDirection}/>
+      <BriefSection label="Channel note" content={activeBrief.whatsappNote}/>
+      {activeBrief.proofPoints&&activeBrief.proofPoints.length>0&&
+        <BriefSection label="Proof points" content={activeBrief.proofPoints.join(" · ")}/>}
+    </Card>}
+  </div>;
+}
+
+
+function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,saveFeedback,campaigns,onOpen}){
+  const allCopy=(campaigns||[]).filter(c=>c.stage==="content");
+  const[openId,setOpenId]=useState(active?.id||null);
+  const[busyMap,setBusyMap]=useState({});
+  const[errMap,setErrMap]=useState({});
+  React.useEffect(()=>{if(active?.id)setOpenId(active.id);},[active?.id]);
+
+  const CopyRow=({c})=>{
+    const isOpen=openId===c.id;
+    const activeBrief=c.data?.brief;
+    const opts=c.data?.copyOptions;
+    const sel=c.data?.selectedCopyIdx;
+    const ruleStr=activeRuleText(copyRules);
+    const busy=busyMap[c.id]||false;
+    const setBusy=(v)=>setBusyMap(x=>({...x,[c.id]:v}));
+    const err=errMap[c.id]||"";
+    const setErr=(v)=>setErrMap(x=>({...x,[c.id]:v}));
+    const[refineFor,setRefineFor]=useState(null);
+    const[refineText,setRefineText]=useState("");
+    const[showAll,setShowAll]=useState(false);
+
+    // Show even without brief - just disable generation
+    const briefBlock="Brief\nProduct: "+c.product+"\nAudience: "+(c.audience_label||c.segment)+"\nObjective: "+c.objective+"\nOffer: "+(c.offer||"none")+"\nCRM: "+(c.crm_type||"D2C")+"\nInsight: "+activeBrief?.strategicInsight+"\nIdea: "+activeBrief?.idea+"\nPillar: "+(activeBrief?.pillar||"—")+"\nCopy direction: "+(activeBrief?.copyDirection||"—");
+
+    const gen=async()=>{
+      if(!activeBrief){setErr("No brief found — go back to Brief tab first.");return;}
+      setErr("");setBusy(true);
+      try{
+        const fb=recentFeedback("content");
+        const isPush=c.channel==="Push notification";
+        const channelRules=isPush
+          ?`PUSH NOTIFICATION RULES (NON-NEGOTIABLE):
+- Title: MAX 50 chars. Short, punchy.
+- Body: MAX 90 chars. One sentence. No bullets.
+- Max 1 emoji. 2-second read.
+- CTA: 2-3 words.`
+          :`WHATSAPP RULES:
+- Header: 2-3 short punchy lines.
+- Body: opener + 3-4 ✓ bullets + sign-off.
+- CTA: clear action phrase.`;
+        const sys="You write "+(c.channel||"WhatsApp")+" CRM copy for HUFT.\n"+BRAND_CONTEXT+"\n"+channelRules+"\nRULEBOOK:\n"+ruleStr+(fb?"\nTeam feedback:\n"+fb:"")+"\nReturn ONLY JSON array of 5 options, each: {direction,header,body,cta}. "+( isPush?"header=push title MAX 50 chars, body=MAX 90 chars one sentence, cta=2-3 words":"header=image overlay 2-3 short punchy lines, body=WhatsApp opener+bullets+sign-off, cta=action phrase");
+        const j=await callClaude(sys,briefBlock,true);
+        patch(c.id,{data:{...(c.data||{}),copyOptions:j,selectedCopyIdx:null},copy_approver:null,stage:"content"});
+        setShowAll(false);
+      }catch(e){console.error("Gen error:",e);setErr("Generation failed: "+(e.message||"unknown error — check Vercel logs"));}setBusy(false);
+    };
+
+    const refine=async(idx)=>{setBusy(true);setErr("");
+      try{
+        const fb=recentFeedback("content");
+        const isPush=c.channel==="Push notification";
+        const sys="You refine ONE "+(c.channel||"WhatsApp")+" CRM copy for HUFT.\n"+BRAND_CONTEXT+"\nRULEBOOK:\n"+ruleStr+(fb?"\nFeedback:\n"+fb:"")+(isPush?"\nPUSH: title MAX 50, body MAX 90 chars.":"")+"\nReturn ONLY JSON: {direction,header,body,cta}.";
+        const usr=briefBlock+"\n\nCurrent:\n"+JSON.stringify(opts[idx])+"\n\nSteer (one-time): "+refineText;
+        const j=await callClaude(sys,usr,true);
+        const wasSelected=sel===idx;
+        const newData={...(c.data||{}),copyOptions:opts.map((o,i)=>i===idx?j:o)};
+        if(wasSelected)newData.selectedCopyIdx=null;
+        patch(c.id,{data:newData,...(wasSelected?{copy_approver:null,stage:"content"}:{})});
+        setRefineFor(null);setRefineText("");
+      }catch(e){setErr("Refine failed.");}setBusy(false);
+    };
+
+    const select=(idx)=>{
+      patch(c.id,{data:{...(c.data||{}),selectedCopyIdx:idx},stage:"design",copy_approver:me.name});
+    };
+
+    return<div style={{borderBottom:`1px solid ${C.line}`}}>
+      {/* Row header */}
+      <div onClick={()=>setOpenId(isOpen?null:c.id)}
+        style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer",background:isOpen?"#FAF5FF":"#fff"}}>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3}}>
+            <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{c.product||"—"}</span>
+            <span style={{fontSize:11,fontWeight:700,color:C.coral}}>{normCrmType(c.crm_type)}</span>
+            <span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel||"WhatsApp"}</span>
+          </div>
+          <div style={{fontSize:12,color:C.sub,display:"flex",gap:6,alignItems:"center"}}><span>{parseName(c.name).date&&<b style={{color:C.ink,marginRight:4}}>{parseName(c.name).date}</b>}{parseName(c.name).hook.replace(/_/g," ")}</span>{c.created_at&&<span style={{marginLeft:"auto",fontSize:11,color:C.sub,background:"#F3F4F6",padding:"2px 7px",borderRadius:5,flexShrink:0}}>{fmtDate(c.created_at)}</span>}</div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+          {sel!=null&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#5B21B6",background:"#EDE9FE",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>Copy approved</span>}
+          {opts&&sel==null&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#92400E",background:"#FEF3C7",padding:"3px 9px",borderRadius:999}}>{opts.length} options — pick one</span>}
+          {!opts&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#B91C1C",background:"#FEF2F2",padding:"3px 9px",borderRadius:999}}>Needs copy</span>}
+          {isOpen?<ChevronDown size={16}color={C.sub}/>:<ChevronRight size={16}color={C.sub}/>}
+        </div>
+      </div>
+
+      {/* Expanded content */}
+      {isOpen&&<div style={{padding:"0 18px 18px",background:"#FAF5FF"}}>
+        {/* Brief summary */}
+        <BriefSummaryCard active={c}activeBrief={activeBrief}copyRules={copyRules}busy={busy}refineFor={refineFor}gen={gen}opts={opts}/>
+        {c.copy_approver&&<div style={{marginBottom:10,display:"flex",alignItems:"center",gap:8}}><ApproverChip name={`Copy approved · ${c.copy_approver}`}at={c.copy_approved_at}color={C.purple}/>{sel!=null&&<span style={{fontSize:12,color:C.sub}}>· {opts[sel]?.direction}</span>}</div>}
+        {err&&<div style={{color:C.coral,fontSize:13,marginBottom:8}}>{err}</div>}
+        {!opts&&!busy&&<div style={{background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:10,padding:"12px 16px",marginBottom:10,display:"flex",alignItems:"center",gap:10}}><MessageSquare size={18}color="#B91C1C"/><div><div style={{fontSize:13,fontWeight:700,color:"#B91C1C"}}>No copy generated yet</div><div style={{fontSize:12,color:"#7F1D1D",marginTop:2}}>Hit "Generate 5 options" in the brief panel above.</div></div></div>}
+        {opts&&<div>
+          {sel!=null&&<div style={{marginBottom:10}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#5B21B6",textTransform:"uppercase",letterSpacing:.5,marginBottom:6,display:"flex",alignItems:"center",gap:4}}><CheckCircle2 size={11}/>Approved copy</div>
+            <ContentCard o={opts[sel]}idx={sel}sel={true}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}channel={c.channel}/>
+          </div>}
+          {sel!=null&&<button onClick={()=>setShowAll(v=>!v)}style={{display:"flex",alignItems:"center",gap:5,background:"none",border:"none",cursor:"pointer",color:C.sub,fontSize:12.5,fontWeight:600,marginBottom:8}}>{showAll?<><ChevronDown size={13}/>Hide other options</>:<><Eye size={13}/>See other {opts.length-1} options</>}</button>}
+          {(sel==null||showAll)&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+            {opts.map((o,i)=>{if(sel!=null&&i===sel)return null;return<ContentCard key={i}o={o}idx={i}sel={false}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}channel={c.channel}/>;})}</div>}
+        </div>}
+        {sel!=null&&<div style={{marginTop:10}}>
+          <Btn variant="teal"onClick={()=>{patch(c.id,{stage:"design"});setTab("design");onOpen(c.id,"design");}}>Move to Design <ArrowRight size={14}/></Btn>
+        </div>}
+        <FeedbackBar stage="content"by={me.name}onSave={saveFeedback}/>
+      </div>}
+    </div>;
+  };
+
+  const[view,setView]=useState("list");
+  return<div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+      <div><Eyebrow>Copy</Eyebrow><h1 style={{margin:"4px 0 0",fontSize:24,fontWeight:800}}>Copy</h1></div>
+      <div style={{display:"flex",border:`1px solid ${C.line}`,borderRadius:8,overflow:"hidden"}}>
+        <button onClick={()=>setView("list")}style={{padding:"6px 14px",border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:view==="list"?C.navy:"#fff",color:view==="list"?"#fff":C.sub,display:"flex",alignItems:"center",gap:5}}><LayoutDashboard size={13}/>List</button>
+        <button onClick={()=>setView("calendar")}style={{padding:"6px 14px",border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:view==="calendar"?C.navy:"#fff",color:view==="calendar"?"#fff":C.sub,display:"flex",alignItems:"center",gap:5}}><CalendarIcon size={13}/>Calendar</button>
+      </div>
+    </div>
+    {view==="calendar"
+      ?<CalendarView campaigns={allCopy}onOpen={onOpen}filterStage="content"/>
+      :allCopy.length===0
+      ?<Card><Empty icon={<MessageSquare size={26}color={C.sub}/>}title="No copy pending"sub="Assets move here after brief is done."/></Card>
+      :<Card style={{padding:0,overflow:"hidden"}}>{allCopy.map(c=><CopyRow key={c.id}c={c}/>)}</Card>}
+  </div>;
+}
+
+
+function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,busy,onSelect,onRefine,channel}){
+  const isPush=channel==="Push notification";
+  const dirColors=[
+    {bg:"#FFF3E0",text:"#E65100"},{bg:"#E8F5E9",text:"#2E7D32"},
+    {bg:"#E3F2FD",text:"#1565C0"},{bg:"#F3E5F5",text:"#6A1B9A"},
+    {bg:"#FCE4EC",text:"#880E4F"},
+  ];
+  const dc=dirColors[idx%dirColors.length];
+
+  return<div style={{
+    border:`2px solid ${sel?C.purple:C.line}`,borderRadius:14,overflow:"hidden",
+    background:sel?"#FAF5FF":"#fff",transition:"border-color .15s",
+  }}>
+    {/* Direction tag — colour coded per option */}
+    <div style={{background:sel?C.purple:dc.bg,padding:"8px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <span style={{fontSize:11.5,fontWeight:700,color:sel?"#fff":dc.text,letterSpacing:.2}}>{o.direction}</span>
+      {sel&&<span style={{color:"#fff",fontSize:11,fontWeight:700,display:"flex",alignItems:"center",gap:4}}><CheckCircle2 size={12}/>Selected</span>}
+    </div>
+
+    {/* Copy preview */}
+    <div style={{padding:12}}>
+      {isPush
+        /* Push notification preview */
+        ?<div style={{background:C.navy,borderRadius:10,padding:12}}>
+          <div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Push notification</div>
+          <div style={{fontWeight:800,fontSize:14,color:"#fff",marginBottom:4,lineHeight:1.3}}>{o.header}</div>
+          <div style={{fontSize:12.5,color:"rgba(255,255,255,.8)",lineHeight:1.4}}>{o.body}</div>
+          <div style={{marginTop:8,fontSize:11,fontWeight:700,color:C.coral}}>{o.cta} →</div>
+          {/* Character count */}
+          <div style={{marginTop:8,display:"flex",gap:10,fontSize:10,color:"rgba(255,255,255,.4)"}}>
+            <span style={{color:(o.header||"").length>50?"#F87171":"rgba(255,255,255,.4)"}}>Title: {(o.header||"").length}/50</span>
+            <span style={{color:(o.body||"").length>90?"#F87171":"rgba(255,255,255,.4)"}}>Body: {(o.body||"").length}/90</span>
+          </div>
+        </div>
+        /* WhatsApp preview */
+        :<div style={{background:"#E7F6E9",borderRadius:10,padding:12}}>
+          <div style={{fontWeight:800,whiteSpace:"pre-line",marginBottom:8,color:C.navy,fontSize:14,lineHeight:1.35}}>{o.header}</div>
+          <div style={{whiteSpace:"pre-line",color:"#1f3326",fontSize:13,lineHeight:1.55}}>{o.body}</div>
+          <div style={{marginTop:10,display:"inline-block",background:C.navy,color:"#fff",fontSize:11.5,fontWeight:700,padding:"5px 12px",borderRadius:7}}>{o.cta}</div>
+        </div>}
+    </div>
+
+    {/* Actions */}
+    <div style={{padding:"0 12px 12px"}}>
+      {refineFor===idx
+        ?<div><Field label="Steer this option (one-time)"value={refineText}onChange={setRefineText}placeholder="e.g. warmer tone, more urgency, shorter"/>
+          <div style={{display:"flex",gap:7}}>{busy?<Spin label="Refining…"/>:<Btn small onClick={()=>onRefine(idx)}disabled={!refineText.trim()}><RefreshCw size={13}/>Apply steer</Btn>}<Btn small variant="ghost"onClick={()=>{setRefineFor(null);setRefineText("");}}>Cancel</Btn></div>
+        </div>
+        :<div style={{display:"flex",gap:7}}>
+          {!sel&&<Btn small variant="dark"onClick={()=>onSelect(idx)}><CheckCircle2 size={12}/>Select</Btn>}
+          <Btn small variant="ghost"onClick={()=>{setRefineFor(idx);setRefineText("");}}><RefreshCw size={13}/>Refine</Btn>
+        </div>}
+    </div>
+  </div>;
+}
+
+/* ===== Design Tab ======================================================= */
+const LIBRARY=[{id:"l1",label:"Nuri × Sara's bowl",tone:"#F2603A"},{id:"l2",label:"Meowsi hero pack",tone:"#0E9488"},{id:"l3",label:"Cat + parent moment",tone:"#7C4DFF"},{id:"l4",label:"Win-back warm shot",tone:"#E0A93B"},{id:"l5",label:"NutriMeow value flat-lay",tone:"#2E7D32"},{id:"l6",label:"Festive WhatsApp frame",tone:"#C2410C"}];
+
+function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedback,campaigns,onOpen}){
+  const allDesign=(campaigns||[]).filter(c=>c.stage==="design");
+  const[openId,setOpenId]=useState(active?.id||null);
+  const[imageModes,setImageModes]=useState({});
+  const[designBusyMap,setDesignBusyMap]=useState({});
+  const[designErrMap,setDesignErrMap]=useState({});
+  React.useEffect(()=>{if(active?.id)setOpenId(active.id);},[active?.id]);
+  const getImageMode=(id,fallback)=>imageModes[id]!==undefined?imageModes[id]:fallback;
+  const setImageModeFor=(id,m)=>setImageModes(x=>({...x,[id]:m}));
+
+  const DesignRow=({c})=>{
+    const isOpen=openId===c.id;
+    const copyOpts=c.data?.copyOptions||[];
+    const selIdx=c.data?.selectedCopyIdx;
+    const copy=selIdx!=null?copyOpts[selIdx]:null;
+    const d=c.data?.design||{};
+    const busy=designBusyMap[c.id]||"";
+    const setBusy=(v)=>setDesignBusyMap(x=>({...x,[c.id]:v}));
+    const err=designErrMap[c.id]||"";
+    const setErr=(v)=>setDesignErrMap(x=>({...x,[c.id]:v}));
+    const[ruleText,setRuleText]=useState("");
+    const imageMode=getImageMode(c.id,d.imageSource||null);
+    const setImageMode=(m)=>setImageModeFor(c.id,m);
+    const ruleStr=activeRuleText(promptRules);
+    const setD=(f)=>patch(c.id,{data:{...(c.data||{}),design:{...d,...f}}});
+    const approvedPrompt=d.imagePrompts&&d.approvedPromptIdx!=null?d.imagePrompts[d.approvedPromptIdx]:null;
+    const copyChangedAfterPrompts=d.imagePrompts&&d.promptsForCopyDir&&copy&&d.promptsForCopyDir!==copy.direction;
+
+    if(!copy)return<div style={{borderBottom:`1px solid ${C.line}`,padding:"12px 18px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+      <div><span style={{fontWeight:700,fontSize:13,color:C.ink}}>{c.product||"—"}</span><span style={{fontSize:12,color:C.sub,marginLeft:8}}>{normCrmType(c.crm_type)} · {c.channel||"WhatsApp"}</span></div>
+      <span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#92400E",background:"#FEF3C7",padding:"3px 9px",borderRadius:999}}>Copy not approved yet</span>
+    </div>;
+
+    const genNotes=async()=>{setBusy("notes");setErr("");
+      try{
+        const fb=recentFeedback("design");
+        const brief=c.data?.brief||{};
+        const sys="You are an art director for HUFT CRM creative.\n"+BRAND_CONTEXT+(fb?"\nRecent design feedback:\n"+fb:"")+"\nReturn ONLY JSON: {notes:['2 short directive art-direction notes — composition, hero, mood, brand cues']}";
+        const usr="Product: "+c.product+"\nInsight: "+brief.strategicInsight+"\nIdea: "+brief.idea+"\nCopy direction: "+copy.direction+"\nHeader: "+copy.header;
+        const j=await callClaude(sys,usr,true);setD({notes:j.notes});
+      }catch(e){console.error("genNotes error:",e);setErr("Couldn't generate notes: "+(e.message||"check API key"));}setBusy("");
+    };
+
+    const genPrompts=async()=>{setBusy("prompts");setErr("");
+      try{
+        const fb=recentFeedback("design");
+        const brief=c.data?.brief||{};
+        const sys="You write TWO distinct image-generation prompts for HUFT "+c.channel+" CRM.\n"+BRAND_CONTEXT+"\nPROMPT RULES:\n"+ruleStr+(fb?"\nFeedback:\n"+fb:"")+"\nRules: real Indian-breed pet, correct pack proportions, no added text on pack, realistic lighting.\nReturn ONLY JSON: {prompts:[{label,tool,aspectRatio,prompt,negativePrompt}]}";
+        const usr="Product: "+c.product+"\nInsight: "+(brief.strategicInsight||"")+"\nIdea: "+(brief.idea||"")+"\nCopy direction: "+copy.direction+"\nHeader: "+copy.header+"\nArt notes: "+(d.notes||[]).join(" | ");
+        const j=await callClaude(sys,usr,true);
+        setD({imageSource:"prompt",imagePrompts:j.prompts,approvedPromptIdx:null,libraryPick:null,promptsForCopyDir:copy.direction});
+        setImageMode("prompt");
+      }catch(e){console.error("genPrompts error:",e);setErr("Couldn't generate prompts: "+(e.message||"check API key"));}setBusy("");
+    };
+
+    const approvePrompt=(idx)=>{setD({imageSource:"prompt",approvedPromptIdx:idx});patch(c.id,{design_approver:me.name});};
+
+    return<div style={{borderBottom:`1px solid ${C.line}`}}>
+      {/* Row header */}
+      <div onClick={()=>setOpenId(isOpen?null:c.id)}
+        style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer",background:isOpen?"#F8F9FA":"#fff"}}>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3}}>
+            <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{c.product||"—"}</span>
+            <span style={{fontSize:11,fontWeight:700,color:C.coral}}>{normCrmType(c.crm_type)}</span>
+            <span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel||"WhatsApp"}</span>
+          </div>
+          <div style={{fontSize:12,color:C.sub,display:"flex",gap:6,alignItems:"center"}}><span>{parseName(c.name).date&&<b style={{color:C.ink,marginRight:4}}>{parseName(c.name).date}</b>}{copy.direction}</span>{c.created_at&&<span style={{marginLeft:"auto",fontSize:11,color:C.sub,background:"#F3F4F6",padding:"2px 7px",borderRadius:5,flexShrink:0}}>{fmtDate(c.created_at)}</span>}</div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+          {approvedPrompt?<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#0F766E",background:"#CCFBF1",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>Prompt approved</span>
+          :d.imagePrompts?<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#1D4ED8",background:"#DBEAFE",padding:"3px 9px",borderRadius:999}}>Prompts ready</span>
+          :<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#B91C1C",background:"#FEF2F2",padding:"3px 9px",borderRadius:999}}>Needs design</span>}
+          {isOpen?<ChevronDown size={16}color={C.sub}/>:<ChevronRight size={16}color={C.sub}/>}
+        </div>
+      </div>
+
+      {/* Expanded */}
+      {isOpen&&<div style={{padding:"0 18px 18px",background:"#F8F9FA"}}>
+        {/* Selected copy context */}
+        <div style={{background:"#F5F3FF",border:"1px solid #DDD6FE",borderLeft:"3px solid "+C.purple,borderRadius:10,padding:"10px 14px",marginBottom:12}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+            <span style={{fontSize:10,fontWeight:700,color:"#5B21B6",textTransform:"uppercase",letterSpacing:.6,display:"flex",alignItems:"center",gap:4}}><CheckCircle2 size={11}/>Approved copy</span>
+            <span style={{fontSize:10.5,color:"#7C3AED",background:"#EDE9FE",padding:"2px 7px",borderRadius:5,fontWeight:600}}>{copy.direction}</span>
+          </div>
+          <div style={{fontWeight:700,fontSize:13.5,lineHeight:1.4,color:"#1E1B4B",marginBottom:4,whiteSpace:"pre-line"}}>{copy.header}</div>
+          <div style={{fontSize:12,color:"#4C1D95",lineHeight:1.5,whiteSpace:"pre-line"}}>{copy.body?.slice(0,100)}{copy.body?.length>100?"…":""}</div>
+          <div style={{marginTop:6,fontSize:11,fontWeight:700,color:"#5B21B6"}}>{copy.cta} →</div>
+        </div>
+
+        {copyChangedAfterPrompts&&<div style={{display:"flex",alignItems:"center",gap:8,background:"#FEF3C7",border:"1px solid #FDE68A",borderRadius:8,padding:"8px 12px",marginBottom:12,fontSize:12.5,color:"#92400E",fontWeight:600}}><span>⚠️ Copy was updated after prompts were generated — regenerate prompts to match.</span></div>}
+        {/* Image source picker */}
+        {!imageMode&&<div style={{marginBottom:12}}>
+          <div style={{fontSize:12,fontWeight:700,color:C.sub,marginBottom:8}}>Choose image source</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <div onClick={()=>setImageMode("prompt")}style={{border:`2px solid ${C.line}`,borderRadius:12,padding:14,cursor:"pointer",textAlign:"center"}}>
+              <Wand2 size={20}color={C.coral}style={{marginBottom:6}}/>
+              <div style={{fontWeight:700,fontSize:13}}>Generate prompts</div>
+              <div style={{fontSize:12,color:C.sub}}>AI writes image prompts for FLUX/Gemini</div>
+            </div>
+            <div onClick={()=>{setImageMode("library");setD({imageSource:"library"});}}style={{border:`2px solid ${C.line}`,borderRadius:12,padding:14,cursor:"pointer",textAlign:"center"}}>
+              <ImageIcon size={20}color={C.teal}style={{marginBottom:6}}/>
+              <div style={{fontWeight:700,fontSize:13}}>Pick from library</div>
+              <div style={{fontSize:12,color:C.sub}}>Use existing Drive assets</div>
+            </div>
+          </div>
+          <button onClick={()=>setImageMode(null)}style={{display:"none"}}/>
+        </div>}
+
+        {/* Back to picker */}
+        {imageMode&&<button onClick={()=>setImageMode(null)}style={{display:"flex",alignItems:"center",gap:5,background:"none",border:"none",cursor:"pointer",color:C.sub,fontSize:12.5,marginBottom:12,padding:0}}><ChevronRight size={13}style={{transform:"rotate(180deg)"}}/>Change image source</button>}
+
+        {/* Art direction notes */}
+        {imageMode==="prompt"&&<div style={{marginBottom:12}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+            <div style={{fontSize:12,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5}}>Art direction notes</div>
+            {busy==="notes"?<Spin label="Generating…"/>:<Btn small onClick={e=>{e.stopPropagation();genNotes();}}>{d.notes?"Regenerate notes":"Generate notes"}</Btn>}
+          </div>
+          {d.notes&&d.notes.map((n,i)=><div key={i}style={{background:C.coralSoft,borderRadius:8,padding:"8px 12px",fontSize:13,marginBottom:6,color:"#7D3D24"}}>• {n}</div>)}
+        </div>}
+
+        {/* Image prompts */}
+        {imageMode==="prompt"&&<div style={{marginBottom:12}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+            <div style={{fontSize:12,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5}}>Image prompts</div>
+            {busy==="prompts"?<Spin label="Generating…"/>:<Btn small onClick={e=>{e.stopPropagation();genPrompts();}}>{d.imagePrompts?"Regenerate":"Generate 2 prompts"}</Btn>}
+          </div>
+          {err&&<div style={{color:C.coral,fontSize:13,marginBottom:8}}>{err}</div>}
+          {d.imagePrompts&&d.imagePrompts.map((p,i)=><div key={i}style={{border:`2px solid ${d.approvedPromptIdx===i?C.teal:C.line}`,borderRadius:10,padding:12,marginBottom:10,background:d.approvedPromptIdx===i?C.tealSoft:"#fff"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
+              <span style={{fontWeight:700,fontSize:13,color:C.ink}}>{p.label}</span>
+              <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                <span style={{fontSize:11,color:C.sub}}>{p.aspectRatio}</span>
+                {d.approvedPromptIdx===i
+                  ?<span style={{fontSize:11,color:C.teal,fontWeight:700,display:"flex",alignItems:"center",gap:3}}><CheckCircle2 size={12}/>Approved</span>
+                  :<Btn small onClick={()=>approvePrompt(i)}>Approve</Btn>}
+              </div>
+            </div>
+            <div style={{fontSize:12.5,lineHeight:1.55,color:C.ink,marginBottom:6}}>{p.prompt}</div>
+            {p.negativePrompt&&<div style={{fontSize:11,color:C.sub}}><b>Avoid:</b> {p.negativePrompt}</div>}
+          </div>)}
+        </div>}
+
+        {/* Library picker */}
+        {imageMode==="library"&&<div style={{marginBottom:12}}>
+          <div style={{fontSize:12,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>Pick from library</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+            {LIBRARY.map(l=><div key={l.id}onClick={()=>setD({libraryPick:l.id})}style={{border:`2px solid ${d.libraryPick===l.id?C.teal:C.line}`,borderRadius:10,padding:10,cursor:"pointer",textAlign:"center",background:d.libraryPick===l.id?C.tealSoft:"#fff"}}>
+              <div style={{width:32,height:32,borderRadius:8,background:l.tone+"33",margin:"0 auto 6px",display:"flex",alignItems:"center",justifyContent:"center"}}><ImageIcon size={16}color={l.tone}/></div>
+              <div style={{fontSize:11.5,fontWeight:600,lineHeight:1.3}}>{l.label}</div>
+            </div>)}
+          </div>
+        </div>}
+
+        {/* Mark ready */}
+        {(approvedPrompt||d.libraryPick)&&<div style={{marginTop:10,paddingTop:12,borderTop:`1px solid ${C.line}`,display:"flex",gap:10}}>
+          <Btn variant="dark"onClick={()=>{patch(c.id,{stage:"done",went_live_at:new Date().toISOString()});}}>
+            <CheckCircle2 size={15}/>Mark as ready
+          </Btn>
+          <Btn variant="ghost"onClick={()=>exportDesignBriefTxt(c,copy,approvedPrompt)}><Download size={14}/>Export design brief</Btn>
+        </div>}
+
+        <FeedbackBar stage="design"by={me.name}onSave={saveFeedback}/>
+        {c.stage==="done"&&(me.role==="business"||me.role==="admin")&&<ReportUploader campaign={c}me={me}onUploaded={()=>patch(c.id,{has_report:true})}/>}
+      </div>}
+    </div>;
+  };
+
+  const[view,setView]=useState("list");
+  return<div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+      <div><Eyebrow>Design</Eyebrow><h1 style={{margin:"4px 0 0",fontSize:24,fontWeight:800}}>Design</h1></div>
+      <div style={{display:"flex",border:`1px solid ${C.line}`,borderRadius:8,overflow:"hidden"}}>
+        <button onClick={()=>setView("list")}style={{padding:"6px 14px",border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:view==="list"?C.navy:"#fff",color:view==="list"?"#fff":C.sub,display:"flex",alignItems:"center",gap:5}}><LayoutDashboard size={13}/>List</button>
+        <button onClick={()=>setView("calendar")}style={{padding:"6px 14px",border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:view==="calendar"?C.navy:"#fff",color:view==="calendar"?"#fff":C.sub,display:"flex",alignItems:"center",gap:5}}><CalendarIcon size={13}/>Calendar</button>
+      </div>
+    </div>
+    {view==="calendar"
+      ?<CalendarView campaigns={allDesign}onOpen={onOpen}filterStage="design"/>
+      :allDesign.length===0
+      ?<Card><Empty icon={<Palette size={26}color={C.sub}/>}title="No design pending"sub="Assets move here after copy is selected."/></Card>
+      :<Card style={{padding:0,overflow:"hidden"}}>{allDesign.map(c=><DesignRow key={c.id}c={c}/>)}</Card>}
+  </div>;
+}
+
+
+function RulesDrawer({onClose,copyRules,promptRules,addRule,toggleRule,delRule,me,feedback}){
+  const[suggestions,setSuggestions]=useState(null);
+  const[sugBusy,setSugBusy]=useState(false);
+  const[dismissed,setDismissed]=useState([]);
+
+  const suggestFromFeedback=async()=>{
+    setSugBusy(true);setSuggestions(null);
+    try{
+      const fbText=(feedback||[]).slice(0,10).map(f=>`[${f.stage}] ${f.text}`).join("\n")||"(no feedback yet)";
+      const existingCopy=copyRules.map(r=>r.text).join("\n");
+      const existingPrompt=promptRules.map(r=>r.text).join("\n");
+      const sys=`You are a CRM creative strategist for HUFT (Indian pet care brand). Analyse the team's generation feedback and suggest new rulebook rules to improve future AI outputs. Return ONLY JSON: {copy:[string,string,string],prompt:[string,string,string]} — 3 copy rules and 3 design/prompt rules. Rules must be concise, actionable, and not duplicate existing rules.`;
+      const usr=`Recent feedback:\n${fbText}\n\nExisting copy rules:\n${existingCopy}\n\nExisting prompt rules:\n${existingPrompt}`;
+      const j=await callClaude(sys,usr,true);
+      setSuggestions(j);
+    }catch(e){console.error(e);}
+    setSugBusy(false);
+  };
+
+  const accept=(type,text)=>{addRule(type,text);setDismissed(d=>[...d,text]);};
+  const dismiss=(text)=>setDismissed(d=>[...d,text]);
+
+  const Section=({title,color,rules,type,placeholder})=>{
+    const[t,setT]=useState("");
+    const add=()=>{if(!t.trim())return;addRule(type,t.trim());setT("");};
+    const sugs=(suggestions?suggestions[type==="copy"?"copy":"prompt"]||[]:[]).filter(s=>!dismissed.includes(s)&&!rules.find(r=>r.text===s));
+    return<div style={{marginBottom:22}}>
+      <div style={{fontWeight:800,fontSize:14.5,color,marginBottom:8}}>{title} <span style={{color:C.sub,fontWeight:600}}>({rules.length})</span></div>
+      {sugs.length>0&&<div style={{marginBottom:10,background:color+"0D",border:`1px solid ${color}33`,borderRadius:10,padding:"10px 12px"}}>
+        <div style={{fontSize:11,fontWeight:700,color,textTransform:"uppercase",letterSpacing:.5,marginBottom:8,display:"flex",alignItems:"center",gap:5}}><Sparkles size={12}/>Suggested from feedback</div>
+        {sugs.map((s,i)=><div key={i}style={{display:"flex",alignItems:"flex-start",gap:8,marginBottom:7,fontSize:13,color:C.ink}}>
+          <div style={{flex:1,lineHeight:1.4}}>{s}</div>
+          <div style={{display:"flex",gap:5,flexShrink:0}}>
+            <button onClick={()=>accept(type,s)}style={{background:color,color:"#fff",border:"none",borderRadius:6,padding:"3px 9px",fontSize:11.5,fontWeight:700,cursor:"pointer"}}>+ Add</button>
+            <button onClick={()=>dismiss(s)}style={{background:"transparent",color:C.sub,border:`1px solid ${C.line}`,borderRadius:6,padding:"3px 7px",fontSize:11.5,cursor:"pointer"}}>✕</button>
+          </div>
+        </div>)}
+      </div>}
+      <div style={{display:"flex",gap:8,marginBottom:10}}>
+        <input value={t}onChange={e=>setT(e.target.value)}onKeyDown={e=>e.key==="Enter"&&add()}placeholder={placeholder}style={{flex:1,border:`1px solid ${C.line}`,borderRadius:9,padding:"8px 10px",fontSize:13.5,boxSizing:"border-box"}}/>
+        <Btn small onClick={add}disabled={!t.trim()}><Plus size={14}/></Btn>
+      </div>
+      {rules.length===0?<div style={{fontSize:13,color:C.sub}}>No rules yet.</div>
+      :rules.map(r=><div key={r.id}style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderTop:`1px solid ${C.line}`}}>
+        <button onClick={()=>toggleRule(r.id)}style={{border:"none",background:"transparent",cursor:"pointer",color:r.active?color:C.sub}}>{r.active?<CheckCircle2 size={18}/>:<Circle size={18}/>}</button>
+        <div style={{flex:1,fontSize:13,lineHeight:1.45,opacity:r.active?1:.45,textDecoration:r.active?"none":"line-through"}}>{r.text}</div>
+        {me.role==="admin"&&<button onClick={()=>delRule(r.id)}style={{border:"none",background:"transparent",cursor:"pointer",color:C.sub}}><Trash2 size={15}/></button>}
+      </div>)}
+    </div>;
+  };
+
+  const[seeding,setSeeding]=useState(false);
+  const seedRules=async()=>{if(!window.confirm("This will replace ALL rules with the default HUFT rulebook. Continue?"))return;setSeeding(true);try{const r=await api.post("/api/rules/seed",{});window.location.reload();}catch(e){alert("Seed failed: "+e.message);}setSeeding(false);};
+  const hasFeedback=(feedback||[]).length>0;
+  return<Drawer onClose={onClose}title={<><BookMarked size={18}color={C.coral}/>Rulebook</>}intro="Active rules inject into every generation. Build this up over time.">
+    <div style={{marginBottom:16,padding:"10px 14px",background:C.paper,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+      <div>
+        <div style={{fontSize:13,fontWeight:700,color:C.ink}}>Auto-suggest from feedback</div>
+        <div style={{fontSize:12,color:C.sub,marginTop:2}}>{hasFeedback?`${(feedback||[]).length} feedback items available`:"Leave feedback on generations to unlock suggestions"}</div>
+      </div>
+      {sugBusy?<Spin label="Analysing…"/>:<Btn small onClick={suggestFromFeedback}disabled={!hasFeedback}><Sparkles size={13}/>Suggest rules</Btn>}
+    </div>
+    {me.role==="admin"&&(copyRules.length+promptRules.length)<5&&<div style={{marginBottom:14,padding:"10px 14px",background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}><div><div style={{fontSize:13,fontWeight:700,color:"#B91C1C"}}>Rulebook is empty</div><div style={{fontSize:12,color:"#7F1D1D",marginTop:2}}>Load the default HUFT brand rules to get started.</div></div>{seeding?<Spin label="Seeding…"/>:<Btn small onClick={seedRules}style={{background:"#B91C1C",color:"#fff"}}>Load defaults</Btn>}</div>}
+    {me.role==="admin"&&(copyRules.length+promptRules.length)>=5&&<div style={{marginBottom:14,textAlign:"right"}}><button onClick={seedRules}style={{fontSize:11.5,color:C.sub,background:"none",border:"none",cursor:"pointer",textDecoration:"underline"}}>↺ Reset to default rules</button></div>}
+    <Section title="CRM Copy rules"color={C.coral}rules={copyRules}type="copy"placeholder='e.g. Never say "cheap"; lead with value'/>
+    <Section title="Design Prompt rules"color={C.teal}rules={promptRules}type="prompt"placeholder="e.g. Always real Indian-breed pets"/>
+  </Drawer>;
+}
+
+function TeamDrawer({onClose,me}){
+  const[users,setUsers]=useState(null);const[form,setForm]=useState({name:"",email:"",password:"",role:"content"});const[err,setErr]=useState("");const[busy,setBusy]=useState(false);
+  useEffect(()=>{api.get("/api/users").then(setUsers).catch(()=>setUsers([]));},[]);
+  const add=async()=>{setErr("");setBusy(true);try{await api.post("/api/users",form);setUsers(await api.get("/api/users"));setForm({name:"",email:"",password:"",role:"content"});}catch(e){setErr(e.message);}setBusy(false);};
+  const remove=async(id)=>{try{await api.del("/api/users/"+id);setUsers(await api.get("/api/users"));}catch(e){setErr(e.message);}};
+  const changeRole=async(id,role)=>{try{await api.put("/api/users/"+id,{role});setUsers(await api.get("/api/users"));}catch(e){setErr(e.message);}};
+  const ROLES=["admin","business","content","design"];
+  const roleColor={admin:C.coral,business:C.teal,content:C.purple,design:C.green};
+  return<Drawer onClose={onClose}title={<><Users size={18}color={C.teal}/>Team</>}intro="Manage access. Each role lands on a different tab by default.">
+    <div style={{marginBottom:18,background:C.paper,borderRadius:10,padding:12,fontSize:12.5}}>
+      <div style={{fontWeight:700,marginBottom:6}}>Role → Default tab</div>
+      {[["admin","Dashboard"],["business","Dashboard"],["content","Copy"],["design","Design"]].map(([r,t])=><div key={r}style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}><span style={{background:roleColor[r]+"20",color:roleColor[r],fontSize:10.5,fontWeight:700,padding:"1px 7px",borderRadius:999}}>{r}</span><span style={{color:C.sub}}>→ {t}</span></div>)}
+    </div>
+    {me.role==="admin"&&<div style={{marginBottom:16,padding:14,border:`1px solid ${C.line}`,borderRadius:10}}>
+      <div style={{fontWeight:700,marginBottom:10,fontSize:13.5}}>Add new user</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+        <input value={form.name}onChange={e=>setForm(f=>({...f,name:e.target.value}))}placeholder="Full name"style={{border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 10px",fontSize:13,boxSizing:"border-box"}}/>
+        <input value={form.email}onChange={e=>setForm(f=>({...f,email:e.target.value}))}placeholder="Email"style={{border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 10px",fontSize:13,boxSizing:"border-box"}}/>
+        <input type="password"value={form.password}onChange={e=>setForm(f=>({...f,password:e.target.value}))}placeholder="Temp password"style={{border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 10px",fontSize:13,boxSizing:"border-box"}}/>
+        <select value={form.role}onChange={e=>setForm(f=>({...f,role:e.target.value}))}style={{border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 10px",fontSize:13}}>
+          {ROLES.map(r=><option key={r}value={r}>{r}</option>)}
+        </select>
+      </div>
+      {err&&<div style={{color:C.coral,fontSize:12.5,marginBottom:8}}>{err}</div>}
+      <Btn small onClick={add}disabled={busy||!form.name||!form.email||!form.password}><Plus size={13}/>Add user</Btn>
+    </div>}
+    {users==null?<Spin label="Loading…"/>:users.map(u=><div key={u.id}style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderTop:`1px solid ${C.line}`}}>
+      <span style={{width:32,height:32,borderRadius:999,background:C.coralSoft,color:C.coral,display:"inline-flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:13,flexShrink:0}}>{u.name?u.name[0].toUpperCase():"?"}</span>
+      <div style={{flex:1,minWidth:0}}><div style={{fontSize:13.5,fontWeight:600}}>{u.name}</div><div style={{fontSize:11.5,color:C.sub}}>{u.email}</div></div>
+      {me.role==="admin"&&u.id!==me.id?<select value={u.role}onChange={e=>changeRole(u.id,e.target.value)}style={{border:`1px solid ${C.line}`,borderRadius:7,padding:"4px 8px",fontSize:12,color:roleColor[u.role]||C.sub,fontWeight:600}}>
+        {ROLES.map(r=><option key={r}value={r}>{r}</option>)}
+      </select>:<span style={{background:(roleColor[u.role]||C.sub)+"20",color:roleColor[u.role]||C.sub,fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:999}}>{u.role}</span>}
+      {me.role==="admin"&&u.id!==me.id&&<button onClick={()=>remove(u.id)}style={{border:"none",background:"transparent",cursor:"pointer",color:C.sub}}><Trash2 size={15}/></button>}
+    </div>)}
+  </Drawer>;
+}
+
+function AudienceDrawer({onClose,audiences,setAudiences,me}){
+  const blank={name:"",description:"",segment_code:"",pet_type:"both",lifecycle_stage:"",trigger_event:"",key_insight:"",size_estimate:"",channel_pref:"",notes:""};
+  const[form,setForm]=useState(blank);const[editing,setEditing]=useState(null);const[busy,setBusy]=useState(false);const[err,setErr]=useState("");const[showForm,setShowForm]=useState(false);
+  const f=(k,v)=>setForm(x=>({...x,[k]:v}));
+  const save=async()=>{setBusy(true);setErr("");try{if(editing){await api.put("/api/audiences/"+editing,form);setAudiences(a=>a.map(x=>x.id===editing?{...x,...form}:x));setEditing(null);}else{const r=await api.post("/api/audiences",form);setAudiences(a=>[r,...a]);}setForm(blank);setShowForm(false);}catch(e){setErr(e.message);}setBusy(false);};
+  const del=async(id)=>{try{await api.del("/api/audiences/"+id);setAudiences(a=>a.filter(x=>x.id!==id));}catch(e){setErr(e.message);}};
+  const startEdit=(aud)=>{setForm({name:aud.name||"",description:aud.description||"",segment_code:aud.segment_code||"",pet_type:aud.pet_type||"both",lifecycle_stage:aud.lifecycle_stage||"",trigger_event:aud.trigger_event||"",key_insight:aud.key_insight||"",size_estimate:aud.size_estimate||"",channel_pref:aud.channel_pref||"",notes:aud.notes||""});setEditing(aud.id);setShowForm(true);};
+  return<Drawer onClose={onClose}title={<><Target size={18}color={C.coral}/>Audiences</>}intro="Define audience segments with insights. These feed directly into brief generation.">
+    {!showForm&&<Btn onClick={()=>{setShowForm(true);setEditing(null);setForm(blank);}}style={{marginBottom:16}}><Plus size={14}/>New audience</Btn>}
+    {showForm&&<div style={{background:C.paper,borderRadius:12,padding:14,marginBottom:16,border:`1px solid ${C.line}`}}>
+      <div style={{fontWeight:700,marginBottom:12,fontSize:14}}>{editing?"Edit audience":"New audience"}</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+        <div style={{gridColumn:"1/-1"}}><Field label="Audience name *"value={form.name}onChange={v=>f("name",v)}placeholder="e.g. Lapsed Meowsi buyers"/></div>
+        <Field label="Segment code"value={form.segment_code}onChange={v=>f("segment_code",v)}placeholder="e.g. LapsedCat60"/>
+        <label style={{display:"block"}}><div style={{fontSize:12.5,fontWeight:600,color:C.sub,marginBottom:5}}>Pet type</div>
+          <select value={form.pet_type}onChange={e=>f("pet_type",e.target.value)}style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:10,padding:"9px 11px",fontSize:14}}>
+            <option value="both">Dog + Cat</option><option value="dog">Dog only</option><option value="cat">Cat only</option><option value="other">Other</option>
+          </select>
+        </label>
+        <Field label="Lifecycle stage"value={form.lifecycle_stage}onChange={v=>f("lifecycle_stage",v)}placeholder="e.g. Lapsed 60–90d"/>
+        <Field label="Estimated size"value={form.size_estimate}onChange={v=>f("size_estimate",v)}placeholder="e.g. ~12,000 users"/>
+        <div style={{gridColumn:"1/-1"}}><Field label="Trigger event"value={form.trigger_event}onChange={v=>f("trigger_event",v)}placeholder="e.g. No purchase in 90 days"/></div>
+        <div style={{gridColumn:"1/-1"}}><Field label="Key insight"textarea value={form.key_insight}onChange={v=>f("key_insight",v)}placeholder="The consumer truth for this segment…"/></div>
+        <Field label="Preferred channel"value={form.channel_pref}onChange={v=>f("channel_pref",v)}placeholder="e.g. WhatsApp"/>
+      </div>
+      {err&&<div style={{color:C.coral,fontSize:13,marginBottom:8}}>{err}</div>}
+      <div style={{display:"flex",gap:8}}><Btn onClick={save}disabled={busy||!form.name.trim()}><Check size={14}/>{editing?"Save changes":"Create"}</Btn><Btn variant="ghost"onClick={()=>{setShowForm(false);setEditing(null);setForm(blank);}}>Cancel</Btn></div>
+    </div>}
+    {audiences.length===0?<div style={{color:C.sub,fontSize:13,padding:"20px 0",textAlign:"center"}}>No audiences yet.</div>
+    :audiences.map(a=><div key={a.id}style={{border:`1px solid ${C.line}`,borderRadius:12,padding:14,marginBottom:10}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
+        <div><div style={{fontWeight:700,fontSize:14}}>{a.name}</div>
+          <div style={{fontSize:12,color:C.sub,display:"flex",gap:8,flexWrap:"wrap",marginTop:3}}>
+            {a.segment_code&&<span style={{background:C.coralSoft,color:C.coral,padding:"1px 7px",borderRadius:999,fontWeight:600}}>{a.segment_code}</span>}
+            {a.size_estimate&&<span>{a.size_estimate}</span>}
+          </div>
+        </div>
+        <div style={{display:"flex",gap:6}}>
+          <button onClick={()=>startEdit(a)}style={{border:`1px solid ${C.line}`,borderRadius:7,padding:"4px 8px",cursor:"pointer",background:"#fff",color:C.sub}}><PenLine size={13}/></button>
+          {(me.role==="admin"||me.role==="business")&&<button onClick={()=>del(a.id)}style={{border:`1px solid ${C.line}`,borderRadius:7,padding:"4px 8px",cursor:"pointer",background:"#fff",color:C.sub}}><Trash2 size={13}/></button>}
+        </div>
+      </div>
+      {a.trigger_event&&<div style={{fontSize:12.5,color:C.sub,marginBottom:4}}><b style={{color:C.ink}}>Trigger:</b> {a.trigger_event}</div>}
+      {a.key_insight&&<div style={{fontSize:13,background:C.coralSoft,borderRadius:8,padding:"8px 10px",color:"#7D3D24",lineHeight:1.5,marginTop:6}}><b>Insight:</b> {a.key_insight}</div>}
+    </div>)}
+  </Drawer>;
+}
+
+function Drawer({onClose,title,intro,children}){return<div onClick={onClose}style={{position:"fixed",inset:0,background:"rgba(15,18,30,.45)",display:"flex",justifyContent:"flex-end",zIndex:50}}><div onClick={e=>e.stopPropagation()}style={{width:480,maxWidth:"94vw",background:"#fff",height:"100%",overflowY:"auto",padding:22}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}><div style={{display:"flex",alignItems:"center",gap:8,fontWeight:800,fontSize:17}}>{title}</div><button onClick={onClose}style={{border:"none",background:"transparent",cursor:"pointer"}}><X size={20}color={C.sub}/></button></div><div style={{fontSize:13,color:C.sub,marginBottom:18}}>{intro}</div>{children}</div></div>;}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
