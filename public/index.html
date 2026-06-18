@@ -323,6 +323,15 @@ function Btn({children,onClick,variant="primary",disabled,small,style}){
 function Card({children,style,onClick}){return<div onClick={onClick}style={{background:C.white,border:`1px solid ${C.line}`,borderRadius:14,padding:18,boxShadow:"0 1px 2px rgba(16,24,40,.04)",...style}}>{children}</div>;}
 function Eyebrow({children,color=C.coral}){return<div style={{color,fontSize:12,fontWeight:700,letterSpacing:1,textTransform:"uppercase"}}>{children}</div>;}
 function StageBadge({stage}){const col={brief:C.coral,content:C.purple,design:C.teal,done:C.green}[stage]||C.sub;return<span style={{background:col+"1A",color:col,fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:999}}>{STAGE_LABEL[stage]}</span>;}
+function RowActions({c,patch,me,onEdit}){
+  const canEdit=me.role==="admin"||me.role==="business";
+  return<div style={{display:"flex",gap:5,alignItems:"center",flexShrink:0}}>
+    {onEdit&&<button onClick={e=>{e.stopPropagation();onEdit();}}style={{display:"flex",alignItems:"center",gap:3,fontSize:11.5,padding:"4px 8px",borderRadius:6,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.sub,fontWeight:600}}><PenLine size={11}/>Edit</button>}
+    {canEdit&&<button onClick={e=>{e.stopPropagation();if(window.confirm("Archive this asset? Moves to Done."))patch(c.id,{stage:"done"});}}style={{display:"flex",alignItems:"center",gap:3,fontSize:11.5,padding:"4px 8px",borderRadius:6,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.sub,fontWeight:600}}>Archive</button>}
+    {canEdit&&<button onClick={e=>{e.stopPropagation();if(window.confirm("Delete permanently? Cannot be undone."))api.del("/api/campaigns/"+c.id).then(()=>window.location.reload()).catch(()=>alert("Delete failed"));}}style={{display:"flex",alignItems:"center",gap:3,fontSize:11.5,padding:"4px 8px",borderRadius:6,border:"1px solid #FECACA",background:"#FFF5F5",cursor:"pointer",color:"#B91C1C",fontWeight:600}}>Delete</button>}
+  </div>;
+}
+
 function ApproverChip({name,at,color=C.teal}){if(!name)return null;return<span style={{display:"inline-flex",alignItems:"center",gap:5,background:color+"18",color:color,fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={12}/>{name} · {fmtTime(at)}</span>;}
 function Field({label,value,onChange,placeholder,textarea,rows=2}){return<label style={{display:"block",marginBottom:12}}><div style={{fontSize:12.5,fontWeight:600,color:C.sub,marginBottom:5}}>{label}</div>{textarea?<textarea value={value}onChange={e=>onChange(e.target.value)}placeholder={placeholder}rows={rows}style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:10,padding:"9px 11px",fontSize:14,color:C.ink,resize:"vertical",boxSizing:"border-box"}}/>:<input value={value}onChange={e=>onChange(e.target.value)}placeholder={placeholder}style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:10,padding:"9px 11px",fontSize:14,color:C.ink,boxSizing:"border-box"}}/>}</label>;}
 function Spin({label}){return<div style={{display:"flex",alignItems:"center",gap:9,color:C.sub,fontSize:14,padding:"10px 0"}}><Loader2 size={16}style={{animation:"spin 1s linear infinite"}}/>{label}</div>;}
@@ -792,6 +801,7 @@ function Dashboard({campaigns,onNew,onOpen,me}){
         {parseName(c.name).hook&&<span>{parseName(c.name).hook.replace(/_/g," ")}</span>}
         {(c.audience_label||c.segment)&&<span>· {c.audience_label||c.segment}</span>}
         {c.objective&&<span>· {c.objective}</span>}
+        {c.created_at&&<span style={{marginLeft:4,fontSize:11,color:C.sub,background:"#F3F4F6",padding:"1px 6px",borderRadius:4}}>{fmtDate(c.created_at)}</span>}
       </div>
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:4}}>
         {c.stage!=="done"&&<TATBadge startedAt={c.brief_started_at||c.created_at}dueAt={c.stage==="brief"?c.tat_brief_due:c.stage==="content"?c.tat_content_due:c.tat_design_due}done={false}/>}
@@ -1147,6 +1157,7 @@ const AlertCircle=p=><Svg{...p}><circle cx="12"cy="12"r="10"/><path d="M12 8v4M1
 function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,onOpen}){
   const[view,setView]=useState("list");
   const allBriefs=(campaigns||[]).filter(c=>c.stage==="brief");
+  const briefedElsewhere=(campaigns||[]).filter(c=>c.stage!=="brief"&&c.data?.brief).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
   const done=(campaigns||[]).filter(c=>c.stage!=="brief"&&c.data?.brief);
   const[openId,setOpenId]=useState(active?.id||null);
   const[mode,setMode]=useState({}); // {[id]: 'view'|'chat'|'self'|'edit'}
@@ -1187,6 +1198,7 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
         <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
           {brief&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#0F766E",background:"#CCFBF1",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>Brief done</span>}
           {!brief&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#B91C1C",background:"#FEF2F2",padding:"3px 9px",borderRadius:999}}>No brief yet</span>}
+          <div onClick={e=>e.stopPropagation()}><RowActions c={c}patch={patch}me={me}onEdit={brief?()=>setM(c.id,"edit"):undefined}/></div>
           {isOpen?<ChevronDown size={16}color={C.sub}/>:<ChevronRight size={16}color={C.sub}/>}
         </div>
       </div>
@@ -1242,13 +1254,7 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
           <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
             <Btn onClick={()=>{patch(c.id,{stage:"content"});setTab("content");onOpen(c.id,"content");}}>Move to Copy <ArrowRight size={14}/></Btn>
             <Btn variant="ghost"onClick={()=>setM(c.id,"edit")}><PenLine size={13}/>Edit brief</Btn>
-            <Btn variant="ghost"onClick={()=>exportBriefTxt(c)}><Download size={13}/>Export</Btn>
-            <div style={{marginLeft:"auto",display:"flex",gap:6}}>
-              <button onClick={()=>{if(window.confirm("Archive this asset? It will move to Done."))patch(c.id,{stage:"done"});}}
-                style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.sub,fontWeight:600}}>Archive</button>
-              <button onClick={()=>{if(window.confirm("Delete permanently? Cannot be undone."))api.del("/api/campaigns/"+c.id).then(()=>window.location.reload()).catch(()=>alert("Delete failed"));}}
-                style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:"1px solid #FECACA",background:"#FFF5F5",cursor:"pointer",color:"#B91C1C",fontWeight:600}}>Delete</button>
-            </div>
+
           </div>
         </div>}
       </div>}
@@ -1268,12 +1274,19 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
       :allBriefs.length===0
       ?<Card><Empty icon={<FileText size={26}color={C.sub}/>}title="No briefs pending"sub="Create a new asset from the Dashboard."/></Card>
       :<div>
-        {groupByDate(allBriefs).map(([date,items])=><div key={date}style={{marginBottom:12}}>
-          <DateGroupHeader date={date}count={items.length}color={C.coral}/>
-          <Card style={{padding:0,overflow:"hidden"}}>
-            {items.map(c=><AssetRow key={c.id}c={c}/>)}
+        {allBriefs.length>0&&<div style={{marginBottom:16}}>
+          <div style={{fontSize:11,fontWeight:700,color:C.coral,textTransform:"uppercase",letterSpacing:.5,marginBottom:8,display:"flex",alignItems:"center",gap:5}}>⬤ Needs attention · {allBriefs.length}</div>
+          {groupByDate(allBriefs).map(([date,items])=><div key={date}style={{marginBottom:10}}>
+            <DateGroupHeader date={date}count={items.length}color={C.coral}/>
+            <Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><AssetRow key={c.id}c={c}/>)}</Card>
+          </div>)}
+        </div>}
+        {briefedElsewhere.length>0&&<div>
+          <div style={{fontSize:11,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>✓ Moved forward · {briefedElsewhere.length}</div>
+          <Card style={{padding:0,overflow:"hidden",opacity:.6}}>
+            {briefedElsewhere.map(c=><AssetRow key={c.id}c={c}/>)}
           </Card>
-        </div>)}
+        </div>}
       </div>}
   </div>;
 }
@@ -1488,8 +1501,13 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
     };
 
     const select=(idx)=>{
-      patch(c.id,{data:{...(c.data||{}),selectedCopyIdx:idx},stage:"design",copy_approver:me.name});
-      if(toast)toast("Copy approved — asset moved to Design ✓","success");
+      if(idx===null){
+        patch(c.id,{data:{...(c.data||{}),selectedCopyIdx:null},stage:"content",copy_approver:null});
+        if(toast)toast("Copy unselected — pick another option","success");
+      } else {
+        patch(c.id,{data:{...(c.data||{}),selectedCopyIdx:idx},stage:"design",copy_approver:me.name});
+        if(toast)toast("Copy approved ✓ — go to Design tab when ready","success");
+      }
     };
 
     return<div style={{borderBottom:`1px solid ${C.line}`}}>
@@ -1508,6 +1526,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
           {sel!=null&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#5B21B6",background:"#EDE9FE",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>Copy approved</span>}
           {opts&&sel==null&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#92400E",background:"#FEF3C7",padding:"3px 9px",borderRadius:999}}>{opts.length} options — pick one</span>}
           {!opts&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#B91C1C",background:"#FEF2F2",padding:"3px 9px",borderRadius:999}}>Needs copy</span>}
+          <div onClick={e=>e.stopPropagation()}><RowActions c={c}patch={patch}me={me}/></div>
           {isOpen?<ChevronDown size={16}color={C.sub}/>:<ChevronRight size={16}color={C.sub}/>}
         </div>
       </div>
@@ -1536,10 +1555,6 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
           </div>
           <div style={{marginTop:10,fontSize:12,color:"#166534"}}>Asset is now in Design queue. The design team can pick it up.</div>
         </div>}
-        <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${C.line}`,display:"flex",gap:8,justifyContent:"flex-end"}}>
-          <button onClick={()=>{if(window.confirm("Archive this asset?"))patch(c.id,{stage:"done"});}}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.sub,fontWeight:600}}>Archive</button>
-          <button onClick={()=>{if(window.confirm("Delete permanently?"))api.del("/api/campaigns/"+c.id).then(()=>window.location.reload());}}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:"1px solid #FECACA",background:"#FFF5F5",cursor:"pointer",color:"#B91C1C",fontWeight:600}}>Delete</button>
-        </div>
         <FeedbackBar stage="content"by={me.name}onSave={saveFeedback}/>
       </div>}
     </div>;
@@ -1558,7 +1573,22 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       ?<CalendarView campaigns={allCopy}onOpen={onOpen}filterStage="content"/>
       :allCopy.length===0
       ?<Card><Empty icon={<MessageSquare size={26}color={C.sub}/>}title="No copy pending"sub="Assets move here after brief is done."/></Card>
-      :<div>{groupByDate(allCopy).map(([date,items])=><div key={date}style={{marginBottom:12}}><DateGroupHeader date={date}count={items.length}color={C.purple}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}/>)}</Card></div>)}</div>}
+      :<div>
+        {(()=>{
+          const needsCopy=allCopy.filter(c=>c.data?.selectedCopyIdx==null);
+          const approved=allCopy.filter(c=>c.data?.selectedCopyIdx!=null);
+          return<>
+            {needsCopy.length>0&&<div style={{marginBottom:16}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#92400E",textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>⬤ Needs attention · {needsCopy.length}</div>
+              {groupByDate(needsCopy).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.purple}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}/>)}</Card></div>)}
+            </div>}
+            {approved.length>0&&<div>
+              <div style={{fontSize:11,fontWeight:700,color:"#5B21B6",textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>✓ Copy approved · {approved.length}</div>
+              <div style={{opacity:.75}}>{groupByDate(approved).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.purple}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}/>)}</Card></div>)}</div>
+            </div>}
+          </>;
+        })()}
+      </div>}
   </div>;
 }
 
@@ -1619,14 +1649,155 @@ function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,
         </div>
         :<div style={{display:"flex",gap:7}}>
           {!sel&&<Btn small variant="dark"onClick={()=>onSelect(idx)}><CheckCircle2 size={12}/>Select</Btn>}
-          <Btn small variant="ghost"onClick={()=>{setRefineFor(idx);setRefineText("");}}><RefreshCw size={13}/>Refine</Btn>
+          {sel&&<Btn small variant="ghost"onClick={()=>onSelect(null)}><X size={12}/>Unselect</Btn>}
+          <Btn small variant="ghost"onClick={()=>{setRefineFor(idx);setRefineText("");}}><RefreshCw size={13}/>Edit copy</Btn>
         </div>}
     </div>
   </div>;
 }
 
+function SmartLibraryPicker({d,setD,copy,brief,product}){
+  const[suggested,setSuggested]=useState(null);
+  const[loading,setLoading]=useState(false);
+  const[promptRequest,setPromptRequest]=useState(null);
+
+  React.useEffect(()=>{
+    // Auto-suggest on mount based on copy + product
+    suggestMatches();
+  },[]);
+
+  const suggestMatches=async()=>{
+    setLoading(true);
+    try{
+      const context=`Product: ${product||""}\nCopy direction: ${copy?.direction||""}\nHeader: ${copy?.header||""}\nBrief idea: ${brief?.idea||""}`;
+      const libraryList=LIBRARY.map(l=>`${l.id}: ${l.label} — tags: ${l.tags.join(", ")} — ${l.desc}`).join("\n");
+      const sys=`You are a creative director. Given campaign copy, pick the 3-4 best matching library assets. Return ONLY JSON: {picks:["l1","l3",...], reasoning:"one line why these match"}`;
+      const j=await callClaude(sys,`${context}\n\nLibrary:\n${libraryList}`,true);
+      const picked=(j.picks||[]).map(id=>LIBRARY.find(l=>l.id===id)).filter(Boolean);
+      setSuggested({items:picked,reasoning:j.reasoning});
+    }catch(e){
+      // fallback: show first 4
+      setSuggested({items:LIBRARY.slice(0,4),reasoning:"Showing available assets"});
+    }
+    setLoading(false);
+  };
+
+  const all=suggested?.items||LIBRARY.slice(0,4);
+
+  return<div style={{marginBottom:12}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+      <div style={{fontSize:12,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5}}>Suggested from library</div>
+      <button onClick={suggestMatches}style={{fontSize:11.5,background:"none",border:`1px solid ${C.line}`,borderRadius:6,padding:"3px 9px",cursor:"pointer",color:C.sub,fontWeight:600,display:"flex",alignItems:"center",gap:4}}><RefreshCw size={11}/>Re-suggest</button>
+    </div>
+    {suggested?.reasoning&&<div style={{fontSize:12,color:C.sub,marginBottom:8,fontStyle:"italic"}}>"{suggested.reasoning}"</div>}
+    {loading?<Spin label="Finding best matches…"/>:<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+      {all.map(l=>{
+        const picked=d.libraryPick===l.id;
+        return<div key={l.id}style={{border:`2px solid ${picked?C.teal:C.line}`,borderRadius:10,overflow:"hidden",background:picked?C.tealSoft:"#fff"}}>
+          <div onClick={()=>setD({libraryPick:l.id})}style={{padding:"10px 12px",cursor:"pointer"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
+              <div style={{width:28,height:28,borderRadius:6,background:l.tone+"33",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><ImageIcon size={14}color={l.tone}/></div>
+              <div style={{fontSize:12.5,fontWeight:700,lineHeight:1.3,flex:1}}>{l.label}</div>
+              {picked&&<CheckCircle2 size={14}color={C.teal}/>}
+            </div>
+            <div style={{fontSize:11,color:C.sub,lineHeight:1.4}}>{l.desc}</div>
+          </div>
+          <div style={{borderTop:`1px solid ${C.line}`,display:"flex",gap:0}}>
+            <a href={`mailto:design@huft.com?subject=Library asset: ${l.label}&body=Requesting download of: ${l.label}%0A%0ACampaign: ${copy?.direction||""}`}
+              style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:4,padding:"6px",fontSize:11,fontWeight:600,color:C.sub,textDecoration:"none",borderRight:`1px solid ${C.line}`}}>
+              <Download size={11}/>Download
+            </a>
+            <button onClick={()=>setPromptRequest(promptRequest===l.id?null:l.id)}
+              style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:4,padding:"6px",fontSize:11,fontWeight:600,color:promptRequest===l.id?C.coral:C.sub,background:"transparent",border:"none",cursor:"pointer"}}>
+              <Wand2 size={11}/>Request prompt
+            </button>
+          </div>
+          {promptRequest===l.id&&<PromptRequestForm asset={l}copy={copy}onClose={()=>setPromptRequest(null)}/>}
+        </div>;
+      })}
+    </div>}
+    {d.libraryPick&&<LibraryMatchCheck pick={LIBRARY.find(l=>l.id===d.libraryPick)}copy={copy}/>}
+  </div>;
+}
+
+function PromptRequestForm({asset,copy,onClose}){
+  const[note,setNote]=useState("");
+  const[sent,setSent]=useState(false);
+  const submit=()=>{
+    // In production this would post to Slack/email. For now just show confirmation.
+    setSent(true);
+    setTimeout(onClose,2000);
+  };
+  if(sent)return<div style={{padding:"10px 12px",background:"#F0FDF4",fontSize:12,color:"#15803D",fontWeight:600,display:"flex",alignItems:"center",gap:6}}><CheckCircle2 size={13}/>Prompt request sent to design team!</div>;
+  return<div style={{padding:"10px 12px",borderTop:`1px solid ${C.line}`,background:"#FFFBF7"}}>
+    <div style={{fontSize:11.5,fontWeight:700,color:C.ink,marginBottom:6}}>Request an image prompt for "{asset.label}"</div>
+    <textarea value={note}onChange={e=>setNote(e.target.value)}placeholder="Any specific direction? e.g. show a golden retriever, warm lighting, home kitchen..."rows={2}style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:7,padding:"7px 9px",fontSize:12,resize:"none",boxSizing:"border-box",marginBottom:6}}/>
+    <div style={{display:"flex",gap:6}}>
+      <Btn small onClick={submit}>Send request</Btn>
+      <Btn small variant="ghost"onClick={onClose}>Cancel</Btn>
+    </div>
+  </div>;
+}
+
+
+function ArtNotes({d,setD,busy,genNotes}){
+  const[editIdx,setEditIdx]=useState(null);
+  const[draft,setDraft]=useState("");
+  const saveNote=(i)=>{
+    const updated=(d.notes||[]).map((n,ni)=>ni===i?draft:n);
+    setD({notes:updated});
+    setEditIdx(null);
+  };
+  return<div style={{marginBottom:12}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+      <div style={{fontSize:12,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5}}>Art direction notes</div>
+      <div style={{display:"flex",gap:6}}>
+        {busy==="notes"?<Spin label="Generating…"/>:<>
+          {d.notes&&<Btn small variant="ghost"onClick={e=>{e.stopPropagation();setD({notes:null});genNotes();}}><RefreshCw size={12}/>Fresh notes</Btn>}
+          <Btn small onClick={e=>{e.stopPropagation();genNotes();}}>{d.notes?"Regenerate":"Generate notes"}</Btn>
+        </>}
+      </div>
+    </div>
+    {d.notes&&d.notes.map((n,i)=><div key={i}style={{marginBottom:6}}>
+      {editIdx===i
+        ?<div>
+          <textarea value={draft}onChange={e=>setDraft(e.target.value)}rows={2}style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 10px",fontSize:13,resize:"vertical",boxSizing:"border-box"}}/>
+          <div style={{display:"flex",gap:6,marginTop:4}}>
+            <Btn small onClick={()=>saveNote(i)}>Save</Btn>
+            <Btn small variant="ghost"onClick={()=>setEditIdx(null)}>Cancel</Btn>
+          </div>
+        </div>
+        :<div style={{background:C.coralSoft,borderRadius:8,padding:"8px 12px",fontSize:13,color:"#7D3D24",display:"flex",alignItems:"flex-start",gap:8}}>
+          <span style={{flex:1}}>• {n}</span>
+          <button onClick={()=>{setEditIdx(i);setDraft(n);}}style={{border:"none",background:"transparent",cursor:"pointer",color:"#7D3D24",flexShrink:0,padding:0}}><PenLine size={13}/></button>
+        </div>}
+    </div>)}
+  </div>;
+}
+
+function LibraryMatchCheck({pick,copy}){
+  if(!pick||!copy)return null;
+  const productMatch=copy.direction&&pick.label.toLowerCase().includes((copy.direction||"").toLowerCase().split(" ")[0]);
+  return<div style={{marginTop:8,padding:"8px 12px",borderRadius:8,background:productMatch?"#F0FDF4":"#FEF3C7",border:`1px solid ${productMatch?"#BBF7D0":"#FDE68A"}`,fontSize:12,color:productMatch?"#15803D":"#92400E",display:"flex",alignItems:"center",gap:6}}>
+    {productMatch?<CheckCircle2 size={13}/>:<span>⚠</span>}
+    {productMatch
+      ?`"${pick.label}" looks like a good match for this copy direction.`
+      :`Check that "${pick.label}" matches the copy direction: "${copy.direction}"`}
+  </div>;
+}
+
+
 /* ===== Design Tab ======================================================= */
-const LIBRARY=[{id:"l1",label:"Nuri × Sara's bowl",tone:"#F2603A"},{id:"l2",label:"Meowsi hero pack",tone:"#0E9488"},{id:"l3",label:"Cat + parent moment",tone:"#7C4DFF"},{id:"l4",label:"Win-back warm shot",tone:"#E0A93B"},{id:"l5",label:"NutriMeow value flat-lay",tone:"#2E7D32"},{id:"l6",label:"Festive WhatsApp frame",tone:"#C2410C"}];
+const LIBRARY=[
+  {id:"l1",label:"Nuri × Sara's bowl",tone:"#F2603A",tags:["sara","swf","food","dog","bowl","nutrition"],desc:"Sara's Wholesome Food hero shot — dog bowl with fresh ingredients"},
+  {id:"l2",label:"Meowsi hero pack",tone:"#0E9488",tags:["meowsi","cat","pack","nutrition","feline"],desc:"Meowsi product pack with cat lifestyle backdrop"},
+  {id:"l3",label:"Cat + parent moment",tone:"#7C4DFF",tags:["cat","parent","bond","lifestyle","meowsi","nutrimeow"],desc:"Warm lifestyle shot — cat parent bonding moment at home"},
+  {id:"l4",label:"Win-back warm shot",tone:"#E0A93B",tags:["winback","lapsed","dog","warm","re-engagement","loyalty"],desc:"Warm re-engagement visual — dog looking up at camera"},
+  {id:"l5",label:"NutriMeow value flat-lay",tone:"#2E7D32",tags:["nutrimeow","cat","value","flatlay","everyday"],desc:"NutriMeow product flat-lay with everyday nutrition cues"},
+  {id:"l6",label:"Festive WhatsApp frame",tone:"#C2410C",tags:["festive","seasonal","occasion","celebration","all"],desc:"Festive branded frame for seasonal WhatsApp campaigns"},
+  {id:"l7",label:"Hearty baked close-up",tone:"#B45309",tags:["hearty","dog","food","kibble","oven","baked","ingredients"],desc:"Hearty oven-baked kibble close-up with real ingredients"},
+  {id:"l8",label:"Spa grooming session",tone:"#0E9488",tags:["spa","grooming","dog","care","huft spa","wellness"],desc:"HUFT Spa grooming moment — calm dog being groomed"},
+];
 
 function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedback,campaigns,onOpen}){
   const allDesign=(campaigns||[]).filter(c=>c.stage==="design");
@@ -1701,6 +1872,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
           {approvedPrompt?<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#0F766E",background:"#CCFBF1",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>Prompt approved</span>
           :d.imagePrompts?<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#1D4ED8",background:"#DBEAFE",padding:"3px 9px",borderRadius:999}}>Prompts ready</span>
           :<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#B91C1C",background:"#FEF2F2",padding:"3px 9px",borderRadius:999}}>Needs design</span>}
+          <div onClick={e=>e.stopPropagation()}><RowActions c={c}patch={patch}me={me}/></div>
           {isOpen?<ChevronDown size={16}color={C.sub}/>:<ChevronRight size={16}color={C.sub}/>}
         </div>
       </div>
@@ -1741,13 +1913,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
         {imageMode&&<button onClick={()=>setImageMode(null)}style={{display:"flex",alignItems:"center",gap:5,background:"none",border:"none",cursor:"pointer",color:C.sub,fontSize:12.5,marginBottom:12,padding:0}}><ChevronRight size={13}style={{transform:"rotate(180deg)"}}/>Change image source</button>}
 
         {/* Art direction notes */}
-        {imageMode==="prompt"&&<div style={{marginBottom:12}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-            <div style={{fontSize:12,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5}}>Art direction notes</div>
-            {busy==="notes"?<Spin label="Generating…"/>:<Btn small onClick={e=>{e.stopPropagation();genNotes();}}>{d.notes?"Regenerate notes":"Generate notes"}</Btn>}
-          </div>
-          {d.notes&&d.notes.map((n,i)=><div key={i}style={{background:C.coralSoft,borderRadius:8,padding:"8px 12px",fontSize:13,marginBottom:6,color:"#7D3D24"}}>• {n}</div>)}
-        </div>}
+        {imageMode==="prompt"&&<ArtNotes d={d}setD={setD}busy={busy}genNotes={genNotes}/>}
 
         {/* Image prompts */}
         {imageMode==="prompt"&&<div style={{marginBottom:12}}>
@@ -1772,22 +1938,15 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
         </div>}
 
         {/* Library picker */}
-        {imageMode==="library"&&<div style={{marginBottom:12}}>
-          <div style={{fontSize:12,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>Pick from library</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-            {LIBRARY.map(l=><div key={l.id}onClick={()=>setD({libraryPick:l.id})}style={{border:`2px solid ${d.libraryPick===l.id?C.teal:C.line}`,borderRadius:10,padding:10,cursor:"pointer",textAlign:"center",background:d.libraryPick===l.id?C.tealSoft:"#fff"}}>
-              <div style={{width:32,height:32,borderRadius:8,background:l.tone+"33",margin:"0 auto 6px",display:"flex",alignItems:"center",justifyContent:"center"}}><ImageIcon size={16}color={l.tone}/></div>
-              <div style={{fontSize:11.5,fontWeight:600,lineHeight:1.3}}>{l.label}</div>
-            </div>)}
-          </div>
-        </div>}
+        {imageMode==="library"&&<SmartLibraryPicker d={d}setD={setD}copy={copy}brief={c.data?.brief}product={c.product}/>}
 
-        {/* Mark ready */}
-        {(approvedPrompt||d.libraryPick)&&<div style={{marginTop:10,paddingTop:12,borderTop:`1px solid ${C.line}`,display:"flex",gap:10}}>
-          <Btn variant="dark"onClick={()=>{patch(c.id,{stage:"done",went_live_at:new Date().toISOString()});}}>
-            <CheckCircle2 size={15}/>Mark as ready
+        {/* Design complete flow */}
+        {(approvedPrompt||d.libraryPick)&&<div style={{marginTop:10,paddingTop:12,borderTop:`1px solid ${C.line}`,background:"#F0FDF4",borderRadius:10,padding:"14px 16px"}}>
+          <div style={{fontSize:12,fontWeight:700,color:"#15803D",marginBottom:8,display:"flex",alignItems:"center",gap:6}}><CheckCircle2 size={13}/>Image source selected — is the design file ready?</div>
+          <div style={{fontSize:12,color:"#166534",marginBottom:10}}>Only mark as done once the actual Canva/design file is complete and ready to send.</div>
+          <Btn variant="dark"onClick={()=>{if(window.confirm("Confirm: design file is complete and ready to go live?"))patch(c.id,{stage:"done",went_live_at:new Date().toISOString(),design_approver:me.name});}}>
+            <CheckCircle2 size={15}/>Design complete — Mark as done
           </Btn>
-          <Btn variant="ghost"onClick={()=>exportDesignBriefTxt(c,copy,approvedPrompt)}><Download size={14}/>Export design brief</Btn>
         </div>}
 
         <FeedbackBar stage="design"by={me.name}onSave={saveFeedback}/>
@@ -1809,7 +1968,22 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
       ?<CalendarView campaigns={allDesign}onOpen={onOpen}filterStage="design"/>
       :allDesign.length===0
       ?<Card><Empty icon={<Palette size={26}color={C.sub}/>}title="No design pending"sub="Assets move here after copy is selected."/></Card>
-      :<div>{groupByDate(allDesign).map(([date,items])=><div key={date}style={{marginBottom:12}}><DateGroupHeader date={date}count={items.length}color={C.teal}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><DesignRow key={c.id}c={c}/>)}</Card></div>)}</div>}
+      :<div>
+        {(()=>{
+          const needsDesign=allDesign.filter(c=>!(c.data?.design?.approvedPromptIdx!=null||c.data?.design?.libraryPick));
+          const done=allDesign.filter(c=>c.data?.design?.approvedPromptIdx!=null||c.data?.design?.libraryPick);
+          return<>
+            {needsDesign.length>0&&<div style={{marginBottom:16}}>
+              <div style={{fontSize:11,fontWeight:700,color:C.coral,textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>⬤ Needs attention · {needsDesign.length}</div>
+              {groupByDate(needsDesign).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.teal}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><DesignRow key={c.id}c={c}/>)}</Card></div>)}
+            </div>}
+            {done.length>0&&<div>
+              <div style={{fontSize:11,fontWeight:700,color:C.teal,textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>✓ Image selected · {done.length}</div>
+              <div style={{opacity:.75}}>{groupByDate(done).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.teal}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><DesignRow key={c.id}c={c}/>)}</Card></div>)}</div>
+            </div>}
+          </>;
+        })()}
+      </div>}
   </div>;
 }
 
@@ -1845,8 +2019,13 @@ function DoneTab({campaigns,patch,onOpen,me,setTab}){
                 {p.date&&<span style={{fontSize:11,color:C.sub}}>{p.date}</span>}
                 {c.created_at&&<span style={{fontSize:11,color:C.sub,background:"#F3F4F6",padding:"2px 7px",borderRadius:5}}>{fmtDate(c.created_at)}</span>}
               </div>
-              {brief&&<div style={{fontSize:12,color:C.sub,marginBottom:4}}>{brief.idea}</div>}
-              {copy&&<div style={{fontSize:12,color:C.purple,fontWeight:600,marginBottom:4}}>✓ Copy approved: {copy.direction} — {copy.header?.slice(0,60)}{copy.header?.length>60?"…":""}</div>}
+              {brief&&<div style={{fontSize:12,color:C.sub,marginBottom:4,lineHeight:1.4}}>{brief.idea}</div>}
+              {copy&&<div style={{marginBottom:8,background:"#F5F3FF",borderRadius:8,padding:"8px 12px",borderLeft:"3px solid "+C.purple}}>
+                <div style={{fontSize:10,fontWeight:700,color:C.purple,textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Approved copy</div>
+                <div style={{fontWeight:700,fontSize:13,color:"#1E1B4B",marginBottom:3,whiteSpace:"pre-line"}}>{copy.header}</div>
+                <div style={{fontSize:11.5,color:"#4C1D95",lineHeight:1.45}}>{copy.body?.slice(0,120)}{copy.body?.length>120?"…":""}</div>
+                <div style={{marginTop:5,fontSize:11,fontWeight:700,color:C.purple}}>{copy.cta} →</div>
+              </div>}
               <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:6}}>
                 {[["brief","Brief",C.coral],["content","Copy",C.purple],["design","Design",C.teal]].map(([s,l,col])=>{
                   const has=s==="brief"?!!brief:s==="content"?!!opts:!!(c.data?.design?.approvedPromptIdx!=null||c.data?.design?.libraryPick);
