@@ -1366,7 +1366,7 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
   const briefedElsewhere=(campaigns||[]).filter(c=>c.stage!=="brief"&&!isArchived(c)&&c.data?.brief).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
   const briefArchived=(campaigns||[]).filter(c=>isArchived(c)&&c.data?.brief).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
   const done=(campaigns||[]).filter(c=>c.stage!=="brief"&&c.data?.brief);
-  const[openId,setOpenId]=useState(active?.id||null);
+  const[openId,setOpenId]=useState(null);
   const[mode,setMode]=useState({}); // {[id]: 'view'|'chat'|'self'|'edit'}
   const[genMap,setGenMap]=useState({}); // track generating per id
 
@@ -1654,7 +1654,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
   // Copy page shows: assets still in copy stage, PLUS any non-archived asset whose copy
   // was already approved (those have moved on to Design/Done but should remain visible here).
   const allCopy=(campaigns||[]).filter(c=>!isArchived(c)&&(c.stage==="content"||(c.data?.copyOptions&&c.data?.selectedCopyIdx!=null)));
-  const[openId,setOpenId]=useState(active?.id||null);
+  const[openId,setOpenId]=useState(null);
   const[busyMap,setBusyMap]=useState({});
   const[errMap,setErrMap]=useState({});
   React.useEffect(()=>{if(active?.id)setOpenId(active.id);},[active?.id]);
@@ -1751,40 +1751,52 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       if(toast)toast("Saved & approved ✓ — the engine will learn from this","success");
     };
 
-    // Once copy is approved, lock the row to a compact, copy-ready summary — no expand/collapse.
+    // Inline direct-text edit of a generated option (no AI, user types changes)
+    const editDirectly=(idx,updated)=>{
+      const base=opts||[];
+      const newOpts=base.map((o,i)=>i===idx?{...o,...updated,manual:true}:o);
+      patch(c.id,{data:{...(c.data||{}),copyOptions:newOpts}});
+      if(toast)toast("Copy updated ✓","success");
+    };
+
+    // Once copy is approved, use shared openId accordion — collapsed by default.
     if(sel!=null){
       const o=opts?.[sel];
       const tone=ROW_TONE[c.stage==="done"?"done":"approved"];
       const isPush=c.channel==="Push notification";
-      return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`4px solid ${tone.bar}`,background:tone.bg,padding:"14px 18px"}}>
-        <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:4,flexWrap:"wrap"}}>
-              <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{c.product||"—"}</span>
-              <span style={{fontSize:11,fontWeight:700,color:C.coral}}>{normCrmType(c.crm_type)}</span>
-              <span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel||"WhatsApp"}</span>
-              <span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#5B21B6",background:"#EDE9FE",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>Copy approved</span>
-              {c.stage!=="content"&&<StageBadge stage={c.stage}/>}
-              {c.created_at&&<span style={{marginLeft:"auto",fontSize:11,color:C.sub,background:"#F3F4F6",padding:"2px 7px",borderRadius:5}}>{fmtDate(c.created_at)}</span>}
-            </div>
-            {o&&<div style={{background:"#fff",border:`1px solid ${C.line}`,borderRadius:10,padding:"10px 13px",marginTop:4}}>
-              {o.direction&&<div style={{fontSize:10,fontWeight:700,color:C.purple,textTransform:"uppercase",letterSpacing:.5,marginBottom:5}}>{o.direction}</div>}
-              <div style={{fontWeight:700,fontSize:13.5,color:C.ink,whiteSpace:"pre-line",marginBottom:4}}>{o.header}</div>
-              <div style={{fontSize:12.5,color:"#374151",lineHeight:1.5,whiteSpace:"pre-line"}}>{o.body}</div>
-              {o.cta&&<div style={{marginTop:7,display:"inline-block",background:C.navy,color:"#fff",fontSize:11.5,fontWeight:700,padding:"4px 11px",borderRadius:7}}>{o.cta}</div>}
-              {isPush&&<div style={{marginTop:8,display:"flex",gap:10,fontSize:10,color:C.sub}}><span style={{color:(o.header||"").length>50?"#DC2626":C.sub}}>Title {(o.header||"").length}/50</span><span style={{color:(o.body||"").length>90?"#DC2626":C.sub}}>Body {(o.body||"").length}/90</span></div>}
-            </div>}
-            <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginTop:10}}>
-              <CopyBtn text={()=>copyTextFromOption(o)}/>
-              <button onClick={()=>setManualMode(manualMode==="edit"?null:"edit")}style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,fontWeight:600,padding:"4px 10px",borderRadius:8,border:`1px solid ${C.line}`,background:"#fff",color:C.ink,cursor:"pointer"}}><PenLine size={12}/>Edit copy</button>
-              <button onClick={()=>setManualMode(manualMode==="add"?null:"add")}style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,fontWeight:600,padding:"4px 10px",borderRadius:8,border:`1px solid ${C.line}`,background:"#fff",color:C.ink,cursor:"pointer"}}><Plus size={12}/>Add manually</button>
-              <button onClick={()=>select(null)}style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,fontWeight:600,padding:"4px 10px",borderRadius:8,border:`1px solid ${C.line}`,background:"#fff",color:C.sub,cursor:"pointer"}}><X size={12}/>Unselect</button>
-              {c.copy_approver&&<span style={{fontSize:11,color:C.sub}}>Approved by {c.copy_approver}</span>}
-            </div>
-            {manualMode&&<ManualCopyForm initial={manualMode==="edit"?o:null}channel={c.channel}onSave={saveManual}onCancel={()=>setManualMode(null)}/>}
+      return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`4px solid ${tone.bar}`,background:tone.bg}}>
+        {/* Collapsed header — always visible, click to expand */}
+        <div onClick={()=>setOpenId(isOpen?null:c.id)}style={{display:"flex",alignItems:"center",gap:12,padding:"12px 18px",cursor:"pointer",userSelect:"none"}}>
+          <div style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
+            <span style={{color:C.sub,display:"flex",alignItems:"center",flexShrink:0}}>{isOpen?<ChevronDown size={14}/>:<ChevronRight size={14}/>}</span>
+            <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{c.product||"—"}</span>
+            <span style={{fontSize:11,fontWeight:700,color:C.coral}}>{normCrmType(c.crm_type)}</span>
+            <span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel||"WhatsApp"}</span>
+            <span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#5B21B6",background:"#EDE9FE",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>Copy approved</span>
+            {c.stage!=="content"&&<StageBadge stage={c.stage}/>}
+            {isOpen&&o?.direction&&<span style={{fontSize:11,color:C.sub,fontStyle:"italic"}}>{o.direction}</span>}
+            {c.created_at&&<span style={{marginLeft:"auto",fontSize:11,color:C.sub,background:"#F3F4F6",padding:"2px 7px",borderRadius:5}}>{fmtDate(c.created_at)}</span>}
           </div>
-          <div style={{flexShrink:0}}><RowActions c={c}patch={patch}me={me}onDelete={onDelete}/></div>
+          <div style={{flexShrink:0}} onClick={e=>e.stopPropagation()}><RowActions c={c}patch={patch}me={me}onDelete={onDelete}/></div>
         </div>
+        {/* Expanded body */}
+        {isOpen&&<div style={{padding:"0 18px 14px"}}>
+          {o&&<div style={{background:"#fff",border:`1px solid ${C.line}`,borderRadius:10,padding:"10px 13px",marginBottom:10}}>
+            {o.direction&&<div style={{fontSize:10,fontWeight:700,color:C.purple,textTransform:"uppercase",letterSpacing:.5,marginBottom:5}}>{o.direction}</div>}
+            <div style={{fontWeight:700,fontSize:13.5,color:C.ink,whiteSpace:"pre-line",marginBottom:4}}>{o.header}</div>
+            <div style={{fontSize:12.5,color:"#374151",lineHeight:1.5,whiteSpace:"pre-line"}}>{o.body}</div>
+            {o.cta&&<div style={{marginTop:7,display:"inline-block",background:C.navy,color:"#fff",fontSize:11.5,fontWeight:700,padding:"4px 11px",borderRadius:7}}>{o.cta}</div>}
+            {isPush&&<div style={{marginTop:8,display:"flex",gap:10,fontSize:10,color:C.sub}}><span style={{color:(o.header||"").length>50?"#DC2626":C.sub}}>Title {(o.header||"").length}/50</span><span style={{color:(o.body||"").length>90?"#DC2626":C.sub}}>Body {(o.body||"").length}/90</span></div>}
+          </div>}
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+            <CopyBtn text={()=>copyTextFromOption(o)}/>
+            <button onClick={()=>setManualMode(manualMode==="edit"?null:"edit")}style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,fontWeight:600,padding:"4px 10px",borderRadius:8,border:`1px solid ${C.line}`,background:"#fff",color:C.ink,cursor:"pointer"}}><PenLine size={12}/>Edit copy</button>
+            <button onClick={()=>setManualMode(manualMode==="add"?null:"add")}style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,fontWeight:600,padding:"4px 10px",borderRadius:8,border:`1px solid ${C.line}`,background:"#fff",color:C.ink,cursor:"pointer"}}><Plus size={12}/>Add manually</button>
+            <button onClick={()=>select(null)}style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,fontWeight:600,padding:"4px 10px",borderRadius:8,border:`1px solid ${C.line}`,background:"#fff",color:C.sub,cursor:"pointer"}}><X size={12}/>Unselect</button>
+            {c.copy_approver&&<span style={{fontSize:11,color:C.sub}}>Approved by {c.copy_approver}</span>}
+          </div>
+          {manualMode&&<ManualCopyForm initial={manualMode==="edit"?o:null}channel={c.channel}onSave={saveManual}onCancel={()=>setManualMode(null)}/>}
+        </div>}
       </div>;
     }
 
@@ -1824,11 +1836,11 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         {opts&&<div>
           {sel!=null&&<div style={{marginBottom:10}}>
             <div style={{fontSize:11,fontWeight:700,color:"#5B21B6",textTransform:"uppercase",letterSpacing:.5,marginBottom:6,display:"flex",alignItems:"center",gap:4}}><CheckCircle2 size={11}/>Approved copy</div>
-            <ContentCard o={opts[sel]}idx={sel}sel={true}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}channel={c.channel}/>
+            <ContentCard o={opts[sel]}idx={sel}sel={true}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}onEditSave={editDirectly}channel={c.channel}/>
           </div>}
           {sel!=null&&<button onClick={()=>setShowAll(v=>!v)}style={{display:"flex",alignItems:"center",gap:5,background:"none",border:"none",cursor:"pointer",color:C.sub,fontSize:12.5,fontWeight:600,marginBottom:8}}>{showAll?<><ChevronDown size={13}/>Hide other options</>:<><Eye size={13}/>See other {opts.length-1} options</>}</button>}
           {(sel==null||showAll)&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
-            {opts.map((o,i)=>{if(sel!=null&&i===sel)return null;return<ContentCard key={i}o={o}idx={i}sel={false}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}channel={c.channel}/>;})}</div>}
+            {opts.map((o,i)=>{if(sel!=null&&i===sel)return null;return<ContentCard key={i}o={o}idx={i}sel={false}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}onEditSave={editDirectly}channel={c.channel}/>;})}</div>}
         </div>}
         {sel!=null&&<div style={{marginTop:12,background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:10,padding:"14px 16px"}}>
           <div style={{fontSize:12,fontWeight:700,color:"#15803D",textTransform:"uppercase",letterSpacing:.5,marginBottom:10,display:"flex",alignItems:"center",gap:6}}><CheckCircle2 size={13}/>Copy approved — next steps</div>
@@ -1906,7 +1918,7 @@ function ManualCopyForm({initial,channel,onSave,onCancel}){
   </div>;
 }
 
-function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,busy,onSelect,onRefine,channel}){
+function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,busy,onSelect,onRefine,onEditSave,channel}){
   const isPush=channel==="Push notification";
   const dirColors=[
     {bg:"#FFF3E0",text:"#E65100"},{bg:"#E8F5E9",text:"#2E7D32"},
@@ -1914,6 +1926,7 @@ function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,
     {bg:"#FCE4EC",text:"#880E4F"},
   ];
   const dc=dirColors[idx%dirColors.length];
+  const[editMode,setEditMode]=useState(null); // null | "menu" | "steer" | "text"
 
   return<div style={{
     border:`2px solid ${sel?C.purple:C.line}`,borderRadius:14,overflow:"hidden",
@@ -1956,14 +1969,49 @@ function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,
 
     {/* Actions */}
     <div style={{padding:"0 12px 12px"}}>
-      {refineFor===idx
-        ?<div><Field label="Steer this option (one-time)"value={refineText}onChange={setRefineText}placeholder="e.g. warmer tone, more urgency, shorter"/>
-          <div style={{display:"flex",gap:7}}>{busy?<Spin label="Refining…"/>:<Btn small onClick={()=>onRefine(idx)}disabled={!refineText.trim()}><RefreshCw size={13}/>Apply steer</Btn>}<Btn small variant="ghost"onClick={()=>{setRefineFor(null);setRefineText("");}}>Cancel</Btn></div>
+      {/* Steer panel */}
+      {editMode==="steer"
+        ?<div>
+          <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}>
+            <RefreshCw size={12}color={C.purple}/>
+            <span style={{fontSize:11.5,fontWeight:700,color:C.purple}}>Steer with AI</span>
+          </div>
+          <Field label="What should change? (one-time)"value={refineText}onChange={setRefineText}placeholder="e.g. warmer tone, more urgency, shorter"/>
+          <div style={{display:"flex",gap:7}}>
+            {busy?<Spin label="Refining…"/>:<Btn small onClick={()=>{onRefine(idx);setEditMode(null);setRefineFor(null);setRefineText("");}}disabled={!refineText.trim()}><RefreshCw size={13}/>Apply steer</Btn>}
+            <Btn small variant="ghost"onClick={()=>{setEditMode(null);setRefineFor(null);setRefineText("");}}>Cancel</Btn>
+          </div>
         </div>
-        :<div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+      /* Direct text edit panel */
+      :editMode==="text"
+        ?<ManualCopyForm initial={o}channel={channel}onSave={(updated)=>{onEditSave&&onEditSave(idx,updated);setEditMode(null);}}onCancel={()=>setEditMode(null)}/>
+      /* Edit sub-menu */
+      :editMode==="menu"
+        ?<div style={{border:`1.5px solid ${C.line}`,borderRadius:10,padding:"10px 12px",background:"#FAFAFA",marginBottom:4}}>
+          <div style={{fontSize:11.5,fontWeight:700,color:C.ink,marginBottom:8}}>How do you want to edit?</div>
+          <div style={{display:"flex",gap:8,flexDirection:"column"}}>
+            <button onClick={()=>{setEditMode("steer");setRefineFor(idx);setRefineText("");}}style={{display:"flex",alignItems:"flex-start",gap:10,padding:"9px 12px",border:`1.5px solid ${C.purple}`,borderRadius:9,background:"#FAF5FF",cursor:"pointer",textAlign:"left",width:"100%"}}>
+              <RefreshCw size={14}color={C.purple}style={{marginTop:1,flexShrink:0}}/>
+              <div>
+                <div style={{fontSize:12,fontWeight:700,color:C.purple}}>Steer with AI</div>
+                <div style={{fontSize:11,color:C.sub,marginTop:1}}>Give a direction — AI rewrites it for you</div>
+              </div>
+            </button>
+            <button onClick={()=>setEditMode("text")}style={{display:"flex",alignItems:"flex-start",gap:10,padding:"9px 12px",border:`1.5px solid ${C.line}`,borderRadius:9,background:"#fff",cursor:"pointer",textAlign:"left",width:"100%",marginTop:6}}>
+              <PenLine size={14}color={C.ink}style={{marginTop:1,flexShrink:0}}/>
+              <div>
+                <div style={{fontSize:12,fontWeight:700,color:C.ink}}>Edit text directly</div>
+                <div style={{fontSize:11,color:C.sub,marginTop:1}}>Open the copy in an editable form</div>
+              </div>
+            </button>
+          </div>
+          <button onClick={()=>setEditMode(null)}style={{marginTop:8,fontSize:11,color:C.sub,background:"none",border:"none",cursor:"pointer",padding:0}}>✕ Cancel</button>
+        </div>
+      /* Default action bar */
+      :<div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
           {!sel&&<Btn small variant="dark"onClick={()=>onSelect(idx)}><CheckCircle2 size={12}/>Select</Btn>}
           {sel&&<Btn small variant="ghost"onClick={()=>onSelect(null)}><X size={12}/>Unselect</Btn>}
-          <Btn small variant="ghost"onClick={()=>{setRefineFor(idx);setRefineText("");}}><RefreshCw size={13}/>Edit copy</Btn>
+          <Btn small variant="ghost"onClick={()=>setEditMode("menu")}><PenLine size={13}/>Edit copy</Btn>
           <CopyBtn text={()=>copyTextFromOption(o)}/>
         </div>}
     </div>
@@ -2163,7 +2211,7 @@ function FinalDesignUpload({c,d,patch,me}){
 
 function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedback,campaigns,onOpen,onDelete}){
   const allDesign=(campaigns||[]).filter(c=>c.stage==="design"&&!isArchived(c));
-  const[openId,setOpenId]=useState(active?.id||null);
+  const[openId,setOpenId]=useState(null);
   const[imageModes,setImageModes]=useState({});
   const[designBusyMap,setDesignBusyMap]=useState({});
   const[designErrMap,setDesignErrMap]=useState({});
