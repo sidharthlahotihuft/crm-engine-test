@@ -383,6 +383,22 @@ const BRIEF_STEPS = [
     ],
     freeText:true,
     placeholder:"Or describe your own…",
+    filterByAudience:(aud)=>{
+      const a=(aud||"").toLowerCase();
+      // Universal objectives that fit any audience
+      const universal=["Product education","Seasonal / topical","Awareness / Brand"];
+      if(a.includes("lapsed")||a.includes("win")||a.includes("reactivat")||a.includes("churn"))
+        return ["Win-back / Reactivation",...universal];
+      if(a.includes("first-time")||a.includes("first time")||a.includes("new ")||a.includes("trial")||a.includes("acqui")||a.includes("nso")||a.includes("store opening"))
+        return ["Conversion (first purchase)",...universal];
+      if(a.includes("loyal")||a.includes("high-value")||a.includes("high value")||a.includes("repeat"))
+        return ["Retention / Loyalty","Upsell / Cross-sell",...universal];
+      if(a.includes("post-purchase")||a.includes("post purchase")||a.includes("existing")||a.includes("follow-up")||a.includes("follow up"))
+        return ["Upsell / Cross-sell","Retention / Loyalty",...universal];
+      if(a.includes("post-spa")||a.includes("grooming"))
+        return ["Retention / Loyalty","Upsell / Cross-sell","Conversion (first purchase)",...universal];
+      return null; // null = show all
+    },
   },
   {
     key:"offer", question:"Is there an offer or incentive?",
@@ -484,6 +500,15 @@ function Btn({children,onClick,variant="primary",disabled,small,style}){
 function Card({children,style,onClick}){return<div onClick={onClick}style={{background:C.white,border:`1px solid ${C.line}`,borderRadius:14,padding:18,boxShadow:"0 1px 2px rgba(16,24,40,.04)",...style}}>{children}</div>;}
 function Eyebrow({children,color=C.coral}){return<div style={{color,fontSize:12,fontWeight:700,letterSpacing:1,textTransform:"uppercase"}}>{children}</div>;}
 function StageBadge({stage}){const col={brief:C.coral,content:C.purple,design:C.teal,done:C.green}[stage]||C.sub;return<span style={{background:col+"1A",color:col,fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:999}}>{STAGE_LABEL[stage]}</span>;}
+// Small colour-coded tile so rows are scannable by channel at a glance
+function ChannelIcon({channel,size=16}){
+  const isPush=channel==="Push notification";
+  const isEmail=channel==="Email";
+  const cfg=isPush?{ic:<BellIcon size={size}/>,bg:"#FEF3C7",fg:"#D97706"}
+    :isEmail?{ic:<Send size={size}/>,bg:"#E0E7FF",fg:"#4F46E5"}
+    :{ic:<MessageSquare size={size}/>,bg:"#DCFCE7",fg:"#16A34A"};
+  return<span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:size+18,height:size+18,borderRadius:10,background:cfg.bg,color:cfg.fg,flexShrink:0}}>{cfg.ic}</span>;
+}
 function RowActions({c,patch,me,onEdit,onDelete}){
   const canEdit=me.role==="admin"||me.role==="business";
   return<div style={{display:"flex",gap:5,alignItems:"center",flexShrink:0}}>
@@ -523,7 +548,7 @@ const ROW_TONE={
 };
 function Field({label,value,onChange,placeholder,textarea,rows=2}){return<label style={{display:"block",marginBottom:12}}><div style={{fontSize:12.5,fontWeight:600,color:C.sub,marginBottom:5}}>{label}</div>{textarea?<textarea value={value}onChange={e=>onChange(e.target.value)}placeholder={placeholder}rows={rows}style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:10,padding:"9px 11px",fontSize:14,color:C.ink,resize:"vertical",boxSizing:"border-box"}}/>:<input value={value}onChange={e=>onChange(e.target.value)}placeholder={placeholder}style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:10,padding:"9px 11px",fontSize:14,color:C.ink,boxSizing:"border-box"}}/>}</label>;}
 function Spin({label}){return<div style={{display:"flex",alignItems:"center",gap:9,color:C.sub,fontSize:14,padding:"10px 0"}}><Loader2 size={16}style={{animation:"spin 1s linear infinite"}}/>{label}</div>;}
-function Empty({icon,title,sub}){return<div style={{textAlign:"center",padding:"48px 20px",color:C.sub}}><div style={{display:"inline-flex",padding:16,borderRadius:999,background:C.paper,marginBottom:12}}>{icon}</div><div style={{fontWeight:700,color:C.ink,fontSize:16}}>{title}</div><div style={{fontSize:14,marginTop:4,maxWidth:380,marginInline:"auto"}}>{sub}</div></div>;}
+function Empty({icon,title,sub,action}){return<div style={{textAlign:"center",padding:"48px 20px",color:C.sub}}><div style={{display:"inline-flex",padding:16,borderRadius:999,background:C.paper,marginBottom:12}}>{icon}</div><div style={{fontWeight:700,color:C.ink,fontSize:16}}>{title}</div><div style={{fontSize:14,marginTop:4,maxWidth:380,marginInline:"auto"}}>{sub}</div>{action&&<div style={{marginTop:16,display:"flex",justifyContent:"center"}}>{action}</div>}</div>;}
 function Header({eyebrow,title,right}){return<div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:16}}><div><Eyebrow>{eyebrow}</Eyebrow><h1 style={{margin:"4px 0 0",fontSize:24,fontWeight:800}}>{title}</h1></div>{right}</div>;}
 function Step({n,title,done}){return<div style={{display:"flex",alignItems:"center",gap:10}}><span style={{width:24,height:24,borderRadius:999,background:done?C.teal:C.navy,color:"#fff",fontSize:12.5,fontWeight:700,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>{done?<Check size={14}/>:n}</span><span style={{fontWeight:700,fontSize:15.5}}>{title}</span></div>;}
 
@@ -596,6 +621,19 @@ function Login({onAuth}){
 }
 
 /* ===== App ============================================================== */
+// Self-heal legacy data: a Push notification with approved copy needs no design step,
+// so it should be "done". Fixes assets created before push-skips-design logic existed.
+function normalizeCampaigns(cs){
+  return (cs||[]).map(c=>{
+    if(c.channel==="Push notification"&&c.stage!=="done"&&c.stage!=="brief"
+       &&c.data?.selectedCopyIdx!=null){
+      return{...c,stage:"done",design_approver:null,
+        went_live_at:c.went_live_at||c.updated_at||new Date().toISOString()};
+    }
+    return c;
+  });
+}
+
 function App(){
   const[me,setMe]=useState(null);
   const[checking,setChecking]=useState(true);
@@ -622,7 +660,10 @@ function App(){
             api.get("/api/feedback").catch(()=>[]),
             api.get("/api/audiences").catch(()=>[]),
           ]).then(([cs,rs,fb,auds])=>{
-            setCampaigns(cs);setRules(rs);setFeedback(fb);setAudiences(auds);
+            const fixed=normalizeCampaigns(cs);
+            setCampaigns(fixed);setRules(rs);setFeedback(fb);setAudiences(auds);
+            // Persist any auto-healed push assets so the fix sticks server-side
+            fixed.forEach(c=>{const orig=cs.find(x=>x.id===c.id);if(orig&&orig.stage!==c.stage){api.put("/api/campaigns/"+c.id,{stage:c.stage,design_approver:c.design_approver,went_live_at:c.went_live_at}).catch(()=>{});}});
           }).finally(()=>setChecking(false));
         })
         .catch(()=>{TOKEN=null;localStorage.removeItem("huft_token");setChecking(false);});
@@ -634,7 +675,7 @@ function App(){
       api.get("/api/campaigns"),api.get("/api/rules"),
       api.get("/api/feedback").catch(()=>[]),api.get("/api/audiences").catch(()=>[]),
     ]);
-    setCampaigns(cs);setRules(rs);setFeedback(fb);setAudiences(auds);
+    setCampaigns(normalizeCampaigns(cs));setRules(rs);setFeedback(fb);setAudiences(auds);
   };
 
   const onAuth=(user)=>{setMe(user);setTab(ROLE_TAB[user.role]||"dashboard");loadAll();};
@@ -692,7 +733,7 @@ function App(){
   const open=(id,jt)=>{const c=campaigns.find(x=>x.id===id);setActiveId(id);setTab(jt||(c?(c.stage==="done"?"done":c.stage==="content"?"content":c.stage==="design"?"design":"brief"):"brief"));};
 
   // Pending counts per stage (for nav badges)
-  const pending={brief:campaigns.filter(c=>c.stage==="brief"&&!isArchived(c)).length,content:campaigns.filter(c=>c.stage==="content"&&!isArchived(c)).length,design:campaigns.filter(c=>c.stage==="design"&&!isArchived(c)).length};
+  const pending={brief:campaigns.filter(c=>c.stage==="brief"&&!isArchived(c)).length,content:campaigns.filter(c=>c.stage==="content"&&!isArchived(c)).length,design:campaigns.filter(c=>c.stage==="design"&&c.channel!=="Push notification"&&!isArchived(c)).length};
 
   // Tabs visible per role
   const allTabs=[
@@ -739,7 +780,7 @@ function App(){
     </div>
     <div style={{maxWidth:1120,margin:"0 auto",padding:"28px 20px"}}>
       {tab==="dashboard"&&<Dashboard campaigns={campaigns}onNew={newCampaign}onOpen={open}me={me}/>}
-      {tab==="brief"&&<BriefTab active={active}patch={patch}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}audiences={audiences}onDelete={delCampaign}/>}
+      {tab==="brief"&&<BriefTab active={active}patch={patch}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}audiences={audiences}onDelete={delCampaign}onNew={newCampaign}/>}
       {tab==="content"&&<ContentTab active={active}patch={patch}copyRules={copyRules}addRule={addRule}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}toast={toast}onDelete={delCampaign}/>}
       {tab==="design"&&<DesignTab active={active}patch={patch}promptRules={promptRules}addRule={addRule}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}onDelete={delCampaign}/>}
       {tab==="done"&&<DoneTab campaigns={campaigns}patch={patch}onOpen={open}me={me}setTab={setTab}onDelete={delCampaign}/>}
@@ -1006,7 +1047,7 @@ function Dashboard({campaigns,onNew,onOpen,me}){
           ?<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:C.green,background:C.green+"18",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>Completed</span>
           :<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#D97706",background:"#FEF3C7",padding:"3px 9px",borderRadius:999}}><ClockIcon size={11}/>In progress</span>}
         {c.copy_approver&&<span onClick={e=>{e.stopPropagation();onOpen(c.id,"content");}}style={{cursor:"pointer"}}title="View approved copy"><ApproverChip name={`Copy: ${c.copy_approver}`}at={c.copy_approved_at}color={C.purple}/></span>}
-        {c.design_approver&&<span onClick={e=>{e.stopPropagation();onOpen(c.id,"design");}}style={{cursor:"pointer"}}title="Open design"><ApproverChip name={`Design: ${c.design_approver}`}at={c.design_approved_at}color={C.teal}/></span>}
+        {c.design_approver&&c.channel!=="Push notification"&&<span onClick={e=>{e.stopPropagation();onOpen(c.id,"design");}}style={{cursor:"pointer"}}title="Open design"><ApproverChip name={`Design: ${c.design_approver}`}at={c.design_approved_at}color={C.teal}/></span>}
       </div>
     </div>
     <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
@@ -1048,7 +1089,6 @@ function Dashboard({campaigns,onNew,onOpen,me}){
         </div>)}
       </div>}
     </div>}
-    <div style={{marginTop:16,display:"flex",gap:8,alignItems:"center",color:C.sub,fontSize:12.5}}><Bot size={14}/>Pending first · TAT clock starts at brief · Done assets stay below.</div>
   </div>;
 }
 
@@ -1271,7 +1311,12 @@ function BriefChat({campaignId,patch,onBriefReady,me,recentFeedback,product}){
         {!curStep.dateInput&&curStep.options&&(
           <div style={{marginBottom:10}}>
             <div style={{display:"flex",flexWrap:"wrap",gap:6,maxHeight:90,overflowY:"auto",paddingBottom:2}}>
-              {(curStep.filterByProduct?(curStep.filterByProduct(answers.product||product)||curStep.options):curStep.options).map(o=>(
+              {(()=>{
+                let opts=curStep.options;
+                if(curStep.filterByProduct)opts=curStep.filterByProduct(answers.product||product)||curStep.options;
+                if(curStep.filterByAudience)opts=curStep.filterByAudience(answers.audience||answers.segment)||opts;
+                return opts;
+              })().map(o=>(
                 <button key={o}
                   onClick={()=>submitAnswer(o)}
                   onMouseEnter={()=>setHoveredChip(o)}
@@ -1360,8 +1405,9 @@ function BriefChat({campaignId,patch,onBriefReady,me,recentFeedback,product}){
 const AlertCircle=p=><Svg{...p}><circle cx="12"cy="12"r="10"/><path d="M12 8v4M12 16h.01"/></Svg>;
 
 /* ===== Brief Tab ======================================================== */
-function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,onOpen,onDelete}){
+function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,onOpen,onDelete,onNew}){
   const[view,setView]=useState("list");
+  const canCreate=me.role==="admin"||me.role==="business";
   const allBriefs=(campaigns||[]).filter(c=>c.stage==="brief"&&!isArchived(c));
   const briefedElsewhere=(campaigns||[]).filter(c=>c.stage!=="brief"&&!isArchived(c)&&c.data?.brief).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
   const briefArchived=(campaigns||[]).filter(c=>isArchived(c)&&c.data?.brief).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
@@ -1390,6 +1436,7 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
       {/* Row header — always visible */}
       <div onClick={()=>setOpenId(isOpen?null:c.id)}
         style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer",background:isOpen?"#FFFBF7":(brief?_tone.bg:"#fff")}}>
+        <ChannelIcon channel={c.channel}/>
         <div style={{flex:1,minWidth:0}}>
           <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3}}>
             <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{c.product||parseName(c.name).product||"—"}</span>
@@ -1473,29 +1520,32 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
   return<div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
       <div><Eyebrow>Brief</Eyebrow><h1 style={{margin:"4px 0 0",fontSize:24,fontWeight:800}}>Briefs</h1></div>
-      <div style={{display:"flex",border:`1px solid ${C.line}`,borderRadius:8,overflow:"hidden"}}>
-        <button onClick={()=>setView("list")}style={{padding:"6px 14px",border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:view==="list"?C.navy:"#fff",color:view==="list"?"#fff":C.sub,display:"flex",alignItems:"center",gap:5}}><LayoutDashboard size={13}/>List</button>
-        <button onClick={()=>setView("calendar")}style={{padding:"6px 14px",border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:view==="calendar"?C.navy:"#fff",color:view==="calendar"?"#fff":C.sub,display:"flex",alignItems:"center",gap:5}}><CalendarIcon size={13}/>Calendar</button>
+      <div style={{display:"flex",gap:10,alignItems:"center"}}>
+        {canCreate&&<Btn onClick={onNew}><Plus size={16}/>New asset</Btn>}
+        <div style={{display:"flex",border:`1px solid ${C.line}`,borderRadius:8,overflow:"hidden"}}>
+          <button onClick={()=>setView("list")}style={{padding:"6px 14px",border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:view==="list"?C.navy:"#fff",color:view==="list"?"#fff":C.sub,display:"flex",alignItems:"center",gap:5}}><LayoutDashboard size={13}/>List</button>
+          <button onClick={()=>setView("calendar")}style={{padding:"6px 14px",border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:view==="calendar"?C.navy:"#fff",color:view==="calendar"?"#fff":C.sub,display:"flex",alignItems:"center",gap:5}}><CalendarIcon size={13}/>Calendar</button>
+        </div>
       </div>
     </div>
     {view==="calendar"
       ?<CalendarView campaigns={allBriefs}onOpen={onOpen}filterStage="brief"/>
       :(allBriefs.length===0&&briefedElsewhere.length===0&&briefArchived.length===0)
-      ?<Card><Empty icon={<FileText size={26}color={C.sub}/>}title="No briefs yet"sub="Create a new asset from the Dashboard."/></Card>
+      ?<Card><Empty icon={<FileText size={26}color={C.sub}/>}title="No briefs yet"sub="Start a new asset and the engine walks it through Brief → Copy → Design."action={canCreate?<Btn onClick={onNew}><Plus size={16}/>New asset</Btn>:null}/></Card>
       :<div>
         {allBriefs.length>0&&<div style={{marginBottom:16}}>
-          <div style={{fontSize:11,fontWeight:700,color:C.coral,textTransform:"uppercase",letterSpacing:.5,marginBottom:8,display:"flex",alignItems:"center",gap:5}}>⬤ Needs attention · {allBriefs.length}</div>
+          <div style={{fontSize:11,fontWeight:700,color:C.coral,textTransform:"uppercase",letterSpacing:.5,marginBottom:8,display:"flex",alignItems:"center",gap:5}}><Sparkles size={12}/>New assets · awaiting brief · {allBriefs.length}</div>
           {groupByDate(allBriefs).map(([date,items])=><div key={date}style={{marginBottom:10}}>
             <DateGroupHeader date={date}count={items.length}color={C.coral}/>
             <Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><AssetRow key={c.id}c={c}/>)}</Card>
           </div>)}
         </div>}
         {briefedElsewhere.length>0&&<div style={{marginTop:16}}>
-          <div style={{fontSize:11,fontWeight:700,color:C.purple,textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>✓ Moved forward · {briefedElsewhere.length}</div>
+          <div style={{fontSize:11,fontWeight:700,color:C.purple,textTransform:"uppercase",letterSpacing:.5,marginBottom:8,display:"flex",alignItems:"center",gap:5}}><CheckCircle2 size={12}/>Briefs done · moved to Copy &amp; beyond · {briefedElsewhere.length}</div>
           <div>{groupByDate(briefedElsewhere).map(([date,items])=><div key={date}style={{marginBottom:8}}><DateGroupHeader date={date}count={items.length}color={C.purple}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><AssetRow key={c.id}c={c}/>)}</Card></div>)}</div>
         </div>}
         {briefArchived.length>0&&<div style={{marginTop:16}}>
-          <div style={{fontSize:11,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>Archived · {briefArchived.length}</div>
+          <div style={{fontSize:11,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5,marginBottom:8,display:"flex",alignItems:"center",gap:5}}><ArchiveIcon size={12}/>Archived · {briefArchived.length}</div>
           <div style={{opacity:.5}}>{groupByDate(briefArchived).map(([date,items])=><div key={date}style={{marginBottom:8}}><DateGroupHeader date={date}count={items.length}color={C.sub}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><AssetRow key={c.id}c={c}/>)}</Card></div>)}</div>
         </div>}
       </div>}
@@ -2210,7 +2260,7 @@ function FinalDesignUpload({c,d,patch,me}){
 }
 
 function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedback,campaigns,onOpen,onDelete}){
-  const allDesign=(campaigns||[]).filter(c=>c.stage==="design"&&!isArchived(c));
+  const allDesign=(campaigns||[]).filter(c=>c.stage==="design"&&c.channel!=="Push notification"&&!isArchived(c));
   const[openId,setOpenId]=useState(null);
   const[imageModes,setImageModes]=useState({});
   const[designBusyMap,setDesignBusyMap]=useState({});
