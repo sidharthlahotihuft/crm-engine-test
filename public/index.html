@@ -212,6 +212,18 @@ const BRIEF_STEPS = [
     ],
     freeText:true,
     placeholder:"Or describe your own segment + trigger…",
+    filterByProduct:(prod)=>{
+      const p=(prod||"").toLowerCase();
+      const base=["Lapsed buyers (60–90d)","First-time buyers","High-value loyalists","Post-purchase (follow-up)"];
+      const isGrooming=["spa","groom"].some(k=>p.includes(k));
+      const isCat=["meowsi","nutrimeow","cat"].some(k=>p.includes(k));
+      const isDog=["hearty","sara","yakies","dash","dog"].some(k=>p.includes(k));
+      // Grooming/spa is the only product where the post-spa trigger makes sense
+      if(isGrooming)return[...base,"Post-spa / grooming","Dog parents","Cat parents","Senior pet parents"];
+      if(isCat)return[...base,"Cat parents","Kitten parents","Senior pet parents"];
+      if(isDog)return[...base,"Dog parents","Puppy / kitten parents","Senior pet parents"];
+      return null; // null = show all
+    },
   },
   {
     key:"objective", question:"What's the objective?",
@@ -270,6 +282,8 @@ const displayName=(name)=>{
   return[date,product,hook].filter(Boolean).join(" · ");
 };
 const STAGE_LABEL={brief:"Brief",content:"Copy",design:"Design",done:"Ready"};
+// An asset is "archived" via a data flag — kept distinct from "done" (completed/live)
+const isArchived=(c)=>!!(c&&c.data&&c.data.archived);
 const activeRuleText=(rules)=>rules.filter(r=>r.active).map(r=>"- "+r.text).join("\n")||"(none yet)";
 
 /* ===== SVG icons ========================================================= */
@@ -313,6 +327,7 @@ const CalendarIcon=p=><Svg{...p}><rect x="3"y="4"width="18"height="18"rx="2"/><p
 const UploadIcon=p=><Svg{...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5M12 3v12"/></Svg>;
 const BellIcon=p=><Svg{...p}><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></Svg>;
 const ClockIcon=p=><Svg{...p}><circle cx="12"cy="12"r="10"/><path d="M12 6v6l4 2"/></Svg>;
+const ArchiveIcon=p=><Svg{...p}><rect x="3"y="4"width="18"height="4"rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/></Svg>;
 
 /* ===== UI atoms ========================================================= */
 function Btn({children,onClick,variant="primary",disabled,small,style}){
@@ -323,12 +338,12 @@ function Btn({children,onClick,variant="primary",disabled,small,style}){
 function Card({children,style,onClick}){return<div onClick={onClick}style={{background:C.white,border:`1px solid ${C.line}`,borderRadius:14,padding:18,boxShadow:"0 1px 2px rgba(16,24,40,.04)",...style}}>{children}</div>;}
 function Eyebrow({children,color=C.coral}){return<div style={{color,fontSize:12,fontWeight:700,letterSpacing:1,textTransform:"uppercase"}}>{children}</div>;}
 function StageBadge({stage}){const col={brief:C.coral,content:C.purple,design:C.teal,done:C.green}[stage]||C.sub;return<span style={{background:col+"1A",color:col,fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:999}}>{STAGE_LABEL[stage]}</span>;}
-function RowActions({c,patch,me,onEdit}){
+function RowActions({c,patch,me,onEdit,onDelete}){
   const canEdit=me.role==="admin"||me.role==="business";
   return<div style={{display:"flex",gap:5,alignItems:"center",flexShrink:0}}>
     {onEdit&&<button onClick={e=>{e.stopPropagation();onEdit();}}style={{display:"flex",alignItems:"center",gap:3,fontSize:11.5,padding:"4px 8px",borderRadius:6,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.sub,fontWeight:600}}><PenLine size={11}/>Edit</button>}
-    {canEdit&&<button onClick={e=>{e.stopPropagation();if(window.confirm("Archive this asset? Moves to Done."))patch(c.id,{stage:"done"});}}style={{display:"flex",alignItems:"center",gap:3,fontSize:11.5,padding:"4px 8px",borderRadius:6,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.sub,fontWeight:600}}>Archive</button>}
-    {canEdit&&<button onClick={e=>{e.stopPropagation();if(window.confirm("Delete permanently? Cannot be undone."))api.del("/api/campaigns/"+c.id).then(()=>window.location.reload()).catch(()=>alert("Delete failed"));}}style={{display:"flex",alignItems:"center",gap:3,fontSize:11.5,padding:"4px 8px",borderRadius:6,border:"1px solid #FECACA",background:"#FFF5F5",cursor:"pointer",color:"#B91C1C",fontWeight:600}}>Delete</button>}
+    {canEdit&&<button onClick={e=>{e.stopPropagation();if(window.confirm("Archive this asset? It moves out of the active pipeline into the Archive tab."))patch(c.id,{data:{archived:true}});}}style={{display:"flex",alignItems:"center",gap:3,fontSize:11.5,padding:"4px 8px",borderRadius:6,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.sub,fontWeight:600}}>Archive</button>}
+    {canEdit&&onDelete&&<button onClick={e=>{e.stopPropagation();onDelete(c.id);}}style={{display:"flex",alignItems:"center",gap:3,fontSize:11.5,padding:"4px 8px",borderRadius:6,border:"1px solid #FECACA",background:"#FFF5F5",cursor:"pointer",color:"#B91C1C",fontWeight:600}}>Delete</button>}
   </div>;
 }
 
@@ -489,6 +504,14 @@ function App(){
     });
   };
 
+  const delCampaign=async(id)=>{
+    if(!window.confirm("Delete permanently? Cannot be undone."))return;
+    try{
+      await api.del("/api/campaigns/"+id);
+      setCampaigns(cs=>cs.filter(c=>c.id!==id));
+      if(activeId===id)setActiveId(null);
+    }catch(e){alert("Delete failed: "+e.message);}
+  };
   const newCampaign=async()=>{
     const c=await api.post("/api/campaigns",{channel:"WhatsApp",stage:"brief"});
     setCampaigns(cs=>[c,...cs]);setActiveId(c.id);setTab("brief");
@@ -496,7 +519,7 @@ function App(){
   const open=(id,jt)=>{const c=campaigns.find(x=>x.id===id);setActiveId(id);setTab(jt||(c?(c.stage==="done"?"done":c.stage==="content"?"content":c.stage==="design"?"design":"brief"):"brief"));};
 
   // Pending counts per stage (for nav badges)
-  const pending={brief:campaigns.filter(c=>c.stage==="brief").length,content:campaigns.filter(c=>c.stage==="content").length,design:campaigns.filter(c=>c.stage==="design").length};
+  const pending={brief:campaigns.filter(c=>c.stage==="brief"&&!isArchived(c)).length,content:campaigns.filter(c=>c.stage==="content"&&!isArchived(c)).length,design:campaigns.filter(c=>c.stage==="design"&&!isArchived(c)).length};
 
   // Tabs visible per role
   const allTabs=[
@@ -504,9 +527,10 @@ function App(){
     {k:"brief",label:"Brief",icon:<FileText size={16}/>},
     {k:"content",label:"Copy",icon:<MessageSquare size={16}/>},
     {k:"design",label:"Design",icon:<Palette size={16}/>},
-    {k:"done",label:"Done",icon:<CheckCircle2 size={16}/>,count:(campaigns||[]).filter(c=>c.stage==="done").length},
+    {k:"done",label:"Done",icon:<CheckCircle2 size={16}/>,count:(campaigns||[]).filter(c=>c.stage==="done"&&!isArchived(c)).length},
+    {k:"archive",label:"Archive",icon:<ArchiveIcon size={16}/>,count:(campaigns||[]).filter(c=>isArchived(c)).length},
   ];
-  const TABS=me.role==="admin"?allTabs:allTabs.filter(t=>t.k==="dashboard"||t.k===ROLE_TAB[me.role]||t.k==="done");
+  const TABS=me.role==="admin"?allTabs:allTabs.filter(t=>t.k==="dashboard"||t.k===ROLE_TAB[me.role]||t.k==="done"||(t.k==="archive"&&me.role==="business"));
 
   const RoleBadge=()=>{
     const cols={admin:C.coral,business:C.teal,content:C.purple,design:C.green};
@@ -542,10 +566,11 @@ function App(){
     </div>
     <div style={{maxWidth:1120,margin:"0 auto",padding:"28px 20px"}}>
       {tab==="dashboard"&&<Dashboard campaigns={campaigns}onNew={newCampaign}onOpen={open}me={me}/>}
-      {tab==="brief"&&<BriefTab active={active}patch={patch}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}audiences={audiences}/>}
-      {tab==="content"&&<ContentTab active={active}patch={patch}copyRules={copyRules}addRule={addRule}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}toast={toast}/>}
-      {tab==="design"&&<DesignTab active={active}patch={patch}promptRules={promptRules}addRule={addRule}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}/>}
-      {tab==="done"&&<DoneTab campaigns={campaigns}patch={patch}onOpen={open}me={me}setTab={setTab}/>}
+      {tab==="brief"&&<BriefTab active={active}patch={patch}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}audiences={audiences}onDelete={delCampaign}/>}
+      {tab==="content"&&<ContentTab active={active}patch={patch}copyRules={copyRules}addRule={addRule}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}toast={toast}onDelete={delCampaign}/>}
+      {tab==="design"&&<DesignTab active={active}patch={patch}promptRules={promptRules}addRule={addRule}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}onDelete={delCampaign}/>}
+      {tab==="done"&&<DoneTab campaigns={campaigns}patch={patch}onOpen={open}me={me}setTab={setTab}onDelete={delCampaign}/>}
+      {tab==="archive"&&<ArchiveTab campaigns={campaigns}patch={patch}onOpen={open}me={me}onDelete={delCampaign}/>}
     </div>
     {showMonthlyPrompt&&<MonthlyPrompt me={me}campaigns={campaigns}onClose={()=>setShowMonthlyPrompt(false)}/>}
     <div style={{position:"fixed",bottom:24,right:24,zIndex:9999,display:"flex",flexDirection:"column",gap:8,pointerEvents:"none"}}>{toasts.map(t=><div key={t.id}style={{background:t.type==="success"?"#15192B":"#B91C1C",color:"#fff",padding:"12px 18px",borderRadius:10,fontSize:13.5,fontWeight:600,display:"flex",alignItems:"center",gap:8,boxShadow:"0 4px 16px rgba(0,0,0,.25)",minWidth:260}}>{t.type==="success"?<CheckCircle2 size={16}/>:<X size={16}/>}{t.msg}</div>)}</div>
@@ -780,10 +805,10 @@ function CalendarView({campaigns,onOpen,filterStage}){
 
 function Dashboard({campaigns,onNew,onOpen,me}){
   const[view,setView]=useState("list");
-  const counts={brief:0,content:0,design:0,done:0};campaigns.forEach(c=>counts[c.stage]=(counts[c.stage]||0)+1);
+  const counts={brief:0,content:0,design:0,done:0};campaigns.forEach(c=>{if(isArchived(c))return;counts[c.stage]=(counts[c.stage]||0)+1;});
   const stat=[{k:"brief",label:"In Brief",color:C.coral},{k:"content",label:"In Copy",color:C.purple},{k:"design",label:"In Design",color:C.teal},{k:"done",label:"Ready",color:C.green}];
-  const pending=campaigns.filter(c=>c.stage!=="done").sort((a,b)=>{const so={brief:0,content:1,design:2};return(so[a.stage]||0)-(so[b.stage]||0)||(b.updatedAt||0)-(a.updatedAt||0);});
-  const done=campaigns.filter(c=>c.stage==="done").sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+  const pending=campaigns.filter(c=>c.stage!=="done"&&!isArchived(c)).sort((a,b)=>{const so={brief:0,content:1,design:2};return(so[a.stage]||0)-(so[b.stage]||0)||(b.updatedAt||0)-(a.updatedAt||0);});
+  const done=campaigns.filter(c=>c.stage==="done"&&!isArchived(c)).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
   const CRow=({c,i})=><div style={{display:"flex",alignItems:"center",gap:14,padding:"14px 18px",borderTop:i?`1px solid ${C.line}`:"none",background:"#fff"}}>
     <div onClick={()=>onOpen(c.id)}style={{width:38,height:38,borderRadius:10,background:C.coralSoft,color:C.coral,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,cursor:"pointer"}}><MessageSquare size={18}/></div>
     <div onClick={()=>onOpen(c.id)}style={{flex:1,minWidth:0,cursor:"pointer"}}>
@@ -804,7 +829,7 @@ function Dashboard({campaigns,onNew,onOpen,me}){
         {c.created_at&&<span style={{marginLeft:4,fontSize:11,color:C.sub,background:"#F3F4F6",padding:"1px 6px",borderRadius:4}}>{fmtDate(c.created_at)}</span>}
       </div>
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:4}}>
-        {c.stage!=="done"&&<TATBadge startedAt={c.brief_started_at||c.created_at}dueAt={c.stage==="brief"?c.tat_brief_due:c.stage==="content"?c.tat_content_due:c.tat_design_due}done={false}/>}
+
         {c.copy_approver&&<ApproverChip name={`Copy: ${c.copy_approver}`}at={c.copy_approved_at}color={C.purple}/>}
         {c.design_approver&&<ApproverChip name={`Design: ${c.design_approver}`}at={c.design_approved_at}color={C.teal}/>}
       </div>
@@ -833,13 +858,19 @@ function Dashboard({campaigns,onNew,onOpen,me}){
       ?<CalendarView campaigns={campaigns}onOpen={onOpen}/>
       :campaigns.length===0?<Card><Empty icon={<LayoutDashboard size={26}color={C.sub}/>}title="No assets yet"sub="Start one and the engine walks it through Brief → Copy → Design."/></Card>
     :<div>
-      {pending.length>0&&<div style={{marginBottom:16}}>
-        <div style={{fontSize:12,fontWeight:700,color:C.coral,textTransform:"uppercase",letterSpacing:.5,marginBottom:8,display:"flex",alignItems:"center",gap:6}}><ClockIcon size={12}/>Pending · {pending.length}</div>
-        <Card style={{padding:0,overflow:"hidden"}}>{pending.map((c,i)=><CRow key={c.id}c={c}i={i}/>)}</Card>
+      {pending.length>0&&<div style={{marginBottom:20}}>
+        <div style={{fontSize:11,fontWeight:700,color:C.coral,textTransform:"uppercase",letterSpacing:.5,marginBottom:10,display:"flex",alignItems:"center",gap:6}}><ClockIcon size={12}/>Needs attention · {pending.length}</div>
+        {groupByDate(pending).map(([date,items])=><div key={date}style={{marginBottom:10}}>
+          <DateGroupHeader date={date}count={items.length}color={C.coral}/>
+          <Card style={{padding:0,overflow:"hidden"}}>{items.map((c,i)=><CRow key={c.id}c={c}i={i}/>)}</Card>
+        </div>)}
       </div>}
       {done.length>0&&<div>
-        <div style={{fontSize:12,fontWeight:700,color:C.green,textTransform:"uppercase",letterSpacing:.5,marginBottom:8,display:"flex",alignItems:"center",gap:6}}><CheckCircle2 size={12}/>Completed · {done.length}</div>
-        <Card style={{padding:0,overflow:"hidden",opacity:.88}}>{done.map((c,i)=><CRow key={c.id}c={c}i={i}/>)}</Card>
+        <div style={{fontSize:11,fontWeight:700,color:C.green,textTransform:"uppercase",letterSpacing:.5,marginBottom:10,display:"flex",alignItems:"center",gap:6}}><CheckCircle2 size={12}/>Completed · {done.length}</div>
+        {groupByDate(done).map(([date,items])=><div key={date}style={{marginBottom:10}}>
+          <DateGroupHeader date={date}count={items.length}color={C.green}/>
+          <Card style={{padding:0,overflow:"hidden",opacity:.88}}>{items.map((c,i)=><CRow key={c.id}c={c}i={i}/>)}</Card>
+        </div>)}
       </div>}
     </div>}
     <div style={{marginTop:16,display:"flex",gap:8,alignItems:"center",color:C.sub,fontSize:12.5}}><Bot size={14}/>Pending first · TAT clock starts at brief · Done assets stay below.</div>
@@ -868,7 +899,7 @@ function TypingBubble(){
   </div>;
 }
 
-function BriefChat({campaignId,patch,onBriefReady,me,recentFeedback}){
+function BriefChat({campaignId,patch,onBriefReady,me,recentFeedback,product}){
   const[messages,setMessages]=useState([]);
   const[stepIdx,setStepIdx]=useState(-1); // -1 = intro not done yet
   const[answers,setAnswers]=useState({});
@@ -1016,7 +1047,7 @@ function BriefChat({campaignId,patch,onBriefReady,me,recentFeedback}){
         tat_brief_due:briefDue,tat_content_due:contentDue,tat_design_due:designDue,
         brief_started_at:new Date(now).toISOString(),
         data:{brief:{...j,source:"chat"}},
-        stage:"brief",
+        stage:"content",
       });
       onBriefReady();
     }catch(e){setErr("Couldn't generate — check the connection and try again.");setGenerating(false);}
@@ -1065,7 +1096,7 @@ function BriefChat({campaignId,patch,onBriefReady,me,recentFeedback}){
         {!curStep.dateInput&&curStep.options&&(
           <div style={{marginBottom:10}}>
             <div style={{display:"flex",flexWrap:"wrap",gap:6,maxHeight:90,overflowY:"auto",paddingBottom:2}}>
-              {curStep.options.map(o=>(
+              {(curStep.filterByProduct?(curStep.filterByProduct(answers.product||product)||curStep.options):curStep.options).map(o=>(
                 <button key={o}
                   onClick={()=>submitAnswer(o)}
                   onMouseEnter={()=>setHoveredChip(o)}
@@ -1154,10 +1185,11 @@ function BriefChat({campaignId,patch,onBriefReady,me,recentFeedback}){
 const AlertCircle=p=><Svg{...p}><circle cx="12"cy="12"r="10"/><path d="M12 8v4M12 16h.01"/></Svg>;
 
 /* ===== Brief Tab ======================================================== */
-function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,onOpen}){
+function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,onOpen,onDelete}){
   const[view,setView]=useState("list");
-  const allBriefs=(campaigns||[]).filter(c=>c.stage==="brief");
-  const briefedElsewhere=(campaigns||[]).filter(c=>c.stage!=="brief"&&c.data?.brief).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+  const allBriefs=(campaigns||[]).filter(c=>c.stage==="brief"&&!isArchived(c));
+  const briefedElsewhere=(campaigns||[]).filter(c=>c.stage!=="brief"&&!isArchived(c)&&c.data?.brief).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+  const briefArchived=(campaigns||[]).filter(c=>isArchived(c)&&c.data?.brief).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
   const done=(campaigns||[]).filter(c=>c.stage!=="brief"&&c.data?.brief);
   const[openId,setOpenId]=useState(active?.id||null);
   const[mode,setMode]=useState({}); // {[id]: 'view'|'chat'|'self'|'edit'}
@@ -1197,8 +1229,9 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
           {brief&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#0F766E",background:"#CCFBF1",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>Brief done</span>}
+          {brief&&c.stage!=="brief"&&<StageBadge stage={c.stage}/>}
           {!brief&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#B91C1C",background:"#FEF2F2",padding:"3px 9px",borderRadius:999}}>No brief yet</span>}
-          <div onClick={e=>e.stopPropagation()}><RowActions c={c}patch={patch}me={me}onEdit={brief?()=>setM(c.id,"edit"):undefined}/></div>
+          <div onClick={e=>e.stopPropagation()}><RowActions c={c}patch={patch}me={me}onEdit={brief?()=>setM(c.id,"edit"):undefined}onDelete={onDelete}/></div>
           {isOpen?<ChevronDown size={16}color={C.sub}/>:<ChevronRight size={16}color={C.sub}/>}
         </div>
       </div>
@@ -1223,7 +1256,7 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
             <button onClick={()=>setM(c.id,null)}style={{background:"transparent",border:"none",cursor:"pointer",color:"rgba(255,255,255,.6)",fontSize:12}}>← Back</button>
           </div>
           <div style={{padding:"0 16px 16px"}}>
-            <BriefChat campaignId={c.id}patch={patch}onBriefReady={onBriefReady}me={me}recentFeedback={recentFeedback}/>
+            <BriefChat campaignId={c.id}patch={patch}onBriefReady={onBriefReady}me={me}recentFeedback={recentFeedback}product={c.product}/>
           </div>
         </div>}
 
@@ -1281,11 +1314,13 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
             <Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><AssetRow key={c.id}c={c}/>)}</Card>
           </div>)}
         </div>}
-        {briefedElsewhere.length>0&&<div>
-          <div style={{fontSize:11,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>✓ Moved forward · {briefedElsewhere.length}</div>
-          <Card style={{padding:0,overflow:"hidden",opacity:.6}}>
-            {briefedElsewhere.map(c=><AssetRow key={c.id}c={c}/>)}
-          </Card>
+        {briefedElsewhere.length>0&&<div style={{marginTop:16}}>
+          <div style={{fontSize:11,fontWeight:700,color:C.purple,textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>✓ Moved forward · {briefedElsewhere.length}</div>
+          <div style={{opacity:.65}}>{groupByDate(briefedElsewhere).map(([date,items])=><div key={date}style={{marginBottom:8}}><DateGroupHeader date={date}count={items.length}color={C.purple}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><AssetRow key={c.id}c={c}/>)}</Card></div>)}</div>
+        </div>}
+        {briefArchived.length>0&&<div style={{marginTop:16}}>
+          <div style={{fontSize:11,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>Archived · {briefArchived.length}</div>
+          <div style={{opacity:.5}}>{groupByDate(briefArchived).map(([date,items])=><div key={date}style={{marginBottom:8}}><DateGroupHeader date={date}count={items.length}color={C.sub}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><AssetRow key={c.id}c={c}/>)}</Card></div>)}</div>
         </div>}
       </div>}
   </div>;
@@ -1329,6 +1364,7 @@ function SelfBriefForm({active,patch,onDone,onBack}){
   const save=()=>{
     patch(active.id,{
       ...draft,
+      stage:"content",
       data:{...(active.data||{}),brief:{strategicInsight:self.insight,idea:self.idea,proofPoints:[],pillar:"",whatsappNote:"Written by business team",source:"self"}}
     });
     onDone();
@@ -1438,8 +1474,10 @@ function BriefSummaryCard({active,activeBrief,copyRules,busy,refineFor,gen,opts,
 }
 
 
-function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,saveFeedback,campaigns,onOpen,toast}){
-  const allCopy=(campaigns||[]).filter(c=>c.stage==="content");
+function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,saveFeedback,campaigns,onOpen,toast,onDelete}){
+  // Copy page shows: assets still in copy stage, PLUS any non-archived asset whose copy
+  // was already approved (those have moved on to Design/Done but should remain visible here).
+  const allCopy=(campaigns||[]).filter(c=>!isArchived(c)&&(c.stage==="content"||(c.data?.copyOptions&&c.data?.selectedCopyIdx!=null)));
   const[openId,setOpenId]=useState(active?.id||null);
   const[busyMap,setBusyMap]=useState({});
   const[errMap,setErrMap]=useState({});
@@ -1505,8 +1543,15 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         patch(c.id,{data:{...(c.data||{}),selectedCopyIdx:null},stage:"content",copy_approver:null});
         if(toast)toast("Copy unselected — pick another option","success");
       } else {
-        patch(c.id,{data:{...(c.data||{}),selectedCopyIdx:idx},stage:"design",copy_approver:me.name});
-        if(toast)toast("Copy approved ✓ — go to Design tab when ready","success");
+        const isPush=c.channel==="Push notification";
+        if(isPush){
+          // Push needs no design asset — approving the copy completes the asset.
+          patch(c.id,{data:{...(c.data||{}),selectedCopyIdx:idx},stage:"done",copy_approver:me.name,design_approver:me.name,went_live_at:new Date().toISOString()});
+          if(toast)toast("Copy approved ✓ — Push needs no design, moved to Done","success");
+        } else {
+          patch(c.id,{data:{...(c.data||{}),selectedCopyIdx:idx},stage:"design",copy_approver:me.name});
+          if(toast)toast("Copy approved ✓ — go to Design tab when ready","success");
+        }
       }
     };
 
@@ -1524,9 +1569,10 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
           {sel!=null&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#5B21B6",background:"#EDE9FE",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>Copy approved</span>}
+          {sel!=null&&c.stage!=="content"&&<StageBadge stage={c.stage}/>}
           {opts&&sel==null&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#92400E",background:"#FEF3C7",padding:"3px 9px",borderRadius:999}}>{opts.length} options — pick one</span>}
           {!opts&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#B91C1C",background:"#FEF2F2",padding:"3px 9px",borderRadius:999}}>Needs copy</span>}
-          <div onClick={e=>e.stopPropagation()}><RowActions c={c}patch={patch}me={me}/></div>
+          <div onClick={e=>e.stopPropagation()}><RowActions c={c}patch={patch}me={me}onDelete={onDelete}/></div>
           {isOpen?<ChevronDown size={16}color={C.sub}/>:<ChevronRight size={16}color={C.sub}/>}
         </div>
       </div>
@@ -1549,11 +1595,16 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         </div>}
         {sel!=null&&<div style={{marginTop:12,background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:10,padding:"14px 16px"}}>
           <div style={{fontSize:12,fontWeight:700,color:"#15803D",textTransform:"uppercase",letterSpacing:.5,marginBottom:10,display:"flex",alignItems:"center",gap:6}}><CheckCircle2 size={13}/>Copy approved — next steps</div>
-          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            <Btn variant="teal"onClick={()=>{patch(c.id,{stage:"design"});setTab("design");onOpen(c.id,"design");}}><Palette size={14}/>Go to Design</Btn>
-            <a href="https://www.canva.com/create/whatsapp-messages/" target="_blank"rel="noreferrer"style={{display:"inline-flex",alignItems:"center",gap:7,padding:"10px 16px",borderRadius:10,border:`1px solid ${C.line}`,background:"#fff",color:C.ink,fontSize:14,fontWeight:600,textDecoration:"none"}}><ExternalLink size={14}/>Open Canva</a>
-          </div>
-          <div style={{marginTop:10,fontSize:12,color:"#166534"}}>Asset is now in Design queue. The design team can pick it up.</div>
+          {c.channel==="Push notification"
+            ?<><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                <Btn variant="green"onClick={()=>{setTab("done");onOpen(c.id,"done");}}><CheckCircle2 size={14}/>View in Done</Btn>
+              </div>
+              <div style={{marginTop:10,fontSize:12,color:"#166534"}}>Push notifications need no design asset — this is marked done and ready to schedule.</div></>
+            :<><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                <Btn variant="teal"onClick={()=>{patch(c.id,{stage:"design"});setTab("design");onOpen(c.id,"design");}}><Palette size={14}/>Go to Design</Btn>
+                <a href="https://www.canva.com/create/whatsapp-messages/" target="_blank"rel="noreferrer"style={{display:"inline-flex",alignItems:"center",gap:7,padding:"10px 16px",borderRadius:10,border:`1px solid ${C.line}`,background:"#fff",color:C.ink,fontSize:14,fontWeight:600,textDecoration:"none"}}><ExternalLink size={14}/>Open Canva</a>
+              </div>
+              <div style={{marginTop:10,fontSize:12,color:"#166534"}}>Asset is now in Design queue. The design team can pick it up.</div></>}
         </div>}
         <FeedbackBar stage="content"by={me.name}onSave={saveFeedback}/>
       </div>}
@@ -1575,8 +1626,9 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       ?<Card><Empty icon={<MessageSquare size={26}color={C.sub}/>}title="No copy pending"sub="Assets move here after brief is done."/></Card>
       :<div>
         {(()=>{
-          const needsCopy=allCopy.filter(c=>c.data?.selectedCopyIdx==null);
-          const approved=allCopy.filter(c=>c.data?.selectedCopyIdx!=null);
+          const needsCopy=allCopy.filter(c=>c.stage==="content"&&c.data?.selectedCopyIdx==null);
+          const approved=allCopy.filter(c=>c.data?.selectedCopyIdx!=null&&c.data?.copyOptions);
+          const archivedCopy=(campaigns||[]).filter(c=>isArchived(c)&&c.data?.copyOptions);
           return<>
             {needsCopy.length>0&&<div style={{marginBottom:16}}>
               <div style={{fontSize:11,fontWeight:700,color:"#92400E",textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>⬤ Needs attention · {needsCopy.length}</div>
@@ -1585,6 +1637,10 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
             {approved.length>0&&<div>
               <div style={{fontSize:11,fontWeight:700,color:"#5B21B6",textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>✓ Copy approved · {approved.length}</div>
               <div style={{opacity:.75}}>{groupByDate(approved).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.purple}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}/>)}</Card></div>)}</div>
+            </div>}
+            {archivedCopy.length>0&&<div style={{marginTop:16}}>
+              <div style={{fontSize:11,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>Archived · {archivedCopy.length}</div>
+              <div style={{opacity:.5}}>{groupByDate(archivedCopy).map(([date,items])=><div key={date}style={{marginBottom:8}}><DateGroupHeader date={date}count={items.length}color={C.sub}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}/>)}</Card></div>)}</div>
             </div>}
           </>;
         })()}
@@ -1799,8 +1855,8 @@ const LIBRARY=[
   {id:"l8",label:"Spa grooming session",tone:"#0E9488",tags:["spa","grooming","dog","care","huft spa","wellness"],desc:"HUFT Spa grooming moment — calm dog being groomed"},
 ];
 
-function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedback,campaigns,onOpen}){
-  const allDesign=(campaigns||[]).filter(c=>c.stage==="design");
+function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedback,campaigns,onOpen,onDelete}){
+  const allDesign=(campaigns||[]).filter(c=>c.stage==="design"&&!isArchived(c));
   const[openId,setOpenId]=useState(active?.id||null);
   const[imageModes,setImageModes]=useState({});
   const[designBusyMap,setDesignBusyMap]=useState({});
@@ -1872,7 +1928,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
           {approvedPrompt?<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#0F766E",background:"#CCFBF1",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>Prompt approved</span>
           :d.imagePrompts?<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#1D4ED8",background:"#DBEAFE",padding:"3px 9px",borderRadius:999}}>Prompts ready</span>
           :<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#B91C1C",background:"#FEF2F2",padding:"3px 9px",borderRadius:999}}>Needs design</span>}
-          <div onClick={e=>e.stopPropagation()}><RowActions c={c}patch={patch}me={me}/></div>
+          <div onClick={e=>e.stopPropagation()}><RowActions c={c}patch={patch}me={me}onDelete={onDelete}/></div>
           {isOpen?<ChevronDown size={16}color={C.sub}/>:<ChevronRight size={16}color={C.sub}/>}
         </div>
       </div>
@@ -1972,6 +2028,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
         {(()=>{
           const needsDesign=allDesign.filter(c=>!(c.data?.design?.approvedPromptIdx!=null||c.data?.design?.libraryPick));
           const done=allDesign.filter(c=>c.data?.design?.approvedPromptIdx!=null||c.data?.design?.libraryPick);
+          const archivedDesign=(campaigns||[]).filter(c=>isArchived(c)&&c.data?.design);
           return<>
             {needsDesign.length>0&&<div style={{marginBottom:16}}>
               <div style={{fontSize:11,fontWeight:700,color:C.coral,textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>⬤ Needs attention · {needsDesign.length}</div>
@@ -1981,6 +2038,10 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
               <div style={{fontSize:11,fontWeight:700,color:C.teal,textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>✓ Image selected · {done.length}</div>
               <div style={{opacity:.75}}>{groupByDate(done).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.teal}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><DesignRow key={c.id}c={c}/>)}</Card></div>)}</div>
             </div>}
+            {archivedDesign.length>0&&<div style={{marginTop:16}}>
+              <div style={{fontSize:11,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>Archived · {archivedDesign.length}</div>
+              <div style={{opacity:.5}}>{groupByDate(archivedDesign).map(([date,items])=><div key={date}style={{marginBottom:8}}><DateGroupHeader date={date}count={items.length}color={C.sub}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><DesignRow key={c.id}c={c}/>)}</Card></div>)}</div>
+            </div>}
           </>;
         })()}
       </div>}
@@ -1988,21 +2049,50 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
 }
 
 
-function DoneTab({campaigns,patch,onOpen,me,setTab}){
-  const allDone=(campaigns||[]).filter(c=>c.stage==="done").sort((a,b)=>new Date(b.updated_at||b.created_at)-new Date(a.updated_at||a.created_at));
+function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete}){
+  const allDone=(campaigns||[]).filter(c=>c.stage==="done"&&!isArchived(c)).sort((a,b)=>new Date(b.updated_at||b.created_at)-new Date(a.updated_at||a.created_at));
   const[view,setView]=useState("list");
+  const[reactivating,setReactivating]=useState(null);
   const reactivate=(c)=>{
-    const prevStage=c.data?.brief?c.data?.copyOptions?"design":"content":"brief";
-    patch(c.id,{stage:prevStage});
-    setTab(prevStage==="content"?"content":prevStage==="design"?"design":"brief");
-    onOpen(c.id,prevStage);
+    const hasCopy=!!(c.data?.copyOptions);
+    const hasDesign=!!(c.data?.design?.approvedPromptIdx!=null||c.data?.design?.libraryPick);
+    if(hasCopy){
+      setReactivating(c);
+    } else {
+      patch(c.id,{stage:"content"});
+      setTab("content");
+      onOpen(c.id,"content");
+    }
+  };
+  const doReactivate=(c,stage)=>{
+    patch(c.id,{stage});
+    setTab(stage);
+    onOpen(c.id,stage);
+    setReactivating(null);
   };
   return<div>
+    {reactivating&&<div onClick={()=>setReactivating(null)}style={{position:"fixed",inset:0,background:"rgba(15,18,30,.5)",zIndex:50,display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div onClick={e=>e.stopPropagation()}style={{background:"#fff",borderRadius:16,padding:28,width:360,boxShadow:"0 8px 32px rgba(0,0,0,.2)"}}>
+        <div style={{fontWeight:800,fontSize:17,marginBottom:6}}>Reactivate {reactivating.product||"asset"}</div>
+        <div style={{fontSize:13,color:C.sub,marginBottom:20}}>Where do you want to send it back to?</div>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          <button onClick={()=>doReactivate(reactivating,"content")}style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",borderRadius:10,border:`2px solid ${C.purple}`,background:"#FAF5FF",cursor:"pointer",textAlign:"left"}}>
+            <div style={{width:36,height:36,borderRadius:8,background:C.purple,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><MessageSquare size={16}color="#fff"/></div>
+            <div><div style={{fontWeight:700,fontSize:14,color:C.purple}}>Copy tab</div><div style={{fontSize:12,color:C.sub}}>Pick a different copy option or regenerate</div></div>
+          </button>
+          <button onClick={()=>doReactivate(reactivating,"design")}style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",borderRadius:10,border:`2px solid ${C.teal}`,background:C.tealSoft,cursor:"pointer",textAlign:"left"}}>
+            <div style={{width:36,height:36,borderRadius:8,background:C.teal,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Palette size={16}color="#fff"/></div>
+            <div><div style={{fontWeight:700,fontSize:14,color:C.teal}}>Design tab</div><div style={{fontSize:12,color:C.sub}}>Change image source or update prompts</div></div>
+          </button>
+        </div>
+        <button onClick={()=>setReactivating(null)}style={{marginTop:14,width:"100%",background:"none",border:"none",cursor:"pointer",color:C.sub,fontSize:13,fontWeight:600}}>Cancel</button>
+      </div>
+    </div>}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-      <div><Eyebrow color={C.green}>Done</Eyebrow><h1 style={{margin:"4px 0 0",fontSize:24,fontWeight:800}}>Done & Archived</h1></div>
+      <div><Eyebrow color={C.green}>Done</Eyebrow><h1 style={{margin:"4px 0 0",fontSize:24,fontWeight:800}}>Done & ready</h1></div>
     </div>
     {allDone.length===0
-      ?<Card><Empty icon={<CheckCircle2 size={26}color={C.sub}/>}title="Nothing done yet"sub="Assets marked as ready or archived appear here."/></Card>
+      ?<Card><Empty icon={<CheckCircle2 size={26}color={C.sub}/>}title="Nothing done yet"sub="Completed, ready-to-go-live assets appear here. Archived assets live in the Archive tab."/></Card>
       :<Card style={{padding:0,overflow:"hidden"}}>
         {allDone.map(c=>{
           const brief=c.data?.brief;
@@ -2026,7 +2116,22 @@ function DoneTab({campaigns,patch,onOpen,me,setTab}){
                 <div style={{fontSize:11.5,color:"#4C1D95",lineHeight:1.45}}>{copy.body?.slice(0,120)}{copy.body?.length>120?"…":""}</div>
                 <div style={{marginTop:5,fontSize:11,fontWeight:700,color:C.purple}}>{copy.cta} →</div>
               </div>}
-              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:6}}>
+              {(()=>{
+                const design=c.data?.design||{};
+                const approvedPrompt=design.imagePrompts&&design.approvedPromptIdx!=null?design.imagePrompts[design.approvedPromptIdx]:null;
+                const libPick=design.libraryPick?LIBRARY.find(l=>l.id===design.libraryPick):null;
+                return<>{approvedPrompt&&<div style={{marginBottom:8,background:"#F0FDFA",borderRadius:8,padding:"8px 12px",borderLeft:"3px solid "+C.teal}}>
+                  <div style={{fontSize:10,fontWeight:700,color:C.teal,textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Image prompt — {approvedPrompt.label}</div>
+                  <div style={{fontSize:11.5,color:"#134E4A",lineHeight:1.5,marginBottom:4}}>{approvedPrompt.prompt?.slice(0,160)}{approvedPrompt.prompt?.length>160?"…":""}</div>
+                  {approvedPrompt.aspectRatio&&<div style={{fontSize:10.5,color:C.sub}}>Aspect ratio: {approvedPrompt.aspectRatio} · Tool: {approvedPrompt.tool}</div>}
+                </div>}
+                {libPick&&<div style={{marginBottom:8,background:"#F0FDFA",borderRadius:8,padding:"8px 12px",borderLeft:"3px solid "+C.teal}}>
+                  <div style={{fontSize:10,fontWeight:700,color:C.teal,textTransform:"uppercase",letterSpacing:.5,marginBottom:3}}>Library image selected</div>
+                  <div style={{fontSize:12.5,fontWeight:600,color:"#134E4A"}}>{libPick.label}</div>
+                  <div style={{fontSize:11,color:C.sub}}>{libPick.desc}</div>
+                </div>}</>;
+              })()}
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:4}}>
                 {[["brief","Brief",C.coral],["content","Copy",C.purple],["design","Design",C.teal]].map(([s,l,col])=>{
                   const has=s==="brief"?!!brief:s==="content"?!!opts:!!(c.data?.design?.approvedPromptIdx!=null||c.data?.design?.libraryPick);
                   return has?<span key={s}style={{fontSize:11,background:col+"15",color:col,padding:"2px 8px",borderRadius:5,fontWeight:600}}>✓ {l}</span>:null;
@@ -2036,7 +2141,44 @@ function DoneTab({campaigns,patch,onOpen,me,setTab}){
             </div>
             <div style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
               <button onClick={()=>reactivate(c)}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.ink,fontWeight:600}}>Reactivate</button>
-              {(me.role==="admin"||me.role==="business")&&<button onClick={()=>{if(window.confirm("Delete permanently?"))api.del("/api/campaigns/"+c.id).then(()=>window.location.reload());}}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:"1px solid #FECACA",background:"#FFF5F5",cursor:"pointer",color:"#B91C1C",fontWeight:600}}>Delete</button>}
+              {(me.role==="admin"||me.role==="business")&&<button onClick={()=>{if(window.confirm("Archive this asset? It moves to the Archive tab."))patch(c.id,{data:{archived:true}});}}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.sub,fontWeight:600}}>Archive</button>}
+              {(me.role==="admin"||me.role==="business")&&<button onClick={()=>onDelete&&onDelete(c.id)}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:"1px solid #FECACA",background:"#FFF5F5",cursor:"pointer",color:"#B91C1C",fontWeight:600}}>Delete</button>}
+            </div>
+          </div>;
+        })}
+      </Card>}
+  </div>;
+}
+
+
+function ArchiveTab({campaigns,patch,onOpen,me,onDelete}){
+  const archived=(campaigns||[]).filter(c=>isArchived(c)).sort((a,b)=>new Date(b.updated_at||b.created_at)-new Date(a.updated_at||a.created_at));
+  const canManage=me.role==="admin"||me.role==="business";
+  const restore=(c)=>{if(window.confirm("Restore this asset back into the active pipeline?"))patch(c.id,{data:{archived:false}});};
+  return<div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+      <div><Eyebrow color={C.sub}>Archive</Eyebrow><h1 style={{margin:"4px 0 0",fontSize:24,fontWeight:800}}>Archived</h1></div>
+    </div>
+    {archived.length===0
+      ?<Card><Empty icon={<ArchiveIcon size={26}color={C.sub}/>}title="Nothing archived"sub="Assets you archive from any stage land here. They stay out of the active pipeline until restored."/></Card>
+      :<Card style={{padding:0,overflow:"hidden"}}>
+        {archived.map(c=>{
+          const brief=c.data?.brief;const p=parseName(c.name);
+          return<div key={c.id}style={{borderBottom:`1px solid ${C.line}`,padding:"14px 18px",display:"flex",alignItems:"flex-start",gap:12,opacity:.85}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3,flexWrap:"wrap"}}>
+                <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{c.product||p.product||"—"}</span>
+                <span style={{fontSize:11,fontWeight:700,color:C.coral}}>{normCrmType(c.crm_type)}</span>
+                <span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel||"WhatsApp"}</span>
+                <StageBadge stage={c.stage}/>
+                {c.created_at&&<span style={{fontSize:11,color:C.sub,background:"#F3F4F6",padding:"2px 7px",borderRadius:5}}>{fmtDate(c.created_at)}</span>}
+              </div>
+              {(c.audience_label||c.segment)&&<div style={{fontSize:12,color:C.sub}}>{c.audience_label||c.segment}{c.objective?" · "+c.objective:""}</div>}
+              {brief&&<div style={{fontSize:12,color:C.sub,marginTop:3,lineHeight:1.4}}>{brief.idea}</div>}
+            </div>
+            <div style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
+              {canManage&&<button onClick={()=>restore(c)}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.ink,fontWeight:600,display:"flex",alignItems:"center",gap:4}}><RotateCcw size={12}/>Restore</button>}
+              {canManage&&onDelete&&<button onClick={()=>onDelete(c.id)}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:"1px solid #FECACA",background:"#FFF5F5",cursor:"pointer",color:"#B91C1C",fontWeight:600}}>Delete</button>}
             </div>
           </div>;
         })}
