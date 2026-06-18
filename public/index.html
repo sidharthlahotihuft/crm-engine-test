@@ -52,22 +52,6 @@ async function callClaude(system,prompt,expectJson){
 }
 // Role-based default tab
 const ROLE_TAB={admin:"dashboard",business:"dashboard",content:"content",design:"design"};
-const[toasts,setToasts_]=React.useState?React.useState([]):[[],()=>{}];
-function useToast(){
-  const[toasts,setToasts]=React.useState([]);
-  const toast=(msg,type="success",duration=3500)=>{
-    const id=Date.now();
-    setToasts(t=>[...t,{id,msg,type}]);
-    setTimeout(()=>setToasts(t=>t.filter(x=>x.id!==id)),duration);
-  };
-  const ToastContainer=()=>toasts.length===0?null:<div style={{position:"fixed",bottom:24,right:24,zIndex:9999,display:"flex",flexDirection:"column",gap:8}}>
-    {toasts.map(t=><div key={t.id}style={{background:t.type==="success"?"#15192B":t.type==="error"?"#B91C1C":"#92400E",color:"#fff",padding:"12px 18px",borderRadius:10,fontSize:13.5,fontWeight:600,display:"flex",alignItems:"center",gap:8,boxShadow:"0 4px 12px rgba(0,0,0,.2)",minWidth:260,maxWidth:380}}>
-      {t.type==="success"?<CheckCircle2 size={16}/>:t.type==="error"?<X size={16}/>:<span>⚠</span>}{t.msg}
-    </div>)}
-  </div>;
-  return{toast,ToastContainer};
-}
-
 const normCrmType=(t)=>(t||"D2C").replace(" (Store-led)","").replace(" (store-led)","");
 const groupByDate=(items)=>{
   const groups={};
@@ -461,10 +445,11 @@ function App(){
 
   const logout=()=>{TOKEN=null;localStorage.removeItem("huft_token");setMe(null);setCampaigns([]);setRules([]);setFeedback([]);setAudiences([]);};
 
+  const[toasts,setToasts]=useState([]);
+  const toast=(msg,type="success",dur=3500)=>{const id=Date.now();setToasts(t=>[...t,{id,msg,type}]);setTimeout(()=>setToasts(t=>t.filter(x=>x.id!==id)),dur);};
+
   if(checking)return<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.navy}}><Loader2 size={32} color="#fff" style={{animation:"spin 1s linear infinite"}}/></div>;
   if(!me)return<Login onAuth={onAuth}/>;
-
-  const{toast,ToastContainer}=useToast();
   const recentFeedback=(stage)=>feedback.filter(f=>f.stage===stage).slice(0,3).map(f=>`- ${f.text}`).join("\n")||"";
   const saveFeedback=(f)=>setFeedback(x=>[{...f,at:Date.now()},...x]);
   const copyRules=rules.filter(r=>r.type==="copy");
@@ -554,7 +539,7 @@ function App(){
       {tab==="done"&&<DoneTab campaigns={campaigns}patch={patch}onOpen={open}me={me}setTab={setTab}/>}
     </div>
     {showMonthlyPrompt&&<MonthlyPrompt me={me}campaigns={campaigns}onClose={()=>setShowMonthlyPrompt(false)}/>}
-    <ToastContainer/>
+    <div style={{position:"fixed",bottom:24,right:24,zIndex:9999,display:"flex",flexDirection:"column",gap:8,pointerEvents:"none"}}>{toasts.map(t=><div key={t.id}style={{background:t.type==="success"?"#15192B":"#B91C1C",color:"#fff",padding:"12px 18px",borderRadius:10,fontSize:13.5,fontWeight:600,display:"flex",alignItems:"center",gap:8,boxShadow:"0 4px 16px rgba(0,0,0,.25)",minWidth:260}}>{t.type==="success"?<CheckCircle2 size={16}/>:<X size={16}/>}{t.msg}</div>)}</div>
     {drawer==="rules"&&<RulesDrawer onClose={()=>setDrawer(null)}copyRules={copyRules}promptRules={promptRules}addRule={addRule}toggleRule={toggleRule}delRule={delRule}me={me}feedback={feedback}/>}
     {drawer==="team"&&<TeamDrawer onClose={()=>setDrawer(null)}me={me}/>}
     {drawer==="audiences"&&<AudienceDrawer onClose={()=>setDrawer(null)}audiences={audiences}setAudiences={setAudiences}me={me}/>}
@@ -1861,7 +1846,7 @@ function DoneTab({campaigns,patch,onOpen,me,setTab}){
                 {c.created_at&&<span style={{fontSize:11,color:C.sub,background:"#F3F4F6",padding:"2px 7px",borderRadius:5}}>{fmtDate(c.created_at)}</span>}
               </div>
               {brief&&<div style={{fontSize:12,color:C.sub,marginBottom:4}}>{brief.idea}</div>}
-              {copy&&<div style={{fontSize:12,color:C.purple,fontWeight:600,marginBottom:4}}>✓ Copy: {copy.direction} · "{copy.header?.slice(0,60)}{copy.header?.length>60?"…":""}"</div>}
+              {copy&&<div style={{fontSize:12,color:C.purple,fontWeight:600,marginBottom:4}}>✓ Copy approved: {copy.direction} — {copy.header?.slice(0,60)}{copy.header?.length>60?"…":""}</div>}
               <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:6}}>
                 {[["brief","Brief",C.coral],["content","Copy",C.purple],["design","Design",C.teal]].map(([s,l,col])=>{
                   const has=s==="brief"?!!brief:s==="content"?!!opts:!!(c.data?.design?.approvedPromptIdx!=null||c.data?.design?.libraryPick);
