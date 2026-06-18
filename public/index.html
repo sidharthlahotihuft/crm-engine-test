@@ -52,7 +52,36 @@ async function callClaude(system,prompt,expectJson){
 }
 // Role-based default tab
 const ROLE_TAB={admin:"dashboard",business:"dashboard",content:"content",design:"design"};
+const[toasts,setToasts_]=React.useState?React.useState([]):[[],()=>{}];
+function useToast(){
+  const[toasts,setToasts]=React.useState([]);
+  const toast=(msg,type="success",duration=3500)=>{
+    const id=Date.now();
+    setToasts(t=>[...t,{id,msg,type}]);
+    setTimeout(()=>setToasts(t=>t.filter(x=>x.id!==id)),duration);
+  };
+  const ToastContainer=()=>toasts.length===0?null:<div style={{position:"fixed",bottom:24,right:24,zIndex:9999,display:"flex",flexDirection:"column",gap:8}}>
+    {toasts.map(t=><div key={t.id}style={{background:t.type==="success"?"#15192B":t.type==="error"?"#B91C1C":"#92400E",color:"#fff",padding:"12px 18px",borderRadius:10,fontSize:13.5,fontWeight:600,display:"flex",alignItems:"center",gap:8,boxShadow:"0 4px 12px rgba(0,0,0,.2)",minWidth:260,maxWidth:380}}>
+      {t.type==="success"?<CheckCircle2 size={16}/>:t.type==="error"?<X size={16}/>:<span>⚠</span>}{t.msg}
+    </div>)}
+  </div>;
+  return{toast,ToastContainer};
+}
+
 const normCrmType=(t)=>(t||"D2C").replace(" (Store-led)","").replace(" (store-led)","");
+const groupByDate=(items)=>{
+  const groups={};
+  items.forEach(c=>{
+    const d=c.created_at?new Date(c.created_at).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"}):"Unknown date";
+    if(!groups[d])groups[d]=[];
+    groups[d].push(c);
+  });
+  return Object.entries(groups).sort((a,b)=>new Date(b[0])-new Date(a[0]));
+};
+const DateGroupHeader=({date,count,color=C.coral})=><div style={{padding:"8px 18px",background:C.paper,borderBottom:`1px solid ${C.line}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+  <span style={{fontSize:11,fontWeight:700,color,textTransform:"uppercase",letterSpacing:.5}}>{date}</span>
+  <span style={{fontSize:11,color:C.sub,fontWeight:600}}>{count} asset{count!==1?"s":""}</span>
+</div>;
 
 /* ===== TAT + Calendar helpers =========================================== */
 const TAT_HOURS={brief:24,content:48,design:48}; // target hours per stage
@@ -435,6 +464,7 @@ function App(){
   if(checking)return<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.navy}}><Loader2 size={32} color="#fff" style={{animation:"spin 1s linear infinite"}}/></div>;
   if(!me)return<Login onAuth={onAuth}/>;
 
+  const{toast,ToastContainer}=useToast();
   const recentFeedback=(stage)=>feedback.filter(f=>f.stage===stage).slice(0,3).map(f=>`- ${f.text}`).join("\n")||"";
   const saveFeedback=(f)=>setFeedback(x=>[{...f,at:Date.now()},...x]);
   const copyRules=rules.filter(r=>r.type==="copy");
@@ -469,7 +499,7 @@ function App(){
     const c=await api.post("/api/campaigns",{channel:"WhatsApp",stage:"brief"});
     setCampaigns(cs=>[c,...cs]);setActiveId(c.id);setTab("brief");
   };
-  const open=(id,jt)=>{const c=campaigns.find(x=>x.id===id);setActiveId(id);setTab(jt||(c?(c.stage==="done"?"design":c.stage):"brief"));};
+  const open=(id,jt)=>{const c=campaigns.find(x=>x.id===id);setActiveId(id);setTab(jt||(c?(c.stage==="done"?"done":c.stage==="content"?"content":c.stage==="design"?"design":"brief"):"brief"));};
 
   // Pending counts per stage (for nav badges)
   const pending={brief:campaigns.filter(c=>c.stage==="brief").length,content:campaigns.filter(c=>c.stage==="content").length,design:campaigns.filter(c=>c.stage==="design").length};
@@ -480,8 +510,9 @@ function App(){
     {k:"brief",label:"Brief",icon:<FileText size={16}/>},
     {k:"content",label:"Copy",icon:<MessageSquare size={16}/>},
     {k:"design",label:"Design",icon:<Palette size={16}/>},
+    {k:"done",label:"Done",icon:<CheckCircle2 size={16}/>,count:(campaigns||[]).filter(c=>c.stage==="done").length},
   ];
-  const TABS=me.role==="admin"?allTabs:allTabs.filter(t=>t.k==="dashboard"||t.k===ROLE_TAB[me.role]||me.role==="admin");
+  const TABS=me.role==="admin"?allTabs:allTabs.filter(t=>t.k==="dashboard"||t.k===ROLE_TAB[me.role]||t.k==="done");
 
   const RoleBadge=()=>{
     const cols={admin:C.coral,business:C.teal,content:C.purple,design:C.green};
@@ -518,10 +549,12 @@ function App(){
     <div style={{maxWidth:1120,margin:"0 auto",padding:"28px 20px"}}>
       {tab==="dashboard"&&<Dashboard campaigns={campaigns}onNew={newCampaign}onOpen={open}me={me}/>}
       {tab==="brief"&&<BriefTab active={active}patch={patch}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}audiences={audiences}/>}
-      {tab==="content"&&<ContentTab active={active}patch={patch}copyRules={copyRules}addRule={addRule}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}/>}
+      {tab==="content"&&<ContentTab active={active}patch={patch}copyRules={copyRules}addRule={addRule}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}toast={toast}/>}
       {tab==="design"&&<DesignTab active={active}patch={patch}promptRules={promptRules}addRule={addRule}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}/>}
+      {tab==="done"&&<DoneTab campaigns={campaigns}patch={patch}onOpen={open}me={me}setTab={setTab}/>}
     </div>
     {showMonthlyPrompt&&<MonthlyPrompt me={me}campaigns={campaigns}onClose={()=>setShowMonthlyPrompt(false)}/>}
+    <ToastContainer/>
     {drawer==="rules"&&<RulesDrawer onClose={()=>setDrawer(null)}copyRules={copyRules}promptRules={promptRules}addRule={addRule}toggleRule={toggleRule}delRule={delRule}me={me}feedback={feedback}/>}
     {drawer==="team"&&<TeamDrawer onClose={()=>setDrawer(null)}me={me}/>}
     {drawer==="audiences"&&<AudienceDrawer onClose={()=>setDrawer(null)}audiences={audiences}setAudiences={setAudiences}me={me}/>}
@@ -1250,10 +1283,12 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
       :allBriefs.length===0
       ?<Card><Empty icon={<FileText size={26}color={C.sub}/>}title="No briefs pending"sub="Create a new asset from the Dashboard."/></Card>
       :<div>
-        <div style={{fontSize:11,fontWeight:700,color:C.coral,textTransform:"uppercase",letterSpacing:.5,marginBottom:6}}>Pending · {allBriefs.length}</div>
-        <Card style={{padding:0,overflow:"hidden",marginBottom:16}}>
-          {allBriefs.map(c=><AssetRow key={c.id}c={c}/>)}
-        </Card>
+        {groupByDate(allBriefs).map(([date,items])=><div key={date}style={{marginBottom:12}}>
+          <DateGroupHeader date={date}count={items.length}color={C.coral}/>
+          <Card style={{padding:0,overflow:"hidden"}}>
+            {items.map(c=><AssetRow key={c.id}c={c}/>)}
+          </Card>
+        </div>)}
       </div>}
   </div>;
 }
@@ -1332,9 +1367,18 @@ function BriefSection({label,content}){
 }
 
 /* ===== Brief Summary Card (used in Copy + Design tabs) ================== */
-function BriefSummaryCard({active,activeBrief,copyRules,busy,refineFor,gen,opts}){
+function BriefSummaryCard({active,activeBrief,copyRules,busy,refineFor,gen,opts,patch}){
   const[expanded,setExpanded]=useState(true);
-  if(!activeBrief)return null;
+  const[editDir,setEditDir]=useState(false);
+  const[dirDraft,setDirDraft]=useState("");
+  const saveDir=()=>{
+    if(!dirDraft.trim())return;
+    patch(active.id,{data:{...(active.data||{}),brief:{...activeBrief,copyDirection:dirDraft.trim()}}});
+    setEditDir(false);
+  };
+  if(!activeBrief)return<div style={{background:"#FEF3C7",border:"1px solid #FDE68A",borderRadius:10,padding:"12px 16px",marginBottom:12,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+    <div><div style={{fontSize:13,fontWeight:700,color:"#92400E"}}>No brief found for this asset</div><div style={{fontSize:12,color:"#78350F",marginTop:2}}>Go to Brief tab, complete the brief, then generate copy.</div></div>
+  </div>;
   const p=parseName(active.name);
   return<div style={{marginBottom:16}}>
     {/* Row 1: Identity bar */}
@@ -1373,7 +1417,21 @@ function BriefSummaryCard({active,activeBrief,copyRules,busy,refineFor,gen,opts}
     {/* Row 3: Expanded brief details */}
     {expanded&&<Card style={{padding:0,marginBottom:6,overflow:"hidden"}}>
       <BriefSection label="Strategic insight" content={activeBrief.strategicInsight}/>
-      <BriefSection label="Copy direction" content={activeBrief.copyDirection}/>
+      <div style={{borderBottom:`1px solid ${C.line}`}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px"}}>
+          <span style={{fontSize:10.5,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5}}>Copy direction</span>
+          <button onClick={()=>{setEditDir(v=>!v);setDirDraft(activeBrief.copyDirection||"");}}style={{background:"none",border:`1px solid ${C.line}`,borderRadius:6,cursor:"pointer",color:C.sub,fontSize:11.5,fontWeight:600,padding:"2px 8px",display:"flex",alignItems:"center",gap:4}}><PenLine size={11}/>{editDir?"Cancel":"Edit"}</button>
+        </div>
+        {editDir
+          ?<div style={{padding:"0 14px 12px"}}>
+              <textarea value={dirDraft}onChange={e=>setDirDraft(e.target.value)}rows={3}style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:8,padding:"8px 10px",fontSize:13,resize:"vertical",boxSizing:"border-box",lineHeight:1.5}}/>
+              <div style={{display:"flex",gap:7,marginTop:6}}>
+                <Btn small onClick={saveDir}disabled={!dirDraft.trim()}><Check size={13}/>Save</Btn>
+                <Btn small variant="ghost"onClick={()=>setEditDir(false)}>Cancel</Btn>
+              </div>
+            </div>
+          :<div style={{padding:"0 14px 12px",fontSize:13.5,lineHeight:1.55,color:C.ink}}>{activeBrief.copyDirection||<span style={{color:C.sub,fontStyle:"italic"}}>No copy direction set</span>}</div>}
+      </div>
       <BriefSection label="Channel note" content={activeBrief.whatsappNote}/>
       {activeBrief.proofPoints&&activeBrief.proofPoints.length>0&&
         <BriefSection label="Proof points" content={activeBrief.proofPoints.join(" · ")}/>}
@@ -1382,7 +1440,7 @@ function BriefSummaryCard({active,activeBrief,copyRules,busy,refineFor,gen,opts}
 }
 
 
-function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,saveFeedback,campaigns,onOpen}){
+function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,saveFeedback,campaigns,onOpen,toast}){
   const allCopy=(campaigns||[]).filter(c=>c.stage==="content");
   const[openId,setOpenId]=useState(active?.id||null);
   const[busyMap,setBusyMap]=useState({});
@@ -1446,6 +1504,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
 
     const select=(idx)=>{
       patch(c.id,{data:{...(c.data||{}),selectedCopyIdx:idx},stage:"design",copy_approver:me.name});
+      if(toast)toast("Copy approved — asset moved to Design ✓","success");
     };
 
     return<div style={{borderBottom:`1px solid ${C.line}`}}>
@@ -1471,7 +1530,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       {/* Expanded content */}
       {isOpen&&<div style={{padding:"0 18px 18px",background:"#FAF5FF"}}>
         {/* Brief summary */}
-        <BriefSummaryCard active={c}activeBrief={activeBrief}copyRules={copyRules}busy={busy}refineFor={refineFor}gen={gen}opts={opts}/>
+        <BriefSummaryCard active={c}activeBrief={activeBrief}copyRules={copyRules}busy={busy}refineFor={refineFor}gen={gen}opts={opts}patch={patch}/>
         {c.copy_approver&&<div style={{marginBottom:10,display:"flex",alignItems:"center",gap:8}}><ApproverChip name={`Copy approved · ${c.copy_approver}`}at={c.copy_approved_at}color={C.purple}/>{sel!=null&&<span style={{fontSize:12,color:C.sub}}>· {opts[sel]?.direction}</span>}</div>}
         {err&&<div style={{color:C.coral,fontSize:13,marginBottom:8}}>{err}</div>}
         {!opts&&!busy&&<div style={{background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:10,padding:"12px 16px",marginBottom:10,display:"flex",alignItems:"center",gap:10}}><MessageSquare size={18}color="#B91C1C"/><div><div style={{fontSize:13,fontWeight:700,color:"#B91C1C"}}>No copy generated yet</div><div style={{fontSize:12,color:"#7F1D1D",marginTop:2}}>Hit "Generate 5 options" in the brief panel above.</div></div></div>}
@@ -1484,9 +1543,18 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
           {(sel==null||showAll)&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
             {opts.map((o,i)=>{if(sel!=null&&i===sel)return null;return<ContentCard key={i}o={o}idx={i}sel={false}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}channel={c.channel}/>;})}</div>}
         </div>}
-        {sel!=null&&<div style={{marginTop:10}}>
-          <Btn variant="teal"onClick={()=>{patch(c.id,{stage:"design"});setTab("design");onOpen(c.id,"design");}}>Move to Design <ArrowRight size={14}/></Btn>
+        {sel!=null&&<div style={{marginTop:12,background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:10,padding:"14px 16px"}}>
+          <div style={{fontSize:12,fontWeight:700,color:"#15803D",textTransform:"uppercase",letterSpacing:.5,marginBottom:10,display:"flex",alignItems:"center",gap:6}}><CheckCircle2 size={13}/>Copy approved — next steps</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <Btn variant="teal"onClick={()=>{patch(c.id,{stage:"design"});setTab("design");onOpen(c.id,"design");}}><Palette size={14}/>Go to Design</Btn>
+            <a href="https://www.canva.com/create/whatsapp-messages/" target="_blank"rel="noreferrer"style={{display:"inline-flex",alignItems:"center",gap:7,padding:"10px 16px",borderRadius:10,border:`1px solid ${C.line}`,background:"#fff",color:C.ink,fontSize:14,fontWeight:600,textDecoration:"none"}}><ExternalLink size={14}/>Open Canva</a>
+          </div>
+          <div style={{marginTop:10,fontSize:12,color:"#166534"}}>Asset is now in Design queue. The design team can pick it up.</div>
         </div>}
+        <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${C.line}`,display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button onClick={()=>{if(window.confirm("Archive this asset?"))patch(c.id,{stage:"done"});}}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.sub,fontWeight:600}}>Archive</button>
+          <button onClick={()=>{if(window.confirm("Delete permanently?"))api.del("/api/campaigns/"+c.id).then(()=>window.location.reload());}}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:"1px solid #FECACA",background:"#FFF5F5",cursor:"pointer",color:"#B91C1C",fontWeight:600}}>Delete</button>
+        </div>
         <FeedbackBar stage="content"by={me.name}onSave={saveFeedback}/>
       </div>}
     </div>;
@@ -1505,7 +1573,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       ?<CalendarView campaigns={allCopy}onOpen={onOpen}filterStage="content"/>
       :allCopy.length===0
       ?<Card><Empty icon={<MessageSquare size={26}color={C.sub}/>}title="No copy pending"sub="Assets move here after brief is done."/></Card>
-      :<Card style={{padding:0,overflow:"hidden"}}>{allCopy.map(c=><CopyRow key={c.id}c={c}/>)}</Card>}
+      :<div>{groupByDate(allCopy).map(([date,items])=><div key={date}style={{marginBottom:12}}><DateGroupHeader date={date}count={items.length}color={C.purple}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}/>)}</Card></div>)}</div>}
   </div>;
 }
 
@@ -1545,10 +1613,16 @@ function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,
           </div>
         </div>
         /* WhatsApp preview */
-        :<div style={{background:"#E7F6E9",borderRadius:10,padding:12}}>
-          <div style={{fontWeight:800,whiteSpace:"pre-line",marginBottom:8,color:C.navy,fontSize:14,lineHeight:1.35}}>{o.header}</div>
-          <div style={{whiteSpace:"pre-line",color:"#1f3326",fontSize:13,lineHeight:1.55}}>{o.body}</div>
-          <div style={{marginTop:10,display:"inline-block",background:C.navy,color:"#fff",fontSize:11.5,fontWeight:700,padding:"5px 12px",borderRadius:7}}>{o.cta}</div>
+        :<div style={{borderRadius:10,overflow:"hidden",border:"1px solid #d1fae5"}}>
+          <div style={{background:"#1a2940",padding:"10px 14px"}}>
+            <div style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,.4)",textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Image copy (overlay text)</div>
+            <div style={{fontWeight:800,whiteSpace:"pre-line",color:"#fff",fontSize:14,lineHeight:1.35}}>{o.header}</div>
+          </div>
+          <div style={{background:"#E7F6E9",padding:"10px 14px"}}>
+            <div style={{fontSize:9.5,fontWeight:700,color:"#166534",textTransform:"uppercase",letterSpacing:.5,marginBottom:5}}>Caption (message body)</div>
+            <div style={{whiteSpace:"pre-line",color:"#1f3326",fontSize:13,lineHeight:1.55}}>{o.body}</div>
+            <div style={{marginTop:10,display:"inline-block",background:C.navy,color:"#fff",fontSize:11.5,fontWeight:700,padding:"5px 12px",borderRadius:7}}>{o.cta}</div>
+          </div>
         </div>}
     </div>
 
@@ -1750,7 +1824,59 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
       ?<CalendarView campaigns={allDesign}onOpen={onOpen}filterStage="design"/>
       :allDesign.length===0
       ?<Card><Empty icon={<Palette size={26}color={C.sub}/>}title="No design pending"sub="Assets move here after copy is selected."/></Card>
-      :<Card style={{padding:0,overflow:"hidden"}}>{allDesign.map(c=><DesignRow key={c.id}c={c}/>)}</Card>}
+      :<div>{groupByDate(allDesign).map(([date,items])=><div key={date}style={{marginBottom:12}}><DateGroupHeader date={date}count={items.length}color={C.teal}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><DesignRow key={c.id}c={c}/>)}</Card></div>)}</div>}
+  </div>;
+}
+
+
+function DoneTab({campaigns,patch,onOpen,me,setTab}){
+  const allDone=(campaigns||[]).filter(c=>c.stage==="done").sort((a,b)=>new Date(b.updated_at||b.created_at)-new Date(a.updated_at||a.created_at));
+  const[view,setView]=useState("list");
+  const reactivate=(c)=>{
+    const prevStage=c.data?.brief?c.data?.copyOptions?"design":"content":"brief";
+    patch(c.id,{stage:prevStage});
+    setTab(prevStage==="content"?"content":prevStage==="design"?"design":"brief");
+    onOpen(c.id,prevStage);
+  };
+  return<div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+      <div><Eyebrow color={C.green}>Done</Eyebrow><h1 style={{margin:"4px 0 0",fontSize:24,fontWeight:800}}>Done & Archived</h1></div>
+    </div>
+    {allDone.length===0
+      ?<Card><Empty icon={<CheckCircle2 size={26}color={C.sub}/>}title="Nothing done yet"sub="Assets marked as ready or archived appear here."/></Card>
+      :<Card style={{padding:0,overflow:"hidden"}}>
+        {allDone.map(c=>{
+          const brief=c.data?.brief;
+          const opts=c.data?.copyOptions;
+          const sel=c.data?.selectedCopyIdx;
+          const copy=sel!=null?opts?.[sel]:null;
+          const p=parseName(c.name);
+          return<div key={c.id}style={{borderBottom:`1px solid ${C.line}`,padding:"14px 18px",display:"flex",alignItems:"flex-start",gap:12}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3,flexWrap:"wrap"}}>
+                <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{c.product||p.product||"—"}</span>
+                <span style={{fontSize:11,fontWeight:700,color:C.coral}}>{normCrmType(c.crm_type)}</span>
+                <span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel||"WhatsApp"}</span>
+                {p.date&&<span style={{fontSize:11,color:C.sub}}>{p.date}</span>}
+                {c.created_at&&<span style={{fontSize:11,color:C.sub,background:"#F3F4F6",padding:"2px 7px",borderRadius:5}}>{fmtDate(c.created_at)}</span>}
+              </div>
+              {brief&&<div style={{fontSize:12,color:C.sub,marginBottom:4}}>{brief.idea}</div>}
+              {copy&&<div style={{fontSize:12,color:C.purple,fontWeight:600,marginBottom:4}}>✓ Copy: {copy.direction} · "{copy.header?.slice(0,60)}{copy.header?.length>60?"…":""}"</div>}
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:6}}>
+                {[["brief","Brief",C.coral],["content","Copy",C.purple],["design","Design",C.teal]].map(([s,l,col])=>{
+                  const has=s==="brief"?!!brief:s==="content"?!!opts:!!(c.data?.design?.approvedPromptIdx!=null||c.data?.design?.libraryPick);
+                  return has?<span key={s}style={{fontSize:11,background:col+"15",color:col,padding:"2px 8px",borderRadius:5,fontWeight:600}}>✓ {l}</span>:null;
+                })}
+                {c.has_report&&<span style={{fontSize:11,background:C.green+"15",color:C.green,padding:"2px 8px",borderRadius:5,fontWeight:600}}>✓ Report</span>}
+              </div>
+            </div>
+            <div style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
+              <button onClick={()=>reactivate(c)}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.ink,fontWeight:600}}>Reactivate</button>
+              {(me.role==="admin"||me.role==="business")&&<button onClick={()=>{if(window.confirm("Delete permanently?"))api.del("/api/campaigns/"+c.id).then(()=>window.location.reload());}}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:"1px solid #FECACA",background:"#FFF5F5",cursor:"pointer",color:"#B91C1C",fontWeight:600}}>Delete</button>}
+            </div>
+          </div>;
+        })}
+      </Card>}
   </div>;
 }
 
