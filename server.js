@@ -106,7 +106,48 @@ async function generate(system, prompt) {
 }
 
 
-// ── Rules auto-seed ───────────────────────────────────────────────────────────
+// ── Audiences auto-seed ───────────────────────────────────────────────────────
+async function seedAudiences() {
+  try {
+    const { rows } = await pool.query("SELECT COUNT(*) FROM audiences");
+    if (parseInt(rows[0].count) >= 10) return; // already seeded
+    const audiences = [
+      // DOG SEGMENTS
+      { name: "New Dog Parent", description: "First-time dog parent, 25–35, urban, slightly anxious, research-heavy. Just brought home a puppy or rescue.", segment_code: "DOG_NEW", pet_type: "dog", lifecycle_stage: "Acquisition / Onboarding", trigger_event: "New puppy adoption, rescue event, first HUFT purchase", key_insight: "Anxiety is high, trust is fragile, information need is high. They want a trusted guide, not a salesperson. Reassurance converts. Simplicity wins. 'We've got you' is the message.", channel_pref: "WhatsApp, Email", notes: "Tone: warm, simple, expert. Relevant: Hearty, Sara's Puppy, YIMT, HUFT Originals." },
+      { name: "Loyalist Dog Parent", description: "Active buyer, 2–5 years HUFT relationship. Regularly purchases, emotionally invested in the brand.", segment_code: "DOG_LOYALIST", pet_type: "dog", lifecycle_stage: "Retention / Advocacy", trigger_event: "New launch, seasonal event, birthday/adoption anniversary, milestone", key_insight: "They know HUFT. They trust HUFT. They want to feel like insiders and be the first to know. Recognition matters more than discounts.", channel_pref: "WhatsApp, Push, Email", notes: "Lead with celebration and insider access. Avoid over-discounting. Relevant: new launches, DashDog, HUFT Spa." },
+      { name: "Home Cooker (Dog)", description: "Feeds dog home-cooked meals. Health-conscious, slightly suspicious of packaged food.", segment_code: "DOG_HOMECOOK", pet_type: "dog", lifecycle_stage: "Conversion / Education", trigger_event: "Vet advice, nutritional concern, sharing home-cook recipes online", key_insight: "Their love for their dog drives the cooking. Sara's feels like 'home cooking, but done right.' Validate the love; show what it misses.", channel_pref: "WhatsApp, Email", notes: "Key message: 'Your love is the foundation — Sara's completes it.' Primary Sara's SWF audience." },
+      { name: "Kibble Switcher (Dog)", description: "Currently on RC / Farmina / Pedigree / Drools. Open to upgrade, triggered by digestion issue or curiosity.", segment_code: "DOG_KIBBLE_SWITCH", pet_type: "dog", lifecycle_stage: "Conversion / Upsell", trigger_event: "Dog shows digestion issues, coat dullness, vet recommendation, price review", key_insight: "Not unhappy — just don't know better is possible. Story is not 'your food is bad' but 'your dog can feel even better.' Curiosity is the entry, benefit is the close.", channel_pref: "WhatsApp, Push", notes: "Hearty's primary audience. Lead with baking vs extrusion story. Never shame current choices." },
+      { name: "Lapsed Dog Buyer", description: "Customer who purchased 60–180 days ago with no recent activity.", segment_code: "DOG_LAPSED", pet_type: "dog", lifecycle_stage: "Win-back", trigger_event: "60 days since last purchase, stock replenishment window", key_insight: "Life got in the way, not dissatisfaction. They remember HUFT fondly. The right warm nudge brings them back.", channel_pref: "WhatsApp, Email", notes: "Win-back tone: warm, 'we missed you and [dog name].' Lead with replenishment SKU + one adjacent product." },
+      { name: "Treat Buyer (Dog)", description: "Buys treats regularly but hasn't crossed over into main nutrition products.", segment_code: "DOG_TREAT", pet_type: "dog", lifecycle_stage: "Upsell / Cross-sell", trigger_event: "Treat reorder time, new treat flavour launch, training milestone", key_insight: "Treats are a daily emotional ritual. Treats open the door to trust in nutrition. YIMT → Sara's Treats → Sara's SWF is the upgrade ladder.", channel_pref: "WhatsApp, Push", notes: "Joyful, taste-first tone. YIMT and Sara's Treats are the heroes." },
+      { name: "Health-Anxious Dog Parent", description: "Dog has digestion, skin, or allergy issues. Actively seeking solutions.", segment_code: "DOG_HEALTH_ANXIOUS", pet_type: "dog", lifecycle_stage: "Conversion / Education", trigger_event: "Vet visit, skin flare-up, loose stools, itching, switching from current food", key_insight: "Fear and guilt drive their search but they want to be helped, not scared. They've usually already tried 2–3 things. Position HUFT as the calm expert.", channel_pref: "WhatsApp, Email", notes: "Empathetic problem-solver tone. Never fear language. Relevant: Sara's Hypoallergenic, Probiotic Chews, Hearty sensitive." },
+      { name: "Senior Dog Parent", description: "Dog is 7+ years. Parent is emotionally attuned to ageing signs — joint stiffness, lower energy.", segment_code: "DOG_SENIOR", pet_type: "dog", lifecycle_stage: "Retention / Upsell", trigger_event: "Dog's birthday, vet mention of ageing, noticeable behaviour changes", key_insight: "Emotional peak. This parent wants to give their dog the best final years. 'They've given you everything' lands hard. Quality of life is the purchase driver.", channel_pref: "WhatsApp, Email", notes: "Gentle, responsible, celebratory of the bond. Relevant: Sara's Classic, Probiotic Chews, HUFT Beds, Spa gentle grooms." },
+      // CAT SEGMENTS
+      { name: "New Cat Parent", description: "First cat, 22–32 urban, often rescue/adoption. Unsure about nutrition.", segment_code: "CAT_NEW", pet_type: "cat", lifecycle_stage: "Acquisition / Onboarding", trigger_event: "New cat adoption, first HUFT cat purchase", key_insight: "New cat parents feel they don't fully understand cats. Clear, non-judgemental education builds deep loyalty fast.", channel_pref: "WhatsApp, Email", notes: "Tone: friendly, non-judgemental. Start with NutriMeow or Meowsi intro. Don't overwhelm with science." },
+      { name: "Label Reader (Cat)", description: "Checks ingredients obsessively. Avoids fillers. Researches taurine, organ meats, moisture. Willing to pay more for clean.", segment_code: "CAT_LABELREADER", pet_type: "cat", lifecycle_stage: "Conversion", trigger_event: "Ingredient research online, disappointment with current brand, vet guidance", key_insight: "They've already done the homework — they just need Meowsi to pass the test. Treat them as a peer, not a prospect.", channel_pref: "WhatsApp, Email", notes: "Knowledgeable peer-to-peer tone. Lead with specifics: real muscle meat, organ meat, AAFCO-complete. Primary Meowsi audience." },
+      { name: "Kibble Cat Parent", description: "Feeds dry food only (Farmina, RC, Whiskas dry). May not know cats dehydrate on dry-only diets.", segment_code: "CAT_KIBBLE", pet_type: "cat", lifecycle_stage: "Education / Upsell", trigger_event: "Vet mention of dehydration/UTI, dry stools, picky behaviour", key_insight: "'You don't have to replace Farmina — pair it with Meowsi.' Pairing angle is less threatening. Hydration is the hook.", channel_pref: "WhatsApp, Push", notes: "Lead with pairing story. Educate on moisture gap (80–84% moisture in Meowsi). Non-threatening upgrade tone." },
+      { name: "Wet Food Cat Parent (Upgrader)", description: "Already buys Sheba / Whiskas wet. Treats it as a topper, not a complete meal.", segment_code: "CAT_WET_UPGRADE", pet_type: "cat", lifecycle_stage: "Conversion / Upsell", trigger_event: "Buying Sheba regularly, cat not finishing meals, nutrition concern", key_insight: "'Sheba is a snack. Meowsi is a meal.' Most wet food users don't realise their product is a complementary topper. That single reframe is the conversion insight.", channel_pref: "WhatsApp, Email", notes: "Complete vs complementary is the story. Respectful comparison. Primary Meowsi audience." },
+      { name: "Value Cat Parent", description: "Budget-conscious. Currently on Whiskas / Me-O. Cares about their cat but managing costs.", segment_code: "CAT_VALUE", pet_type: "cat", lifecycle_stage: "Conversion", trigger_event: "Price comparison research, cat health concern, recommendation", key_insight: "Not cheap — careful. NutriMeow delivers more energy per pouch at Rs.65. Price parity + quality upgrade is the win.", channel_pref: "WhatsApp, Push", notes: "'Feed right. Pay smart.' Lead with taurine education. Price comparison: Rs.65. Primary NutriMeow audience." },
+      { name: "Lapsed Cat Buyer", description: "Purchased cat product 60–180 days ago, no recent activity.", segment_code: "CAT_LAPSED", pet_type: "cat", lifecycle_stage: "Win-back", trigger_event: "60 days since last purchase, replenishment window", key_insight: "Cat parents are routine-driven. If they lapsed, the product ran out and they defaulted to convenience. A warm nudge reactivates the habit.", channel_pref: "WhatsApp, Email", notes: "Warm win-back tone. 'Your cat misses the good stuff.' Lead with last purchased product + replenishment." },
+      { name: "Multi-Cat Home", description: "2+ cats. Daily feeding cost is a real practical concern.", segment_code: "CAT_MULTI", pet_type: "cat", lifecycle_stage: "Retention / Upsell", trigger_event: "Second cat adoption, budget review, routine feeding optimisation", key_insight: "When feeding 3 cats twice a day, Rs.65 vs Rs.70 actually matters. Consistency and acceptance (cats finishing the meal) are key purchase drivers.", channel_pref: "WhatsApp, Email", notes: "NutriMeow primary audience. Practical, no-frills tone. Bulk messaging: cost + quality + familiar textures." },
+      // RETAIL / CROSS-CATEGORY
+      { name: "Store Visitor (Retail)", description: "Customer engaged through HUFT retail stores. NSO-specific or in-store context. No web or app links.", segment_code: "RETAIL_STORE", pet_type: "both", lifecycle_stage: "Conversion / Retention", trigger_event: "Store visit, NSO launch, in-store event, Spa appointment", key_insight: "Retail customers have a higher trust baseline — they chose to walk in. The store IS the relationship. CRM should amplify the in-store experience.", channel_pref: "WhatsApp", notes: "RETAIL CRM — NO web/app links. Lead with store experience. Tone: welcoming, community-warm." },
+      { name: "Grooming Customer", description: "Has used or enquired about HUFT Spa & Grooming.", segment_code: "SPA_GROOM", pet_type: "both", lifecycle_stage: "Retention / Upsell", trigger_event: "Post-groom follow-up, seasonal grooming, grooming interval reminder", key_insight: "The groom is a moment of trust — the parent handed over their pet. Post-groom re-engagement within 72 hours has highest response rates.", channel_pref: "WhatsApp", notes: "Warm, expert, caring. 'Your pet felt so comfortable.' Upsell: Spa packages, care products. RETAIL context." },
+      { name: "High-Value Customer", description: "Top-decile customer by LTV. Regular, multi-category, emotionally invested in HUFT.", segment_code: "HIGH_LTV", pet_type: "both", lifecycle_stage: "Advocacy / Retention", trigger_event: "Anniversary, new launch, exclusive event, thank-you moment", key_insight: "They don't need to be convinced. They need to feel seen. Early access, behind-the-scenes, being part of HUFT's story — these are their currency.", channel_pref: "WhatsApp, Email", notes: "Celebratory, insider, warm. No hard sell. 'Thank you for being part of the HUFT family.' Never lead with discount." },
+    ];
+    for (const a of audiences) {
+      await pool.query(
+        `INSERT INTO audiences (name,description,segment_code,pet_type,lifecycle_stage,trigger_event,key_insight,channel_pref,notes)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [a.name, a.description, a.segment_code, a.pet_type, a.lifecycle_stage, a.trigger_event, a.key_insight, a.channel_pref, a.notes]
+      );
+    }
+    console.log(`✓ Audiences seeded (${audiences.length} segments added)`);
+  } catch (e) {
+    console.error("Audiences seed failed:", e.message);
+  }
+}
+
+
 async function seedRules() {
   try {
     const { rows } = await pool.query("SELECT COUNT(*) FROM rules");
@@ -496,6 +537,17 @@ app.post("/api/rules/seed", authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Manual audiences seed endpoint ──────────────────────────────────────────
+app.post("/api/audiences/seed", authMiddleware, async (req, res) => {
+  if (req.user.role !== "admin") return res.status(403).json({ error: "Admin only" });
+  try {
+    await pool.query("DELETE FROM audiences WHERE created_by IS NULL"); // wipe system-seeded only
+    await seedAudiences();
+    const { rows } = await pool.query("SELECT COUNT(*) FROM audiences");
+    res.json({ seeded: parseInt(rows[0].count) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── SPA fallback ──────────────────────────────────────────────────────────────
 app.get("*", (req, res) =>
   res.sendFile(path.join(__dirname, "public", "index.html"))
@@ -511,6 +563,7 @@ app.listen(PORT, async () => {
     console.error("  Check DATABASE_URL in your .env file");
   }
   await seedRules();
+  await seedAudiences();
   console.log(`\n  HUFT CRM Creative Engine`);
   console.log(`  Running:  http://localhost:${PORT}`);
   console.log(`  Database: Supabase / PostgreSQL`);
