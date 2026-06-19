@@ -314,6 +314,69 @@ CRM types: D2C (all channels, app/web links OK) vs Retail (WhatsApp only, NO web
 Campaign objectives: Conversion (trial/first purchase), Upsell (existing buyer to higher-tier), Retention (loyalist re-engagement), Win-back (lapsed 60–180 days), Education (awareness, ingredient truth), Launch (new product/SKU introduction).
 CRM pillars: Trust 30% · Importance 40% · Edutainment 20% · Brand Values 10%.`.trim();
 
+/* ===== Reasons-to-believe (RTBs) by product/category ==================== */
+// Tapped in the brief, woven into copy body. Users can multi-select + add custom.
+const RTB_LIBRARY = {
+  _default:[
+    "Slow-cooked / gently cooked to retain nutrients",
+    "Real, recognisable ingredients — no hidden fillers",
+    "0% preservatives",
+    "Balanced by canine/feline nutritionists",
+    "Human-grade quality",
+    "Made in India",
+    "Vet-aware, science-backed formulation",
+  ],
+  "sara's wholesome food":[
+    "Slow-cooked, gentle on sensitive digestion",
+    "Real, visible ingredients you can recognise",
+    "0% preservatives — nothing their body doesn't need",
+    "Balanced by canine nutritionists for daily completeness",
+    "Rotation-friendly recipes to keep mealtimes interesting",
+    "Home-style, made fresh",
+  ],
+  "hearty":[
+    "Oven-baked, so every nutrient stays where it belongs",
+    "Real ingredients you'd recognise from your own kitchen",
+    "Human-grade quality",
+    "Thoughtfully balanced for complete everyday nutrition",
+    "No artificial preservatives",
+  ],
+  "meowsi":[
+    "Thoughtfully formulated nutrition, built for cats alone",
+    "Honest ingredients you can actually recognise",
+    "Science-backed, vet-aware, made with genuine care",
+    "Feline-first taste cats actually love",
+    "0% preservatives",
+  ],
+  "nutrimeow":[
+    "Reliable daily nutrition for multi-cat homes",
+    "Complete & balanced for everyday feeding",
+    "Great value without compromising quality",
+    "Feline-first formulation",
+  ],
+  "yakies":[
+    "Single-ingredient, long-lasting natural chew",
+    "Himalayan yak & cow milk — high protein",
+    "No preservatives, no additives",
+    "Naturally aids dental health",
+  ],
+  "huft spa / grooming":[
+    "Trained, gentle groomers",
+    "Pet-safe, premium products",
+    "Calm, stress-aware handling",
+    "Visible coat & skin results",
+    "Personalised to your pet's coat & breed",
+  ],
+};
+function rtbsForProduct(prod){
+  const p=(prod||"").toLowerCase().trim();
+  for(const k of Object.keys(RTB_LIBRARY)){if(k!=="_default"&&p.includes(k))return RTB_LIBRARY[k];}
+  // sub-brand keyword fallbacks
+  if(p.includes("spa")||p.includes("groom"))return RTB_LIBRARY["huft spa / grooming"];
+  if(p.includes("cat")||p.includes("meow"))return RTB_LIBRARY["meowsi"];
+  return RTB_LIBRARY._default;
+}
+
 /* ===== Guided brief chat steps ========================================== */
 const BRIEF_STEPS = [
   {
@@ -417,6 +480,23 @@ const BRIEF_STEPS = [
     optional:true,
   },
   {
+    key:"rtbs", question:"Which RTBs should the copy focus on?",
+    hint:"Reasons-to-believe — the proof points the copy should lean on. Select all that apply, or add your own. These get woven into the copy body.",
+    multiSelect:true,
+    optionsFromProduct:true, // options resolved at render time from the chosen product
+    freeText:true,
+    placeholder:"Add a custom RTB and press enter…",
+    optional:true,
+  },
+  {
+    key:"references", question:"Any reference links to guide copy & design?",
+    hint:"Paste links to past campaigns, competitor refs, product pages, mood boards, image refs — anything the team should keep in mind. Add as many as you like.",
+    linkInput:true,
+    freeText:true,
+    placeholder:"Paste a URL and press enter…",
+    optional:true,
+  },
+  {
     key:"go_live_date", question:"When does this asset go live?",
     hint:"Pick the planned live date — sets the campaign week, month, and TAT deadlines.",
     dateInput:true,
@@ -488,6 +568,7 @@ const Target=p=><Svg{...p}><circle cx="12"cy="12"r="10"/><circle cx="12"cy="12"r
 const CalendarIcon=p=><Svg{...p}><rect x="3"y="4"width="18"height="18"rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></Svg>;
 const UploadIcon=p=><Svg{...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5M12 3v12"/></Svg>;
 const BellIcon=p=><Svg{...p}><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></Svg>;
+const LinkIcon=p=><Svg{...p}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></Svg>;
 const ClockIcon=p=><Svg{...p}><circle cx="12"cy="12"r="10"/><path d="M12 6v6l4 2"/></Svg>;
 const ArchiveIcon=p=><Svg{...p}><rect x="3"y="4"width="18"height="4"rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/></Svg>;
 
@@ -520,7 +601,7 @@ function RowActions({c,patch,me,onEdit,onDelete}){
 
 function ApproverChip({name,at,color=C.teal}){if(!name)return null;return<span style={{display:"inline-flex",alignItems:"center",gap:5,background:color+"18",color:color,fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={12}/>{name} · {fmtTime(at)}</span>;}
 // Build a clean, paste-ready text block from an approved copy option
-const copyTextFromOption=(o)=>{if(!o)return"";return[o.header,"",o.body,"",o.cta?("CTA: "+o.cta):""].filter(x=>x!==undefined).join("\n").trim();};
+const copyTextFromOption=(o)=>{if(!o)return"";return[o.subject?("Subject: "+o.subject):"",o.subject?"":undefined,o.header,"",o.body,"",o.cta?("CTA: "+o.cta):""].filter(x=>x!==undefined).join("\n").replace(/\n{3,}/g,"\n\n").trim();};
 // How many copy options to generate per channel — Email gets 2, WhatsApp/Push get 5
 const copyOptionCount=(ch)=>{const c=(ch||"").toLowerCase();return(c.includes("email")&&!c.includes("whatsapp"))?2:5;};
 // One-click "Copy text" button with copied-state feedback
@@ -565,7 +646,10 @@ function exportBriefTxt(active){
   const proofLines=(b.proofPoints||[]).map(p=>"• "+p);
   const base=[`HUFT CRM BRIEF — ${active.name||"Untitled"}`,``,`Product: ${active.product}  |  Channel: ${active.channel}`,`Segment: ${active.audience||active.segment}  |  Objective: ${active.objective}`,active.offer?`Offer: ${active.offer}`:"",`Pillar: ${b.pillar||"—"}`,``,`STRATEGIC INSIGHT`,b.strategicInsight,``,`THE IDEA`,b.idea,``,`PROOF POINTS`];
   const mid=proofLines;
-  const tail=[``,b.copyDirection?`COPY DIRECTION\n${b.copyDirection}`:"",``,b.whatsappNote?`WHATSAPP\n${b.whatsappNote}`:"",``,`Generated: ${new Date().toLocaleDateString("en-IN")}`];
+  const tail=[``,b.copyDirection?`COPY DIRECTION\n${b.copyDirection}`:"",``,b.whatsappNote?`WHATSAPP\n${b.whatsappNote}`:"",
+    ...(b.rtbs&&b.rtbs.length?[``,`RTBs IN FOCUS`,...b.rtbs.map(r=>"• "+r)]:[]),
+    ...(b.references&&b.references.length?[``,`REFERENCE LINKS`,...b.references.map(r=>"• "+r)]:[]),
+    ``,`Generated: ${new Date().toLocaleDateString("en-IN")}`];
   const lines=base.concat(mid).concat(tail).filter(l=>l!==undefined);
   const blob=new Blob([lines.join("\n")],{type:"text/plain"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`${(active.name||"brief").replace(/\s+/g,"_")}.txt`;a.click();
 }
@@ -1124,6 +1208,7 @@ function BriefChat({campaignId,patch,onBriefReady,me,recentFeedback,product}){
   const[generating,setGenerating]=useState(false);
   const[err,setErr]=useState("");
   const[hoveredChip,setHoveredChip]=useState(null);
+  const[multiPick,setMultiPick]=useState([]); // staged selections for multi-select / link steps
   const scrollRef=useRef(null);
   const inputRef=useRef(null);
 
@@ -1153,7 +1238,7 @@ function BriefChat({campaignId,patch,onBriefReady,me,recentFeedback,product}){
     showTypingThen(
       <div>
         <div style={{fontWeight:700,marginBottom:4}}>Hey! Let's build your brief 🐾</div>
-        <div style={{fontSize:13,color:"#6B7280",lineHeight:1.5}}>I'll walk you through <b>8 quick questions</b>. Tap a quick-reply or type your own — both work. Under 2 minutes to a sharp brief.</div>
+        <div style={{fontSize:13,color:"#6B7280",lineHeight:1.5}}>I'll walk you through <b>{BRIEF_STEPS.length} quick questions</b>. Tap a quick-reply or type your own — both work. Under 2 minutes to a sharp brief.</div>
       </div>, 700
     ).then(()=>showNextStep(0));
   },[]);
@@ -1166,6 +1251,7 @@ function BriefChat({campaignId,patch,onBriefReady,me,recentFeedback,product}){
     }
     const s=BRIEF_STEPS[idx];
     setStepIdx(idx);
+    setMultiPick([]); // reset staged multi-select / links for the new step
     const prog=`${idx+1}/${BRIEF_STEPS.length}`;
     showTypingThen(
       <div>
@@ -1193,9 +1279,9 @@ function BriefChat({campaignId,patch,onBriefReady,me,recentFeedback,product}){
         <div>
           <div style={{fontWeight:700,marginBottom:8}}>Got everything I need ✓</div>
           <div style={{display:"grid",gridTemplateColumns:"auto 1fr",gap:"5px 14px",fontSize:13,lineHeight:1.5}}>
-            {BRIEF_STEPS.filter(s=>newAns[s.key]).map(s=><React.Fragment key={s.key}>
+            {BRIEF_STEPS.filter(s=>{const v=newAns[s.key];return Array.isArray(v)?v.length:v;}).map(s=><React.Fragment key={s.key}>
               <span style={{color:"#9CA3AF",fontWeight:600,whiteSpace:"nowrap"}}>{s.question.replace("?","")}</span>
-              <span style={{fontWeight:600,color:C.ink}}>{newAns[s.key]||<span style={{color:"#9CA3AF",fontStyle:"italic"}}>skipped</span>}</span>
+              <span style={{fontWeight:600,color:C.ink}}>{(()=>{const v=newAns[s.key];return Array.isArray(v)?v.join(" · "):v;})()||<span style={{color:"#9CA3AF",fontStyle:"italic"}}>skipped</span>}</span>
             </React.Fragment>)}
           </div>
           <div style={{marginTop:10,fontSize:12.5,color:"#6B7280"}}>Tap <b>Generate brief</b> or tap any field above to edit it.</div>
@@ -1206,11 +1292,55 @@ function BriefChat({campaignId,patch,onBriefReady,me,recentFeedback,product}){
     }
   };
 
+  // Shared advance: store answer for current step's key, then move on (or summary)
+  const advanceWith=(key,val,label)=>{
+    addUserMsg(label);
+    const newAns={...answers,[key]:val};
+    setAnswers(newAns);
+    const next=stepIdx+1;
+    if(next>=BRIEF_STEPS.length){
+      showTypingThen(
+        <div>
+          <div style={{fontWeight:700,marginBottom:8}}>Got everything I need ✓</div>
+          <div style={{display:"grid",gridTemplateColumns:"auto 1fr",gap:"5px 14px",fontSize:13,lineHeight:1.5}}>
+            {BRIEF_STEPS.filter(st=>{const v=newAns[st.key];return Array.isArray(v)?v.length:v;}).map(st=><React.Fragment key={st.key}>
+              <span style={{color:"#9CA3AF",fontWeight:600,whiteSpace:"nowrap"}}>{st.question.replace("?","")}</span>
+              <span style={{fontWeight:600,color:C.ink}}>{(()=>{const v=newAns[st.key];return Array.isArray(v)?v.join(" · "):v;})()}</span>
+            </React.Fragment>)}
+          </div>
+          <div style={{marginTop:10,fontSize:12.5,color:"#6B7280"}}>Tap <b>Generate brief</b> or tap any field above to edit it.</div>
+        </div>, 400
+      ).then(()=>setDone(true));
+    } else {
+      showNextStep(next);
+    }
+  };
+
+  // Multi-select: toggle a chip in the staged list
+  const toggleMulti=(val)=>{
+    setMultiPick(prev=>prev.includes(val)?prev.filter(x=>x!==val):[...prev,val]);
+  };
+  // Multi-select / links: add a custom typed entry
+  const addCustomMulti=(val)=>{
+    const v=(val||"").trim();
+    if(!v)return;
+    setMultiPick(prev=>prev.includes(v)?prev:[...prev,v]);
+    setFreeInput("");
+  };
+  // Confirm a multi-select / links step with the staged picks
+  const confirmMulti=()=>{
+    const s=BRIEF_STEPS[stepIdx];
+    const picks=[...multiPick];
+    setMultiPick([]);
+    const label=picks.length?picks.join(" · "):"(none)";
+    advanceWith(s.key,picks,label);
+  };
+
   const skip=()=>{
     const s=BRIEF_STEPS[stepIdx];
     if(!s||!s.optional)return;
     addUserMsg("(skip)");
-    const newAns={...answers,[s.key]:""};
+    const newAns={...answers,[s.key]:(s.multiSelect||s.linkInput)?[]:""};
     setAnswers(newAns);
     const next=stepIdx+1;
     if(next>=BRIEF_STEPS.length){
@@ -1222,7 +1352,9 @@ function BriefChat({campaignId,patch,onBriefReady,me,recentFeedback,product}){
 
   const editAnswer=(key)=>{
     const idx=BRIEF_STEPS.findIndex(s=>s.key===key);
+    const s=BRIEF_STEPS[idx];
     setDone(false);
+    if(s&&(s.multiSelect||s.linkInput)){const v=answers[key];setMultiPick(Array.isArray(v)?[...v]:[]);}
     showTypingThen(
       <div><span style={{color:"#9CA3AF"}}>Sure — let's update:</span><br/><b>{BRIEF_STEPS[idx].question}</b></div>,200
     ).then(()=>setStepIdx(idx));
@@ -1232,7 +1364,7 @@ function BriefChat({campaignId,patch,onBriefReady,me,recentFeedback,product}){
     setDone(false);setAnswers({});setFreeInput("");setErr("");setGenerating(false);
     setMessages([]);
     setTimeout(()=>{
-      showTypingThen(<div><div style={{fontWeight:700,marginBottom:4}}>Starting fresh 🔄</div><div style={{fontSize:13,color:"#6B7280"}}>8 questions, same drill. Go.</div></div>,300).then(()=>showNextStep(0));
+      showTypingThen(<div><div style={{fontWeight:700,marginBottom:4}}>Starting fresh 🔄</div><div style={{fontSize:13,color:"#6B7280"}}>{BRIEF_STEPS.length} questions, same drill. Go.</div></div>,300).then(()=>showNextStep(0));
     },100);
   };
 
@@ -1242,8 +1374,12 @@ function BriefChat({campaignId,patch,onBriefReady,me,recentFeedback,product}){
     try{
       const fb=recentFeedback("brief");
       const sys=`You write tight WhatsApp CRM creative briefs for HUFT.\n${BRAND_CONTEXT}\n${fb?"Recent team feedback on Brief generations (incorporate):\n"+fb:""}\nReturn ONLY JSON:\n{"campaignName":"MonYY_Product_Hook_AudienceCode e.g. Jun26_Meowsi_Winback_LapsedCat","strategicInsight":"1-2 sharp lines: the consumer truth/trigger","idea":"single-minded message in one line","proofPoints":["3 short proof points"],"pillar":"Trust|Importance|Edutainment|Brand Values","copyDirection":"1-2 lines specific copy direction for WhatsApp CRM","whatsappNote":"one line channel/format direction"}`;
-      const usr=`CRM type: ${answers.crmType||"D2C"}\nChannel: ${answers.channel||"WhatsApp"}\nProduct/Brand: ${answers.product||""}\nPillar: ${answers.pillar||"Importance"}\nAudience/Trigger: ${answers.audience||""}\nObjective: ${answers.objective||""}\nOffer: ${answers.offer||"none"}\nHook/Angle: ${answers.hook||"derive"}\nGo-live date: ${answers.go_live_date||"not set"}`;
+      const rtbList=(answers.rtbs||[]).filter(Boolean);
+      const refList=(answers.references||[]).filter(Boolean);
+      const usr=`CRM type: ${answers.crmType||"D2C"}\nChannel: ${answers.channel||"WhatsApp"}\nProduct/Brand: ${answers.product||""}\nPillar: ${answers.pillar||"Importance"}\nAudience/Trigger: ${answers.audience||""}\nObjective: ${answers.objective||""}\nOffer: ${answers.offer||"none"}\nHook/Angle: ${answers.hook||"derive"}\nRTBs to focus on (use these as proof points, weave into copy): ${rtbList.length?rtbList.join("; "):"derive from product"}\nReference links (context for copy & design — honour their tone/direction): ${refList.length?refList.join(" , "):"none"}\nGo-live date: ${answers.go_live_date||"not set"}`;
       const j=await callClaude(sys,usr,true);
+      // If user picked RTBs, prefer them as the proof points
+      if(rtbList.length)j.proofPoints=rtbList;
       // Calculate TAT deadlines from now
       const now=Date.now();
       const briefDue=new Date(now+TAT_HOURS.brief*36e5).toISOString();
@@ -1261,7 +1397,8 @@ function BriefChat({campaignId,patch,onBriefReady,me,recentFeedback,product}){
         campaign_month:glDate?monthLabel(glDate):null,
         tat_brief_due:briefDue,tat_content_due:contentDue,tat_design_due:designDue,
         brief_started_at:new Date(now).toISOString(),
-        data:{brief:{...j,source:"chat"}},
+        rtbs:rtbList,references:refList,
+        data:{brief:{...j,rtbs:rtbList,references:refList,source:"chat"}},
         stage:"content",
       });
       onBriefReady();
@@ -1307,8 +1444,66 @@ function BriefChat({campaignId,patch,onBriefReady,me,recentFeedback,product}){
           </div>
         )}
 
+        {/* Multi-select (RTBs) / link input — staged picks + custom add */}
+        {(curStep.multiSelect||curStep.linkInput)&&(
+          <div style={{marginBottom:10}}>
+            {/* Selectable option chips (RTBs resolved from product) */}
+            {curStep.multiSelect&&(()=>{
+              const lib=curStep.optionsFromProduct?rtbsForProduct(answers.product||product):(curStep.options||[]);
+              const all=[...new Set([...lib,...multiPick])];
+              return <div style={{display:"flex",flexWrap:"wrap",gap:6,maxHeight:140,overflowY:"auto",marginBottom:8}}>
+                {all.map(o=>{const on=multiPick.includes(o);return(
+                  <button key={o}onClick={()=>toggleMulti(o)}
+                    style={{padding:"6px 12px",borderRadius:20,fontSize:12.5,fontWeight:600,cursor:"pointer",
+                      border:`1.5px solid ${on?C.purple:C.line}`,background:on?"#F3E8FF":"#fff",
+                      color:on?C.purple:C.ink,display:"flex",alignItems:"center",gap:5,flexShrink:0,transition:"all .1s"}}>
+                    {on?<CheckCircle2 size={13}/>:<Plus size={13}/>}{o}
+                  </button>
+                );})}
+              </div>;
+            })()}
+
+            {/* Staged links list */}
+            {curStep.linkInput&&multiPick.length>0&&(
+              <div style={{display:"flex",flexDirection:"column",gap:5,marginBottom:8}}>
+                {multiPick.map(l=>(
+                  <div key={l}style={{display:"flex",alignItems:"center",gap:8,background:"#F8FAFC",border:`1px solid ${C.line}`,borderRadius:9,padding:"6px 10px"}}>
+                    <LinkIcon size={13}color={C.teal}/>
+                    <span style={{flex:1,fontSize:12.5,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l}</span>
+                    <button onClick={()=>setMultiPick(p=>p.filter(x=>x!==l))}style={{border:"none",background:"none",cursor:"pointer",color:C.sub,display:"flex"}}><X size={14}/></button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Custom add row */}
+            <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:8}}>
+              <input ref={inputRef}
+                value={freeInput}
+                onChange={e=>setFreeInput(e.target.value)}
+                onKeyDown={e=>{if(e.key==="Enter"&&freeInput.trim())addCustomMulti(freeInput);}}
+                placeholder={curStep.placeholder||"Add and press enter…"}
+                style={{flex:1,border:`1.5px solid ${C.line}`,borderRadius:24,padding:"9px 16px",fontSize:14,boxSizing:"border-box",outline:"none",background:"#fff"}}
+                onFocus={e=>e.target.style.borderColor=C.purple}
+                onBlur={e=>e.target.style.borderColor=C.line}/>
+              <button onClick={()=>{if(freeInput.trim())addCustomMulti(freeInput);}}disabled={!freeInput.trim()}
+                style={{width:40,height:40,borderRadius:999,border:"none",cursor:freeInput.trim()?"pointer":"default",background:freeInput.trim()?C.purple:"#E5E7EB",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                <Plus size={16}color="#fff"/>
+              </button>
+            </div>
+
+            {/* Confirm / skip */}
+            <div style={{display:"flex",gap:8,alignItems:"center"}}>
+              <Btn small onClick={confirmMulti}>
+                <Check size={13}/>{multiPick.length?`Confirm ${multiPick.length} selected`:"Continue"}
+              </Btn>
+              {curStep.optional&&<button onClick={skip}style={{padding:"5px 13px",borderRadius:20,fontSize:12.5,fontWeight:600,cursor:"pointer",border:`1.5px dashed ${C.line}`,background:"transparent",color:C.sub}}>Skip →</button>}
+            </div>
+          </div>
+        )}
+
         {/* Quick-reply chips — shown if options exist */}
-        {!curStep.dateInput&&curStep.options&&(
+        {!curStep.dateInput&&!curStep.multiSelect&&!curStep.linkInput&&curStep.options&&(
           <div style={{marginBottom:10}}>
             <div style={{display:"flex",flexWrap:"wrap",gap:6,maxHeight:90,overflowY:"auto",paddingBottom:2}}>
               {(()=>{
@@ -1342,7 +1537,7 @@ function BriefChat({campaignId,patch,onBriefReady,me,recentFeedback,product}){
         )}
 
         {/* Text input — shown for non-date steps */}
-        {!curStep.dateInput&&(
+        {!curStep.dateInput&&!curStep.multiSelect&&!curStep.linkInput&&(
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             <input ref={inputRef}
               value={freeInput}
@@ -1505,6 +1700,9 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
             <BriefSection label="Channel note" content={brief.whatsappNote}/>
             {brief.proofPoints&&brief.proofPoints.length>0&&
               <BriefSection label="Proof points" content={brief.proofPoints.join(" · ")}/>}
+            {brief.rtbs&&brief.rtbs.length>0&&
+              <BriefSection label="RTBs in focus" content={brief.rtbs.join(" · ")}/>}
+            {brief.references&&brief.references.length>0&&<RefLinks links={brief.references}/>}
           </div>
           {/* Actions */}
           <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
@@ -1613,6 +1811,25 @@ function SelfBriefForm({active,patch,onDone,onBack}){
 
 /* ===== Content Tab ====================================================== */
 /* ===== Collapsible brief section ======================================= */
+function RefLinks({links}){
+  const[open,setOpen]=useState(true);
+  if(!links||!links.length)return null;
+  return<div style={{borderBottom:`1px solid ${C.line}`}}>
+    <button onClick={()=>setOpen(v=>!v)}style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:"none",border:"none",cursor:"pointer",textAlign:"left"}}>
+      <span style={{fontSize:10.5,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5,display:"flex",alignItems:"center",gap:5}}><LinkIcon size={11}/>Reference links · {links.length}</span>
+      {open?<ChevronDown size={13}color={C.sub}/>:<ChevronRight size={13}color={C.sub}/>}
+    </button>
+    {open&&<div style={{padding:"0 14px 12px",display:"flex",flexDirection:"column",gap:5}}>
+      {links.map((l,i)=>{
+        const href=/^https?:\/\//i.test(l)?l:("https://"+l);
+        return<a key={i}href={href}target="_blank"rel="noopener noreferrer"
+          style={{display:"flex",alignItems:"center",gap:7,fontSize:12.5,color:C.teal,textDecoration:"none",background:"#F0FDFA",border:`1px solid #CCFBF1`,borderRadius:8,padding:"6px 10px",overflow:"hidden"}}>
+          <LinkIcon size={12}style={{flexShrink:0}}/><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l}</span>
+        </a>;
+      })}
+    </div>}
+  </div>;
+}
 function BriefSection({label,content}){
   const[open,setOpen]=useState(true);
   if(!content)return null;
@@ -1695,6 +1912,9 @@ function BriefSummaryCard({active,activeBrief,copyRules,busy,refineFor,gen,opts,
       <BriefSection label="Channel note" content={activeBrief.whatsappNote}/>
       {activeBrief.proofPoints&&activeBrief.proofPoints.length>0&&
         <BriefSection label="Proof points" content={activeBrief.proofPoints.join(" · ")}/>}
+      {activeBrief.rtbs&&activeBrief.rtbs.length>0&&
+        <BriefSection label="RTBs in focus" content={activeBrief.rtbs.join(" · ")}/>}
+      {activeBrief.references&&activeBrief.references.length>0&&<RefLinks links={activeBrief.references}/>}
     </Card>}
   </div>;
 }
@@ -1725,7 +1945,9 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
     const[manualMode,setManualMode]=useState(null); // null | "add" | "edit"
 
     // Show even without brief - just disable generation
-    const briefBlock="Brief\nProduct: "+c.product+"\nAudience: "+(c.audience_label||c.segment)+"\nObjective: "+c.objective+"\nOffer: "+(c.offer||"none")+"\nCRM: "+(c.crm_type||"D2C")+"\nInsight: "+activeBrief?.strategicInsight+"\nIdea: "+activeBrief?.idea+"\nPillar: "+(activeBrief?.pillar||"—")+"\nCopy direction: "+(activeBrief?.copyDirection||"—");
+    const rtbsArr=(activeBrief?.rtbs||c.rtbs||[]).filter(Boolean);
+    const refsArr=(activeBrief?.references||c.references||[]).filter(Boolean);
+    const briefBlock="Brief\nProduct: "+c.product+"\nAudience: "+(c.audience_label||c.segment)+"\nObjective: "+c.objective+"\nOffer: "+(c.offer||"none")+"\nCRM: "+(c.crm_type||"D2C")+"\nInsight: "+activeBrief?.strategicInsight+"\nIdea: "+activeBrief?.idea+"\nPillar: "+(activeBrief?.pillar||"—")+"\nCopy direction: "+(activeBrief?.copyDirection||"—")+(rtbsArr.length?"\nRTBs to weave into the body (use these as the proof points): "+rtbsArr.join("; "):"")+(refsArr.length?"\nReference links (honour their tone & direction): "+refsArr.join(" , "):"");
 
     const gen=async()=>{
       if(!activeBrief){setErr("No brief found — go back to Brief tab first.");return;}
@@ -1733,18 +1955,30 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       try{
         const fb=recentFeedback("content");
         const isPush=c.channel==="Push notification";
+        const isEmail=c.channel==="Email"||c.channel==="WhatsApp + Email";
         const channelRules=isPush
           ?`PUSH NOTIFICATION RULES (NON-NEGOTIABLE):
 - Title: MAX 50 chars. Short, punchy.
 - Body: MAX 90 chars. One sentence. No bullets.
 - Max 1 emoji. 2-second read.
 - CTA: 2-3 words.`
+          :isEmail
+          ?`EMAIL RULES:
+- Subject line: under 50 chars, curiosity or benefit-led.
+- Header / image copy: 2-3 short punchy lines for the hero image overlay.
+- Body: warm opener + 3-4 ✓ proof bullets + sign-off. Slightly longer than WhatsApp is fine.
+- CTA: clear action phrase.`
           :`WHATSAPP RULES:
 - Header: 2-3 short punchy lines.
 - Body: opener + 3-4 ✓ bullets + sign-off.
 - CTA: clear action phrase.`;
         const nOpts=copyOptionCount(c.channel);
-        const sys="You write "+(c.channel||"WhatsApp")+" CRM copy for HUFT.\n"+BRAND_CONTEXT+"\n"+channelRules+"\nRULEBOOK:\n"+ruleStr+(fb?"\nTeam feedback:\n"+fb:"")+`\nReturn ONLY JSON array of ${nOpts} options, each: {direction,header,body,cta}. `+( isPush?"header=push title MAX 50 chars, body=MAX 90 chars one sentence, cta=2-3 words":"header=image overlay 2-3 short punchy lines, body=WhatsApp opener+bullets+sign-off, cta=action phrase");
+        const shape=isPush
+          ?"each: {direction,header,body,cta}. header=push title MAX 50 chars, body=MAX 90 chars one sentence, cta=2-3 words"
+          :isEmail
+          ?"each: {direction,subject,header,body,cta}. subject=email subject line under 50 chars, header=image copy/overlay 2-3 short lines, body=email opener+✓ bullets+sign-off, cta=action phrase"
+          :"each: {direction,header,body,cta}. header=image overlay 2-3 short punchy lines, body=WhatsApp opener+bullets+sign-off, cta=action phrase";
+        const sys="You write "+(c.channel||"WhatsApp")+" CRM copy for HUFT.\n"+BRAND_CONTEXT+"\n"+channelRules+"\nRULEBOOK:\n"+ruleStr+(fb?"\nTeam feedback:\n"+fb:"")+`\nReturn ONLY JSON array of ${nOpts} options, `+shape;
         const j=await callClaude(sys,briefBlock,true);
         patch(c.id,{data:{...(c.data||{}),copyOptions:j,selectedCopyIdx:null},copy_approver:null,stage:"content"});
         setShowAll(false);
@@ -1949,20 +2183,24 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
 
 function ManualCopyForm({initial,channel,onSave,onCancel}){
   const isPush=channel==="Push notification";
+  const isEmail=channel==="Email"||channel==="WhatsApp + Email";
   const[h,setH]=useState(initial?.header||"");
   const[b,setB]=useState(initial?.body||"");
   const[cta,setCta]=useState(initial?.cta||"");
+  const[subj,setSubj]=useState(initial?.subject||"");
   const[dir,setDir]=useState(initial?.direction||"Team-written");
   return<div style={{border:`1.5px solid ${C.purple}`,borderRadius:12,padding:14,background:"#FBFAFF",marginTop:10,marginBottom:10}}>
     <div style={{fontWeight:700,fontSize:13,marginBottom:4,display:"flex",alignItems:"center",gap:6}}><PenLine size={13}color={C.purple}/>{initial?"Edit copy":"Write copy manually"}</div>
     <div style={{fontSize:11.5,color:C.sub,marginBottom:10}}>Saved copy is approved straight away, and the engine learns from it for future suggestions.</div>
     <Field label="Direction / label"value={dir}onChange={setDir}placeholder="e.g. Team-written, Warm reminder"/>
-    <Field label={isPush?"Title (keep under 50 chars)":"Header / overlay text"}value={h}onChange={setH}textarea rows={2}/>
-    <Field label={isPush?"Body (keep under 90 chars)":"Body / caption"}value={b}onChange={setB}textarea rows={isPush?2:5}/>
+    {isEmail&&<><Field label="Subject line (under 50 chars)"value={subj}onChange={setSubj}placeholder="e.g. Your dog's dinner just got an upgrade"/>
+    <div style={{display:"flex",gap:10,fontSize:10.5,color:C.sub,marginTop:-6,marginBottom:10}}><span style={{color:subj.length>50?"#DC2626":C.sub}}>Subject {subj.length}/50</span></div></>}
+    <Field label={isPush?"Title (keep under 50 chars)":isEmail?"Image copy / overlay text":"Header / overlay text"}value={h}onChange={setH}textarea rows={2}/>
+    <Field label={isPush?"Body (keep under 90 chars)":isEmail?"Body copy":"Body / caption"}value={b}onChange={setB}textarea rows={isPush?2:5}/>
     {isPush&&<div style={{display:"flex",gap:10,fontSize:10.5,color:C.sub,marginTop:-6,marginBottom:10}}><span style={{color:h.length>50?"#DC2626":C.sub}}>Title {h.length}/50</span><span style={{color:b.length>90?"#DC2626":C.sub}}>Body {b.length}/90</span></div>}
     <Field label="CTA"value={cta}onChange={setCta}placeholder="e.g. Shop now"/>
     <div style={{display:"flex",gap:8}}>
-      <Btn onClick={()=>onSave({direction:dir.trim()||"Team-written",header:h.trim(),body:b.trim(),cta:cta.trim()})}disabled={!h.trim()&&!b.trim()}><Check size={14}/>Save &amp; approve</Btn>
+      <Btn onClick={()=>onSave({direction:dir.trim()||"Team-written",header:h.trim(),body:b.trim(),cta:cta.trim(),...(isEmail?{subject:subj.trim()}:{})})}disabled={!h.trim()&&!b.trim()}><Check size={14}/>Save &amp; approve</Btn>
       <Btn variant="ghost"onClick={onCancel}>Cancel</Btn>
     </div>
   </div>;
@@ -1970,6 +2208,7 @@ function ManualCopyForm({initial,channel,onSave,onCancel}){
 
 function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,busy,onSelect,onRefine,onEditSave,channel}){
   const isPush=channel==="Push notification";
+  const isEmail=channel==="Email"||channel==="WhatsApp + Email";
   const dirColors=[
     {bg:"#FFF3E0",text:"#E65100"},{bg:"#E8F5E9",text:"#2E7D32"},
     {bg:"#E3F2FD",text:"#1565C0"},{bg:"#F3E5F5",text:"#6A1B9A"},
@@ -2001,6 +2240,24 @@ function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,
           <div style={{marginTop:8,display:"flex",gap:10,fontSize:10,color:"rgba(255,255,255,.4)"}}>
             <span style={{color:(o.header||"").length>50?"#F87171":"rgba(255,255,255,.4)"}}>Title: {(o.header||"").length}/50</span>
             <span style={{color:(o.body||"").length>90?"#F87171":"rgba(255,255,255,.4)"}}>Body: {(o.body||"").length}/90</span>
+          </div>
+        </div>
+      :isEmail
+        /* Email preview — Subject / Image copy / Body */
+        ?<div style={{borderRadius:10,overflow:"hidden",border:`1px solid ${C.line}`}}>
+          <div style={{background:"#EEF2FF",padding:"10px 14px",borderBottom:`1px solid ${C.line}`}}>
+            <div style={{fontSize:9.5,fontWeight:700,color:"#4F46E5",textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Subject line</div>
+            <div style={{fontWeight:700,color:"#1E1B4B",fontSize:14,lineHeight:1.35}}>{o.subject||<span style={{color:C.sub,fontStyle:"italic"}}>—</span>}</div>
+            {o.subject&&<div style={{marginTop:4,fontSize:10,color:(o.subject||"").length>50?"#DC2626":C.sub}}>{(o.subject||"").length}/50 chars</div>}
+          </div>
+          <div style={{background:"#1a2940",padding:"10px 14px"}}>
+            <div style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,.4)",textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Image copy (overlay text)</div>
+            <div style={{fontWeight:800,whiteSpace:"pre-line",color:"#fff",fontSize:14,lineHeight:1.35}}>{o.header}</div>
+          </div>
+          <div style={{background:"#F8FAFC",padding:"10px 14px"}}>
+            <div style={{fontSize:9.5,fontWeight:700,color:"#475569",textTransform:"uppercase",letterSpacing:.5,marginBottom:5}}>Body copy</div>
+            <div style={{whiteSpace:"pre-line",color:"#1f2937",fontSize:13,lineHeight:1.55}}>{o.body}</div>
+            <div style={{marginTop:10,display:"inline-block",background:C.navy,color:"#fff",fontSize:11.5,fontWeight:700,padding:"5px 12px",borderRadius:7}}>{o.cta}</div>
           </div>
         </div>
         /* WhatsApp preview */
