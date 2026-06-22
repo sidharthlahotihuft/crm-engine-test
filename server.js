@@ -106,6 +106,47 @@ async function generate(system, prompt) {
   return JSON.stringify({ mock: true, note: "Add GEMINI_API_KEY to .env to enable real generation." });
 }
 
+// Vision: analyse an image (base64, no data: prefix) and return text.
+async function generateVision(system, prompt, imageB64, mimeType) {
+  const mime = mimeType || "image/jpeg";
+  if (PROVIDER === "gemini") {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_KEY}`;
+    const r = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [{ role: "user", parts: [
+          { text: prompt },
+          { inlineData: { mimeType: mime, data: imageB64 } },
+        ] }],
+        generationConfig: { responseMimeType: "application/json", maxOutputTokens: 2048, temperature: 0.4 },
+      }),
+    });
+    const data = await r.json();
+    if (!r.ok) { console.error("Gemini vision error:", JSON.stringify(data)); throw new Error(data.error?.message || "Gemini vision error " + r.status); }
+    return (data.candidates?.[0]?.content?.parts || []).map(p => p.text || "").join("").trim();
+  }
+  if (PROVIDER === "claude") {
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": CLAUDE_KEY, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({
+        model: CLAUDE_MODEL, max_tokens: 2048, system,
+        messages: [{ role: "user", content: [
+          { type: "image", source: { type: "base64", media_type: mime, data: imageB64 } },
+          { type: "text", text: prompt },
+        ] }],
+      }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error?.message || "Claude vision error");
+    return (data.content || []).filter(b => b.type === "text").map(b => b.text).join("\n").trim();
+  }
+  await new Promise(r => setTimeout(r, 600));
+  return JSON.stringify({ product: "Unknown", category: "general", tags: ["mock"], description: "Mock analysis — set an API key." });
+}
+
 
 // ── Audiences auto-seed ───────────────────────────────────────────────────────
 async function seedAudiences() {
@@ -709,6 +750,122 @@ app.get("/api/cron/sheet-sync", async (req, res) => {
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+
+// ── IMAGE LIBRARY (AI-tagged) ─────────────────────────────────────────────────
+
+// Upload an image: the engine analyses it (product, category, tags, context) then stores it.
+// body: { file_name, file_data (data URL or raw base64), file_type, notes }
+app.post("/api/image-library", authMiddleware, roles("admin", "brand"), async (req, res) => {
+  const { file_name, file_data, file_type, notes } = req.body;
+  if (!file_data) return res.status(400).json({ error: "file_data required" });
+  // Strip a data: URL prefix if present, to get raw base64 for the vision call
+  const b64 = String(file_data).includes(",") ? String(file_data).split(",")[1] : String(file_data);
+  const mime = file_type || (String(file_data).match(/^data:(.*?);/)?.[1]) || "image/jpeg";
+
+  let analysis = { product: "", category: "", tags: [], description: "" };
+  try {
+    const sys = `You are an image cataloguer for HUFT, a premium Indian pet care brand with sub-brands like Sara's Wholesome Food, Hearty, Meowsi, NutriWag, NutriMeow, Yakies, HUFT Spa, HUFT Originals, DashDog and more. Look at the image and identify what it shows for a marketing image library. Return ONLY JSON: {"product":"best-guess product or sub-brand, or '' if unclear","category":"one of: dry food, wet food, treats, chews, grooming, accessories, apparel, toys, supplements, lifestyle, packshot, other","tags":["6-12 short descriptive tags: subject, setting, colours, mood, pet type, composition"],"description":"one sentence describing what the image shows and how it could be used"}`;
+    const out = await generateVision(sys, "Catalogue this image for our marketing library.", b64, mime);
+    const parsed = JSON.parse(out.replace(/```json|```/g, "").trim().replace(/^[^[{]*/, ""));
+    analysis = {
+      product: parsed.product || "",
+      category: parsed.category || "other",
+      tags: Array.isArray(parsed.tags) ? parsed.tags : [],
+      description: parsed.description || "",
+    };
+  } catch (e) {
+    console.error("Image analysis failed:", e.message);
+    // Store anyway, without tags — better than losing the upload
+  }
+
+  try {
+    const rows = await db(
+      `INSERT INTO image_library (file_name, file_data, file_type, product, category, tags, description, notes, uploaded_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       RETURNING id, file_name, file_type, product, category, tags, description, notes, uploaded_by, uploaded_at`,
+      [file_name || null, file_data, mime, analysis.product, analysis.category,
+       JSON.stringify(analysis.tags), analysis.description, notes || null, req.user.id]
+    );
+    res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// List / search the library. ?q= free-text across product/category/tags/description.
+// Metadata only by default (no base64) for speed; ?withData=1 to include image data.
+app.get("/api/image-library", authMiddleware, async (req, res) => {
+  const q = (req.query.q || "").trim().toLowerCase();
+  const cols = req.query.withData === "1"
+    ? "id, file_name, file_data, file_type, product, category, tags, description, notes, uploaded_at"
+    : "id, file_name, file_type, product, category, tags, description, notes, uploaded_at";
+  try {
+    let rows;
+    if (q) {
+      rows = await db(
+        `SELECT ${cols} FROM image_library
+         WHERE lower(coalesce(product,'')) LIKE $1
+            OR lower(coalesce(category,'')) LIKE $1
+            OR lower(coalesce(description,'')) LIKE $1
+            OR lower(tags::text) LIKE $1
+         ORDER BY uploaded_at DESC LIMIT 200`,
+        [`%${q}%`]
+      );
+    } else {
+      rows = await db(`SELECT ${cols} FROM image_library ORDER BY uploaded_at DESC LIMIT 200`);
+    }
+    res.json(rows.map(r => ({ ...r, tags: typeof r.tags === "string" ? (() => { try { return JSON.parse(r.tags); } catch { return []; } })() : (r.tags || []) })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Fetch a single image's full data (for preview / download)
+app.get("/api/image-library/:id", authMiddleware, async (req, res) => {
+  try {
+    const rows = await db("SELECT * FROM image_library WHERE id=$1", [req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: "Not found" });
+    const r = rows[0];
+    res.json({ ...r, tags: typeof r.tags === "string" ? JSON.parse(r.tags) : (r.tags || []) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Update tags/product/notes manually (admin/brand can correct the AI)
+app.put("/api/image-library/:id", authMiddleware, roles("admin", "brand"), async (req, res) => {
+  const sets = [], vals = []; let i = 1;
+  for (const k of ["product", "category", "description", "notes"]) {
+    if (req.body[k] !== undefined) { sets.push(`${k}=$${i++}`); vals.push(req.body[k]); }
+  }
+  if (req.body.tags !== undefined) { sets.push(`tags=$${i++}`); vals.push(JSON.stringify(req.body.tags)); }
+  if (!sets.length) return res.json({ ok: true });
+  vals.push(req.params.id);
+  try { await db(`UPDATE image_library SET ${sets.join(",")} WHERE id=$${i}`, vals); res.json({ ok: true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete("/api/image-library/:id", authMiddleware, roles("admin", "brand"), async (req, res) => {
+  try { await db("DELETE FROM image_library WHERE id=$1", [req.params.id]); res.json({ ok: true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Smart suggest for the design prompt: given a campaign's product/brief, return relevant images.
+app.get("/api/image-library-suggest/:campaignId", authMiddleware, async (req, res) => {
+  try {
+    const crows = await db("SELECT product, objective, audience_label, data FROM campaigns WHERE id=$1", [req.params.campaignId]);
+    if (!crows.length) return res.json([]);
+    const c = crows[0];
+    const product = (c.product || "").toLowerCase();
+    // Pull candidate images: same product first, then broaden
+    const all = await db("SELECT id, file_name, product, category, tags, description, uploaded_at FROM image_library ORDER BY uploaded_at DESC LIMIT 300");
+    const norm = (r) => ({ ...r, tags: typeof r.tags === "string" ? (() => { try { return JSON.parse(r.tags); } catch { return []; } })() : (r.tags || []) });
+    const scored = all.map(norm).map(img => {
+      let score = 0;
+      const ip = (img.product || "").toLowerCase();
+      if (product && ip && (ip.includes(product) || product.includes(ip))) score += 5;
+      const hay = (img.category + " " + (img.tags || []).join(" ") + " " + (img.description || "")).toLowerCase();
+      (product.split(/\s+/).filter(Boolean)).forEach(w => { if (w.length > 2 && hay.includes(w)) score += 1; });
+      (String(c.objective || "").toLowerCase().split(/\W+/).filter(w => w.length > 3)).forEach(w => { if (hay.includes(w)) score += 0.5; });
+      return { img, score };
+    }).filter(x => x.score > 0).sort((a, b) => b.score - a.score).slice(0, 12).map(x => x.img);
+    res.json(scored);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 // ── PERFORMANCE REPORTS ───────────────────────────────────────────────────────
 

@@ -7,6 +7,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.10/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   *{box-sizing:border-box} html,body{margin:0;background:#F6F7FA;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
   @keyframes spin{to{transform:rotate(360deg)}}
@@ -51,7 +52,20 @@ async function callClaude(system,prompt,expectJson){
   return JSON.parse(s>=0?clean.slice(s):clean);
 }
 // Role-based default tab
-const ROLE_TAB={admin:"dashboard",business:"dashboard",content:"content",design:"design"};
+const ROLE_TAB={admin:"dashboard",business:"dashboard",content:"content",design:"design",brand:"dashboard"};
+
+// British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
+async function grammarCheckCopy(fields){
+  const sys=`You are a British English copy editor for HUFT (a premium Indian pet care brand). Proofread the supplied marketing copy.
+RULES:
+- Enforce British English spelling and conventions (e.g. "flavour" not "flavor", "realise" not "realize", "personalised" not "personalized", "centre" not "center", single quotes for quotations, no Oxford comma unless needed for clarity).
+- Fix grammar, punctuation, spacing, capitalisation and obvious typos.
+- DO NOT change tone, voice, meaning, line breaks, emoji, bullet markers (✓) or CTA intent. Preserve formatting and structure exactly.
+- If the copy is already correct, return hasIssues:false and leave corrected identical to input.
+Return ONLY JSON: {"hasIssues":boolean,"issues":[{"wrong":"original phrase","right":"corrected phrase","why":"short reason"}],"corrected":{"subject":"","header":"","body":"","cta":""}}. Include only the fields that were provided in corrected.`;
+  const usr=`Proofread these fields:\n${fields.subject!=null?`SUBJECT: ${fields.subject}\n`:""}HEADER: ${fields.header||""}\nBODY: ${fields.body||""}\nCTA: ${fields.cta||""}`;
+  return await callClaude(sys,usr,true);
+}
 const normCrmType=(t)=>(t||"D2C").replace(" (Store-led)","").replace(" (store-led)","");
 const groupByDate=(items)=>{
   const groups={};
@@ -521,7 +535,7 @@ const displayName=(name)=>{
   if(!date&&!product)return name.replace(/_/g," ");
   return[date,product,hook].filter(Boolean).join(" · ");
 };
-const STAGE_LABEL={brief:"Brief",content:"Copy",design:"Design",done:"Ready"};
+const STAGE_LABEL={brief:"Brief",content:"Copy",brand_review:"Brand review",design:"Design",done:"Ready"};
 // An asset is "archived" via a data flag — kept distinct from "done" (completed/live)
 const isArchived=(c)=>!!(c&&c.data&&c.data.archived);
 // Map a campaign stage to the tab that should open for it
@@ -567,6 +581,7 @@ const LogOut=p=><Svg{...p}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><p
 const Target=p=><Svg{...p}><circle cx="12"cy="12"r="10"/><circle cx="12"cy="12"r="6"/><circle cx="12"cy="12"r="2"/></Svg>;
 const CalendarIcon=p=><Svg{...p}><rect x="3"y="4"width="18"height="18"rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></Svg>;
 const UploadIcon=p=><Svg{...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5M12 3v12"/></Svg>;
+const SearchIcon=p=><Svg{...p}><circle cx="11"cy="11"r="8"/><path d="M21 21l-4.35-4.35"/></Svg>;
 const BellIcon=p=><Svg{...p}><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></Svg>;
 const LinkIcon=p=><Svg{...p}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></Svg>;
 const ClockIcon=p=><Svg{...p}><circle cx="12"cy="12"r="10"/><path d="M12 6v6l4 2"/></Svg>;
@@ -655,9 +670,9 @@ function exportBriefTxt(active){
 }
 function exportDesignBriefTxt(active,copy,approvedPrompt){
   const d=active.data?.design||{};
-  const LIBRARY=[{id:"l1",label:"Nuri × Sara's bowl"},{id:"l2",label:"Meowsi hero pack"},{id:"l3",label:"Cat + parent moment"},{id:"l4",label:"Win-back warm shot"},{id:"l5",label:"NutriMeow value flat-lay"},{id:"l6",label:"Festive WhatsApp frame"}];
   const noteLines=(d.notes||[]).map((n,i)=>`${i+1}. ${n}`);
-  const imgLines=approvedPrompt?[``,`IMAGE PROMPT (${approvedPrompt.label})`,`Tool: ${approvedPrompt.tool} | Aspect ratio: ${approvedPrompt.aspectRatio}`,``,approvedPrompt.prompt,``,`Negative prompt:`,approvedPrompt.negativePrompt]:[``,`IMAGE: ${(LIBRARY.find(x=>x.id===d.libraryPick)||{}).label} (from Drive library)`];
+  const libLabel=(d.libraryPickMeta&&d.libraryPickMeta.label)||"Selected library image";
+  const imgLines=approvedPrompt?[``,`IMAGE PROMPT (${approvedPrompt.label})`,`Tool: ${approvedPrompt.tool} | Aspect ratio: ${approvedPrompt.aspectRatio}`,``,approvedPrompt.prompt,``,`Negative prompt:`,approvedPrompt.negativePrompt]:[``,`IMAGE: ${libLabel} (from brand image library)`];
   const lines=[`HUFT DESIGN BRIEF — ${active.name||"Untitled"}`,``,`COPY (${copy.direction})`,`Header:`,copy.header,``,`Body:`,copy.body,``,`CTA: ${copy.cta}`,``,`ART DIRECTION`].concat(noteLines).concat(imgLines).concat([``,`Generated: ${new Date().toLocaleDateString("en-IN")}`]);
   const blob=new Blob([lines.join("\n")],{type:"text/plain"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`${(active.name||"design").replace(/\s+/g,"_")}_design-brief.txt`;a.click();
 }
@@ -814,24 +829,63 @@ function App(){
     const c=await api.post("/api/campaigns",{channel:"WhatsApp",stage:"brief"});
     setCampaigns(cs=>[c,...cs]);setActiveId(c.id);setTab("brief");
   };
+
+  // Bulk import: takes normalised rows, runs each through the AI brief engine, creates campaigns.
+  // Returns {created, failed, errors}. onProgress(done,total) for UI feedback.
+  const bulkImportBriefs=async(rows,onProgress)=>{
+    let created=0,failed=0;const errors=[];
+    for(let i=0;i<rows.length;i++){
+      const r=rows[i];
+      try{
+        const isRetail=(r.crmType||"").toLowerCase()==="retail";
+        const channel=isRetail?"WhatsApp":(r.channel||"WhatsApp");
+        const sys=`You write tight CRM creative briefs for HUFT.\n${BRAND_CONTEXT}\nReturn ONLY JSON:\n{"campaignName":"MonYY_Product_Hook_AudienceCode","strategicInsight":"1-2 sharp lines","idea":"single-minded message","proofPoints":["3 short proof points"],"pillar":"Trust|Importance|Edutainment|Brand Values","copyDirection":"1-2 lines","whatsappNote":"one line"}`;
+        const rtbs=(r.rtbs||[]).filter(Boolean),refs=(r.references||[]).filter(Boolean);
+        const usr=`CRM type: ${r.crmType||"D2C"}\nChannel: ${channel}\nProduct/Brand: ${r.product||""}\nPillar: ${r.pillar||"Importance"}\nAudience/Trigger: ${r.audience||""}\nObjective: ${r.objective||""}\nOffer: ${r.offer||"none"}\nHook/Angle: ${r.hook||"derive"}\nRTBs to focus on: ${rtbs.length?rtbs.join("; "):"derive"}\nReference links: ${refs.length?refs.join(" , "):"none"}\nGo-live date: ${r.goLive||"not set"}`;
+        const j=await callClaude(sys,usr,true);
+        if(rtbs.length)j.proofPoints=rtbs;
+        const now=Date.now();
+        const glDate=r.goLive||null;
+        const c=await api.post("/api/campaigns",{
+          name:j.campaignName,channel,product:r.product||"",
+          audience_label:r.audience||"",segment:r.audience||"",objective:r.objective||"",
+          offer:r.offer||"",crm_type:r.crmType||"D2C",
+          go_live_date:glDate,
+          campaign_week:glDate?weekOfMonth(glDate):null,campaign_month:glDate?monthLabel(glDate):null,
+          tat_brief_due:new Date(now+TAT_HOURS.brief*36e5).toISOString(),
+          tat_content_due:new Date(now+(TAT_HOURS.brief+TAT_HOURS.content)*36e5).toISOString(),
+          tat_design_due:new Date(now+(TAT_HOURS.brief+TAT_HOURS.content+TAT_HOURS.design)*36e5).toISOString(),
+          brief_started_at:new Date(now).toISOString(),
+          rtbs,references:refs,
+          data:{brief:{...j,rtbs,references:refs,source:"import"}},
+          stage:"content",
+        });
+        setCampaigns(cs=>[c,...cs]);
+        created++;
+      }catch(e){failed++;errors.push(`Row ${i+1} (${r.product||"?"}): ${e.message||"failed"}`);}
+      if(onProgress)onProgress(i+1,rows.length);
+    }
+    return{created,failed,errors};
+  };
   const open=(id,jt)=>{const c=campaigns.find(x=>x.id===id);setActiveId(id);setTab(jt||(c?(c.stage==="done"?"done":c.stage==="content"?"content":c.stage==="design"?"design":"brief"):"brief"));};
 
   // Pending counts per stage (for nav badges)
-  const pending={brief:campaigns.filter(c=>c.stage==="brief"&&!isArchived(c)).length,content:campaigns.filter(c=>c.stage==="content"&&!isArchived(c)).length,design:campaigns.filter(c=>c.stage==="design"&&c.channel!=="Push notification"&&!isArchived(c)).length};
+  const pending={brief:campaigns.filter(c=>c.stage==="brief"&&!isArchived(c)).length,content:campaigns.filter(c=>c.stage==="content"&&!isArchived(c)).length,brand_review:campaigns.filter(c=>c.stage==="brand_review"&&!isArchived(c)).length,design:campaigns.filter(c=>c.stage==="design"&&c.channel!=="Push notification"&&!isArchived(c)).length};
 
   // Tabs visible per role
   const allTabs=[
     {k:"dashboard",label:"Dashboard",icon:<LayoutDashboard size={16}/>},
     {k:"brief",label:"Brief",icon:<FileText size={16}/>},
-    {k:"content",label:"Copy",icon:<MessageSquare size={16}/>},
+    {k:"content",label:"Copy",icon:<MessageSquare size={16}/>,count:pending.brand_review||undefined},
     {k:"design",label:"Design",icon:<Palette size={16}/>},
+    {k:"library",label:"Image library",icon:<ImageIcon size={16}/>},
     {k:"done",label:"Done",icon:<CheckCircle2 size={16}/>,count:(campaigns||[]).filter(c=>c.stage==="done"&&!isArchived(c)).length},
     {k:"archive",label:"Archive",icon:<ArchiveIcon size={16}/>,count:(campaigns||[]).filter(c=>isArchived(c)).length},
   ];
-  const TABS=me.role==="admin"?allTabs:allTabs.filter(t=>t.k==="dashboard"||t.k===ROLE_TAB[me.role]||t.k==="done"||(t.k==="archive"&&me.role==="business"));
+  const TABS=(me.role==="admin"||me.role==="brand")?allTabs:allTabs.filter(t=>t.k==="dashboard"||t.k===ROLE_TAB[me.role]||t.k==="done"||(t.k==="archive"&&me.role==="business"));
 
   const RoleBadge=()=>{
-    const cols={admin:C.coral,business:C.teal,content:C.purple,design:C.green};
+    const cols={admin:C.coral,business:C.teal,content:C.purple,design:C.green,brand:"#9333EA"};
     return<span style={{background:(cols[me.role]||C.sub)+"22",color:cols[me.role]||C.sub,fontSize:10.5,fontWeight:700,padding:"2px 8px",borderRadius:999,textTransform:"capitalize"}}>{me.role}</span>;
   };
 
@@ -864,9 +918,10 @@ function App(){
     </div>
     <div style={{maxWidth:1120,margin:"0 auto",padding:"28px 20px"}}>
       {tab==="dashboard"&&<Dashboard campaigns={campaigns}onNew={newCampaign}onOpen={open}me={me}/>}
-      {tab==="brief"&&<BriefTab active={active}patch={patch}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}audiences={audiences}onDelete={delCampaign}onNew={newCampaign}/>}
-      {tab==="content"&&<ContentTab active={active}patch={patch}copyRules={copyRules}addRule={addRule}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}toast={toast}onDelete={delCampaign}/>}
+      {tab==="brief"&&<BriefTab active={active}patch={patch}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}audiences={audiences}onDelete={delCampaign}onNew={newCampaign}onBulkImport={bulkImportBriefs}toast={toast}/>}
+      {(tab==="content"||tab==="brand_review")&&<ContentTab active={active}patch={patch}copyRules={copyRules}addRule={addRule}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}toast={toast}onDelete={delCampaign}/>}
       {tab==="design"&&<DesignTab active={active}patch={patch}promptRules={promptRules}addRule={addRule}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}onDelete={delCampaign}/>}
+      {tab==="library"&&<ImageLibraryTab me={me}toast={toast}/>}
       {tab==="done"&&<DoneTab campaigns={campaigns}patch={patch}onOpen={open}me={me}setTab={setTab}onDelete={delCampaign}/>}
       {tab==="archive"&&<ArchiveTab campaigns={campaigns}patch={patch}onOpen={open}me={me}onDelete={delCampaign}/>}
     </div>
@@ -1600,9 +1655,14 @@ function BriefChat({campaignId,patch,onBriefReady,me,recentFeedback,product}){
 const AlertCircle=p=><Svg{...p}><circle cx="12"cy="12"r="10"/><path d="M12 8v4M12 16h.01"/></Svg>;
 
 /* ===== Brief Tab ======================================================== */
-function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,onOpen,onDelete,onNew}){
+function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,onOpen,onDelete,onNew,onBulkImport,toast}){
   const[view,setView]=useState("list");
   const canCreate=me.role==="admin"||me.role==="business";
+  const[importing,setImporting]=useState(false); // false | "open" | "working" | "done"
+  const[importRows,setImportRows]=useState([]);
+  const[importProg,setImportProg]=useState({done:0,total:0});
+  const[importResult,setImportResult]=useState(null);
+  const[importErr,setImportErr]=useState("");
   const allBriefs=(campaigns||[]).filter(c=>c.stage==="brief"&&!isArchived(c));
   const briefedElsewhere=(campaigns||[]).filter(c=>c.stage!=="brief"&&!isArchived(c)&&c.data?.brief).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
   const briefArchived=(campaigns||[]).filter(c=>isArchived(c)&&c.data?.brief).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
@@ -1610,6 +1670,80 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
   const[openId,setOpenId]=useState(null);
   const[mode,setMode]=useState({}); // {[id]: 'view'|'chat'|'self'|'edit'}
   const[genMap,setGenMap]=useState({}); // track generating per id
+
+  // Parse uploaded .xlsx/.csv into normalised brief rows
+  const parseImportFile=(file)=>{
+    setImportErr("");
+    const reader=new FileReader();
+    reader.onload=(e)=>{
+      try{
+        if(typeof XLSX==="undefined"){setImportErr("Spreadsheet library still loading — try again in a moment.");return;}
+        const wb=XLSX.read(e.target.result,{type:"binary"});
+        const sheet=wb.Sheets[wb.SheetNames.includes("Briefs")?"Briefs":wb.SheetNames[0]];
+        const raw=XLSX.utils.sheet_to_json(sheet,{header:1,blankrows:false});
+        // Find the header row (the one containing "Product")
+        const hdrIdx=raw.findIndex(r=>r.some(c=>String(c).trim().toLowerCase()==="product"));
+        if(hdrIdx<0){setImportErr("Couldn't find a header row with a 'Product' column. Use the provided template.");return;}
+        const headers=raw[hdrIdx].map(c=>String(c||"").trim().toLowerCase());
+        const col=(name)=>headers.findIndex(h=>h===name);
+        const map={crmType:col("crm type"),channel:col("channel"),product:col("product"),pillar:col("pillar"),audience:col("audience"),objective:col("objective"),offer:col("offer"),hook:col("hook / angle"),rtbs:col("rtbs"),references:col("reference links"),goLive:col("go live date")};
+        const splitList=(v)=>String(v||"").split(/[;\n]/).map(x=>x.trim()).filter(Boolean);
+        const fmtDate=(v)=>{
+          if(!v)return"";
+          if(v instanceof Date)return v.toISOString().slice(0,10);
+          if(typeof v==="number"){const d=XLSX.SSF?XLSX.SSF.parse_date_code(v):null;if(d)return`${d.y}-${String(d.m).padStart(2,"0")}-${String(d.d).padStart(2,"0")}`;}
+          return String(v).trim();
+        };
+        const rows=[];
+        for(let i=hdrIdx+1;i<raw.length;i++){
+          const r=raw[i];if(!r||!r.length)continue;
+          const get=(k)=>map[k]>=0?r[map[k]]:undefined;
+          const product=String(get("product")||"").trim();
+          // skip example row and blanks
+          if(!product)continue;
+          if(String(get("goLive")||"").includes("example"))continue;
+          rows.push({
+            crmType:String(get("crmType")||"D2C").trim(),
+            channel:String(get("channel")||"WhatsApp").trim(),
+            product,
+            pillar:String(get("pillar")||"").trim(),
+            audience:String(get("audience")||"").trim(),
+            objective:String(get("objective")||"").trim(),
+            offer:String(get("offer")||"").trim(),
+            hook:String(get("hook")||"").trim(),
+            rtbs:splitList(get("rtbs")),
+            references:splitList(get("references")),
+            goLive:fmtDate(get("goLive")),
+          });
+        }
+        if(!rows.length){setImportErr("No brief rows found. Make sure rows have a Product and you've removed the example row.");return;}
+        const bad=rows.filter(r=>!r.product||!r.audience||!r.objective);
+        setImportRows(rows);
+        setImportResult(null);
+        if(bad.length)setImportErr(`${bad.length} row(s) are missing Audience or Objective — those may produce weaker briefs.`);
+      }catch(err){setImportErr("Couldn't read the file: "+(err.message||"unknown error"));}
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const runImport=async()=>{
+    setImporting("working");setImportProg({done:0,total:importRows.length});
+    const res=await onBulkImport(importRows,(done,total)=>setImportProg({done,total}));
+    setImportResult(res);setImporting("done");
+    if(res.created&&toast)toast(`${res.created} brief${res.created>1?"s":""} imported ✓`,"success");
+  };
+
+  const downloadTemplate=()=>{
+    // Build the template client-side with SheetJS so it's always available
+    if(typeof XLSX==="undefined"){if(toast)toast("Spreadsheet library still loading — try again","error");return;}
+    const headers=["CRM Type","Channel","Product","Pillar","Audience","Objective","Offer","Hook / Angle","RTBs","Reference Links","Go Live Date"];
+    const example=["D2C","WhatsApp","Sara's Wholesome Food","Importance","First-time buyers","Conversion (first purchase)","none","the dinner-bowl routine","Slow-cooked; 0% preservatives","https://headsupfortails.com/saras","2026-07-01"];
+    const ws=XLSX.utils.aoa_to_sheet([headers,example]);
+    ws["!cols"]=headers.map(()=>({wch:22}));
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,"Briefs");
+    XLSX.writeFile(wb,"HUFT_Brief_Upload_Template.xlsx");
+  };
 
   React.useEffect(()=>{
     if(active?.id)setOpenId(active.id);
@@ -1719,6 +1853,7 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
       <div><Eyebrow>Brief</Eyebrow><h1 style={{margin:"4px 0 0",fontSize:24,fontWeight:800}}>Briefs</h1></div>
       <div style={{display:"flex",gap:10,alignItems:"center"}}>
+        {canCreate&&<Btn variant="ghost"onClick={()=>{setImporting("open");setImportRows([]);setImportResult(null);setImportErr("");}}><UploadIcon size={15}/>Import from Excel</Btn>}
         {canCreate&&<Btn onClick={onNew}><Plus size={16}/>New asset</Btn>}
         <div style={{display:"flex",border:`1px solid ${C.line}`,borderRadius:8,overflow:"hidden"}}>
           <button onClick={()=>setView("list")}style={{padding:"6px 14px",border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:view==="list"?C.navy:"#fff",color:view==="list"?"#fff":C.sub,display:"flex",alignItems:"center",gap:5}}><LayoutDashboard size={13}/>List</button>
@@ -1747,6 +1882,58 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
           <div style={{opacity:.5}}>{groupByDate(briefArchived).map(([date,items])=><div key={date}style={{marginBottom:8}}><DateGroupHeader date={date}count={items.length}color={C.sub}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><AssetRow key={c.id}c={c}/>)}</Card></div>)}</div>
         </div>}
       </div>}
+
+    {/* ── Import from Excel modal ─────────────────────────── */}
+    {importing&&<div onClick={()=>importing!=="working"&&setImporting(false)}style={{position:"fixed",inset:0,background:"rgba(15,23,42,.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:20}}>
+      <div onClick={e=>e.stopPropagation()}style={{background:"#fff",borderRadius:16,maxWidth:560,width:"100%",maxHeight:"86vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
+        <div style={{padding:"18px 22px",borderBottom:`1px solid ${C.line}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div style={{display:"flex",alignItems:"center",gap:9}}><UploadIcon size={18}color={C.coral}/><span style={{fontWeight:800,fontSize:16}}>Import briefs from Excel</span></div>
+          {importing!=="working"&&<button onClick={()=>setImporting(false)}style={{border:"none",background:"none",cursor:"pointer",color:C.sub,display:"flex"}}><X size={20}/></button>}
+        </div>
+        <div style={{padding:22}}>
+          {importing==="done"&&importResult
+            ?<div>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+                <div style={{width:42,height:42,borderRadius:999,background:"#DCFCE7",display:"flex",alignItems:"center",justifyContent:"center"}}><CheckCircle2 size={22}color="#16A34A"/></div>
+                <div><div style={{fontWeight:800,fontSize:16}}>{importResult.created} brief{importResult.created!==1?"s":""} created</div>{importResult.failed>0&&<div style={{fontSize:13,color:C.coral}}>{importResult.failed} failed</div>}</div>
+              </div>
+              {importResult.errors&&importResult.errors.length>0&&<div style={{background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:9,padding:"10px 12px",marginBottom:14,maxHeight:160,overflowY:"auto"}}>
+                {importResult.errors.map((er,i)=><div key={i}style={{fontSize:12,color:"#B91C1C",lineHeight:1.5}}>{er}</div>)}
+              </div>}
+              <div style={{fontSize:13,color:C.sub,marginBottom:14}}>Imported briefs are ready in the Copy tab for copy generation.</div>
+              <div style={{display:"flex",gap:8}}><Btn onClick={()=>{setImporting(false);setTab("content");}}>Go to Copy</Btn><Btn variant="ghost"onClick={()=>setImporting(false)}>Close</Btn></div>
+            </div>
+          :importing==="working"
+            ?<div style={{textAlign:"center",padding:"20px 0"}}>
+              <Loader2 size={28}color={C.coral}style={{animation:"spin 1s linear infinite",marginBottom:12}}/>
+              <div style={{fontWeight:700,fontSize:15,marginBottom:6}}>Generating briefs…</div>
+              <div style={{fontSize:13,color:C.sub,marginBottom:12}}>{importProg.done} of {importProg.total} done — each runs through the AI engine.</div>
+              <div style={{height:6,background:C.line,borderRadius:6,overflow:"hidden"}}><div style={{height:"100%",background:C.coral,borderRadius:6,width:`${importProg.total?(importProg.done/importProg.total*100):0}%`,transition:"width .3s"}}/></div>
+            </div>
+          :<div>
+            <div style={{fontSize:13.5,color:C.sub,lineHeight:1.5,marginBottom:14}}>Upload the HUFT template with one brief per row. Don't have it yet? <button onClick={downloadTemplate}style={{border:"none",background:"none",color:C.coral,fontWeight:700,cursor:"pointer",padding:0,textDecoration:"underline"}}>Download the template</button>.</div>
+            <label style={{display:"block",border:`2px dashed ${C.line}`,borderRadius:12,padding:"26px 16px",textAlign:"center",cursor:"pointer",background:"#FAFAFA",marginBottom:14}}>
+              <UploadIcon size={24}color={C.sub}style={{marginBottom:8}}/>
+              <div style={{fontWeight:700,fontSize:14,marginBottom:3}}>Choose .xlsx or .csv file</div>
+              <div style={{fontSize:12,color:C.sub}}>{importRows.length?`${importRows.length} brief row(s) detected`:"Click to browse"}</div>
+              <input type="file"accept=".xlsx,.xls,.csv"style={{display:"none"}}onChange={e=>{if(e.target.files&&e.target.files[0])parseImportFile(e.target.files[0]);}}/>
+            </label>
+            {importErr&&<div style={{background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:9,padding:"9px 12px",marginBottom:14,fontSize:12.5,color:"#B45309",display:"flex",alignItems:"flex-start",gap:6}}><AlertCircle size={14}style={{flexShrink:0,marginTop:1}}/>{importErr}</div>}
+            {importRows.length>0&&<div style={{border:`1px solid ${C.line}`,borderRadius:10,overflow:"hidden",marginBottom:14,maxHeight:200,overflowY:"auto"}}>
+              {importRows.slice(0,8).map((r,i)=><div key={i}style={{padding:"8px 12px",borderBottom:i<Math.min(importRows.length,8)-1?`1px solid ${C.line}`:"none",fontSize:12.5}}>
+                <span style={{fontWeight:700}}>{r.product}</span>
+                <span style={{color:C.sub}}> · {r.channel} · {r.audience||"no audience"} · {r.objective||"no objective"}</span>
+              </div>)}
+              {importRows.length>8&&<div style={{padding:"8px 12px",fontSize:12,color:C.sub}}>+ {importRows.length-8} more…</div>}
+            </div>}
+            <div style={{display:"flex",gap:8}}>
+              <Btn onClick={runImport}disabled={!importRows.length}><Sparkles size={15}/>Generate {importRows.length||""} brief{importRows.length!==1?"s":""}</Btn>
+              <Btn variant="ghost"onClick={()=>setImporting(false)}>Cancel</Btn>
+            </div>
+          </div>}
+        </div>
+      </div>
+    </div>}
   </div>;
 }
 
@@ -1920,6 +2107,268 @@ function BriefSummaryCard({active,activeBrief,copyRules,busy,refineFor,gen,opts,
 }
 
 
+// ── Comment thread (copy or design context) ───────────────────────────────────
+function CommentThread({campaignId,context,me,compact}){
+  const[items,setItems]=useState(null);
+  const[draft,setDraft]=useState("");
+  const[replyTo,setReplyTo]=useState(null);
+  const[busy,setBusy]=useState(false);
+  const load=async()=>{try{setItems(await api.get(`/api/campaigns/${campaignId}/comments?context=${context}`));}catch(e){setItems([]);}};
+  useEffect(()=>{load();},[campaignId,context]);
+  const add=async()=>{
+    if(!draft.trim())return;setBusy(true);
+    try{await api.post(`/api/campaigns/${campaignId}/comments`,{body:draft.trim(),context,parent_id:replyTo});setDraft("");setReplyTo(null);await load();}
+    catch(e){}setBusy(false);
+  };
+  const toggleResolve=async(c)=>{try{await api.put(`/api/comments/${c.id}`,{resolved:!c.resolved});await load();}catch(e){}};
+  const del=async(c)=>{try{await api.del(`/api/comments/${c.id}`);await load();}catch(e){}};
+  if(items===null)return<div style={{fontSize:12,color:C.sub,padding:"8px 0"}}>Loading comments…</div>;
+  const roots=items.filter(c=>!c.parent_id);
+  const repliesOf=(id)=>items.filter(c=>c.parent_id===id);
+  const roleColor={admin:C.coral,business:C.teal,content:C.purple,design:C.green,brand:"#9333EA"};
+  const Bubble=({c})=><div style={{marginBottom:8}}>
+    <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:2}}>
+      <span style={{fontWeight:700,fontSize:12.5}}>{c.author_name||"User"}</span>
+      <span style={{background:(roleColor[c.author_role]||C.sub)+"22",color:roleColor[c.author_role]||C.sub,fontSize:9.5,fontWeight:700,padding:"1px 6px",borderRadius:999,textTransform:"capitalize"}}>{c.author_role}</span>
+      <span style={{fontSize:10.5,color:C.sub}}>{fmtTime?fmtTime(c.created_at):new Date(c.created_at).toLocaleString()}</span>
+      {c.resolved&&<span style={{fontSize:10,color:C.green,fontWeight:700,display:"flex",alignItems:"center",gap:3}}><CheckCircle2 size={11}/>resolved</span>}
+    </div>
+    <div style={{fontSize:13,color:C.ink,lineHeight:1.5,whiteSpace:"pre-line"}}>{c.body}</div>
+    <div style={{display:"flex",gap:10,marginTop:3}}>
+      <button onClick={()=>setReplyTo(replyTo===c.id?null:c.id)}style={{border:"none",background:"none",color:C.sub,fontSize:11,cursor:"pointer",padding:0,fontWeight:600}}>{replyTo===c.id?"Cancel":"Reply"}</button>
+      {(me.role==="brand"||me.role==="admin")&&<button onClick={()=>toggleResolve(c)}style={{border:"none",background:"none",color:C.sub,fontSize:11,cursor:"pointer",padding:0,fontWeight:600}}>{c.resolved?"Reopen":"Resolve"}</button>}
+      {(c.author_name===me.name||me.role==="admin")&&<button onClick={()=>del(c)}style={{border:"none",background:"none",color:"#DC2626",fontSize:11,cursor:"pointer",padding:0,fontWeight:600}}>Delete</button>}
+    </div>
+  </div>;
+  return<div style={{borderTop:`1px solid ${C.line}`,paddingTop:10,marginTop:10}}>
+    <div style={{fontSize:11,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5,marginBottom:8,display:"flex",alignItems:"center",gap:5}}><MessageSquare size={12}/>{context==="design"?"Art direction comments":"Copy comments"} · {items.length}</div>
+    {roots.length===0&&<div style={{fontSize:12.5,color:C.sub,marginBottom:8}}>No comments yet.</div>}
+    {roots.map(c=><div key={c.id}>
+      <Bubble c={c}/>
+      {repliesOf(c.id).length>0&&<div style={{marginLeft:16,borderLeft:`2px solid ${C.line}`,paddingLeft:12}}>{repliesOf(c.id).map(r=><Bubble key={r.id}c={r}/>)}</div>}
+      {replyTo===c.id&&<div style={{marginLeft:16,marginBottom:10,display:"flex",gap:7}}>
+        <input value={draft}onChange={e=>setDraft(e.target.value)}onKeyDown={e=>{if(e.key==="Enter")add();}}placeholder="Write a reply…"style={{flex:1,border:`1.5px solid ${C.line}`,borderRadius:18,padding:"7px 13px",fontSize:13,outline:"none"}}/>
+        <Btn small onClick={add}disabled={busy||!draft.trim()}>Reply</Btn>
+      </div>}
+    </div>)}
+    {replyTo===null&&<div style={{display:"flex",gap:7,marginTop:6}}>
+      <input value={draft}onChange={e=>setDraft(e.target.value)}onKeyDown={e=>{if(e.key==="Enter")add();}}placeholder={context==="design"?"Add an art direction…":"Add a comment…"}style={{flex:1,border:`1.5px solid ${C.line}`,borderRadius:18,padding:"8px 14px",fontSize:13,outline:"none"}}/>
+      <Btn small onClick={add}disabled={busy||!draft.trim()}><MessageSquare size={13}/>Comment</Btn>
+    </div>}
+  </div>;
+}
+
+// ── Brand review queue (Ilena / admin) ────────────────────────────────────────
+function BrandReviewTab({campaigns,patch,me,toast,onOpen,setTab}){
+  const queue=(campaigns||[]).filter(c=>c.stage==="brand_review"&&!isArchived(c)).sort((a,b)=>new Date(a.copy_approved_at||a.updated_at)-new Date(b.copy_approved_at||b.updated_at));
+  const reviewed=(campaigns||[]).filter(c=>c.brand_approver&&!isArchived(c)).sort((a,b)=>new Date(b.brand_approved_at||0)-new Date(a.brand_approved_at||0)).slice(0,20);
+  const[openId,setOpenId]=useState(null);
+  const[rejectFor,setRejectFor]=useState(null);
+  const[reason,setReason]=useState("");
+  const[busy,setBusy]=useState(false);
+
+  const approve=async(c)=>{
+    setBusy(true);
+    try{
+      const r=await api.post(`/api/campaigns/${c.id}/brand-approve`,{});
+      // Server moves it to 'design'. For push, no design needed → mark done.
+      if(c.channel==="Push notification"){
+        await api.put(`/api/campaigns/${c.id}`,{stage:"done",design_approver:me.name,went_live_at:new Date().toISOString()});
+      }
+      patch(c.id,{}); // trigger a refresh via parent reload pattern
+      if(toast)toast("Copy approved ✓ — released"+(c.channel==="Push notification"?" to Done":" to Design"),"success");
+      window.location.reload();
+    }catch(e){if(toast)toast(e.message||"Approve failed","error");}
+    setBusy(false);
+  };
+  const reject=async(c)=>{
+    setBusy(true);
+    try{
+      await api.post(`/api/campaigns/${c.id}/brand-reject`,{reason:reason.trim()});
+      setRejectFor(null);setReason("");
+      if(toast)toast("Sent back to Copy team","success");
+      window.location.reload();
+    }catch(e){if(toast)toast(e.message||"Reject failed","error");}
+    setBusy(false);
+  };
+
+  const Row=({c,reviewedRow})=>{
+    const o=c.data?.copyOptions?.[c.data?.selectedCopyIdx];
+    const isOpen=openId===c.id;
+    const isEmail=c.channel==="Email"||c.channel==="WhatsApp + Email";
+    return<div style={{borderBottom:`1px solid ${C.line}`}}>
+      <div onClick={()=>setOpenId(isOpen?null:c.id)}style={{display:"flex",alignItems:"center",gap:12,padding:"13px 16px",cursor:"pointer"}}>
+        <ChannelIcon channel={c.channel}/>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
+            <span style={{fontWeight:800,fontSize:14}}>{c.product||"—"}</span>
+            <span style={{fontSize:11,fontWeight:700,color:C.coral}}>{normCrmType(c.crm_type)}</span>
+            <span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel}</span>
+            {c.copy_approver&&<span style={{fontSize:11,color:C.sub}}>· copy by {c.copy_approver}</span>}
+            {reviewedRow&&c.brand_approver&&<span style={{display:"inline-flex",alignItems:"center",gap:3,fontSize:11,fontWeight:700,color:"#9333EA",background:"#F3E8FF",padding:"2px 8px",borderRadius:999}}><CheckCircle2 size={11}/>Brand ✓ {c.brand_approver}</span>}
+          </div>
+          {o&&<div style={{fontSize:12.5,color:C.sub,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.header}</div>}
+        </div>
+        {isOpen?<ChevronDown size={15}color={C.sub}/>:<ChevronRight size={15}color={C.sub}/>}
+      </div>
+      {isOpen&&<div style={{padding:"0 16px 16px"}}>
+        {o?<div style={{border:`1px solid ${C.line}`,borderRadius:10,overflow:"hidden",marginBottom:12}}>
+          {isEmail&&o.subject&&<div style={{background:"#EEF2FF",padding:"9px 13px",borderBottom:`1px solid ${C.line}`}}><div style={{fontSize:9.5,fontWeight:700,color:"#4F46E5",textTransform:"uppercase",letterSpacing:.5,marginBottom:3}}>Subject line</div><div style={{fontWeight:700,fontSize:13.5,color:"#1E1B4B"}}>{o.subject}</div></div>}
+          <div style={{background:"#1a2940",padding:"9px 13px"}}><div style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,.4)",textTransform:"uppercase",letterSpacing:.5,marginBottom:3}}>Image copy</div><div style={{fontWeight:800,whiteSpace:"pre-line",color:"#fff",fontSize:13.5}}>{o.header}</div></div>
+          <div style={{background:"#F8FAFC",padding:"9px 13px"}}><div style={{fontSize:9.5,fontWeight:700,color:"#475569",textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Body copy</div><div style={{whiteSpace:"pre-line",color:"#1f2937",fontSize:12.5,lineHeight:1.5}}>{o.body}</div>{o.cta&&<div style={{marginTop:8,display:"inline-block",background:C.navy,color:"#fff",fontSize:11,fontWeight:700,padding:"4px 11px",borderRadius:7}}>{o.cta}</div>}</div>
+        </div>:<div style={{fontSize:13,color:C.sub,marginBottom:12}}>No selected copy found.</div>}
+
+        {!reviewedRow&&(me.role==="brand"||me.role==="admin")&&<div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:6}}>
+          {busy?<Spin label="Working…"/>:<>
+            <Btn onClick={()=>approve(c)}><CheckCircle2 size={15}/>Approve &amp; release</Btn>
+            <Btn variant="ghost"onClick={()=>setRejectFor(rejectFor===c.id?null:c.id)}><X size={15}/>Send back</Btn>
+          </>}
+        </div>}
+        {rejectFor===c.id&&<div style={{display:"flex",gap:7,marginBottom:10}}>
+          <input value={reason}onChange={e=>setReason(e.target.value)}placeholder="Reason / changes needed…"style={{flex:1,border:`1.5px solid ${C.line}`,borderRadius:18,padding:"8px 14px",fontSize:13,outline:"none"}}/>
+          <Btn small onClick={()=>reject(c)}disabled={busy}>Send back</Btn>
+        </div>}
+
+        <CommentThread campaignId={c.id}context="copy"me={me}/>
+      </div>}
+    </div>;
+  };
+
+  return<div>
+    <div style={{marginBottom:16}}><Eyebrow>Brand review</Eyebrow><h1 style={{margin:"4px 0 0",fontSize:24,fontWeight:800}}>Awaiting brand approval</h1>
+      <div style={{fontSize:13.5,color:C.sub,marginTop:4}}>Copy must be approved here before it moves to design.</div></div>
+    {queue.length===0
+      ?<Card><Empty icon={<Eye size={26}color={C.sub}/>}title="Nothing to review"sub="Approved copy will appear here for brand sign-off."/></Card>
+      :<Card style={{padding:0,overflow:"hidden"}}>{queue.map(c=><Row key={c.id}c={c}/>)}</Card>}
+    {reviewed.length>0&&<div style={{marginTop:18}}>
+      <div style={{fontSize:11,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5,marginBottom:8,display:"flex",alignItems:"center",gap:5}}><CheckCircle2 size={12}/>Recently approved · {reviewed.length}</div>
+      <Card style={{padding:0,overflow:"hidden"}}>{reviewed.map(c=><Row key={c.id}c={c}reviewedRow/>)}</Card>
+    </div>}
+  </div>;
+}
+
+// ── Image Library (AI-tagged) ─────────────────────────────────────────────────
+function ImageLibraryTab({me,toast}){
+  const[items,setItems]=useState(null);
+  const[q,setQ]=useState("");
+  const[uploading,setUploading]=useState([]); // [{name, status}]
+  const[preview,setPreview]=useState(null);
+  const fileRef=useRef(null);
+
+  const load=async(query)=>{
+    try{setItems(await api.get("/api/image-library"+(query?`?q=${encodeURIComponent(query)}`:"")));}
+    catch(e){setItems([]);}
+  };
+  useEffect(()=>{load("");},[]);
+
+  const onSearch=(val)=>{setQ(val);load(val);};
+
+  const handleFiles=async(files)=>{
+    const arr=[...files];
+    for(const f of arr){
+      const key=f.name+Date.now();
+      setUploading(u=>[...u,{key,name:f.name,status:"reading"}]);
+      try{
+        const dataUrl=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f);});
+        setUploading(u=>u.map(x=>x.key===key?{...x,status:"analysing"}:x));
+        await api.post("/api/image-library",{file_name:f.name,file_data:dataUrl,file_type:f.type});
+        setUploading(u=>u.filter(x=>x.key!==key));
+        if(toast)toast(`${f.name} added & tagged ✓`,"success");
+      }catch(e){
+        setUploading(u=>u.map(x=>x.key===key?{...x,status:"error"}:x));
+        if(toast)toast(`${f.name}: ${e.message||"upload failed"}`,"error");
+      }
+    }
+    load(q);
+  };
+
+  const del=async(id)=>{
+    if(!window.confirm("Delete this image from the library?"))return;
+    try{await api.del("/api/image-library/"+id);load(q);if(toast)toast("Deleted","success");}catch(e){}
+  };
+
+  return<div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,flexWrap:"wrap",gap:12}}>
+      <div><Eyebrow>Image library</Eyebrow><h1 style={{margin:"4px 0 0",fontSize:24,fontWeight:800}}>Brand image library</h1>
+        <div style={{fontSize:13.5,color:C.sub,marginTop:4}}>Upload images — the engine identifies the product, tags them, and surfaces them in the design prompt section.</div></div>
+      <div>
+        <Btn onClick={()=>fileRef.current&&fileRef.current.click()}><UploadIcon size={16}/>Upload images</Btn>
+        <input ref={fileRef}type="file"accept="image/*"multiple style={{display:"none"}}onChange={e=>{if(e.target.files&&e.target.files.length)handleFiles(e.target.files);e.target.value="";}}/>
+      </div>
+    </div>
+
+    {/* Upload progress */}
+    {uploading.length>0&&<Card style={{marginBottom:14}}>
+      {uploading.map(u=><div key={u.key}style={{display:"flex",alignItems:"center",gap:10,padding:"4px 0",fontSize:13}}>
+        {u.status==="error"?<AlertCircle size={15}color={C.coral}/>:<Loader2 size={15}color={C.coral}style={{animation:"spin 1s linear infinite"}}/>}
+        <span style={{fontWeight:600}}>{u.name}</span>
+        <span style={{color:C.sub}}>{u.status==="reading"?"reading…":u.status==="analysing"?"identifying product & tagging…":u.status==="error"?"failed":""}</span>
+      </div>)}
+    </Card>}
+
+    {/* Search */}
+    <div style={{position:"relative",marginBottom:16}}>
+      <SearchIcon size={15}color={C.sub}style={{position:"absolute",left:13,top:"50%",transform:"translateY(-50%)"}}/>
+      <input value={q}onChange={e=>onSearch(e.target.value)}placeholder="Search by product, tag, mood, category…"style={{width:"100%",border:`1.5px solid ${C.line}`,borderRadius:24,padding:"10px 16px 10px 38px",fontSize:14,boxSizing:"border-box",outline:"none"}}/>
+    </div>
+
+    {/* Grid */}
+    {items===null
+      ?<div style={{textAlign:"center",padding:40,color:C.sub}}><Loader2 size={24}style={{animation:"spin 1s linear infinite"}}/></div>
+      :items.length===0
+      ?<Card><Empty icon={<ImageIcon size={26}color={C.sub}/>}title={q?"No matches":"No images yet"}sub={q?"Try a different search term.":"Upload images and the engine will tag them automatically."}action={!q?<Btn onClick={()=>fileRef.current&&fileRef.current.click()}><UploadIcon size={15}/>Upload images</Btn>:null}/></Card>
+      :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:14}}>
+        {items.map(img=><div key={img.id}style={{border:`1px solid ${C.line}`,borderRadius:12,overflow:"hidden",background:"#fff"}}>
+          <div onClick={()=>setPreview(img)}style={{aspectRatio:"4/3",background:"#F3F4F6",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
+            <ImageThumb id={img.id}alt={img.description}/>
+          </div>
+          <div style={{padding:"9px 11px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+              {img.product&&<span style={{fontSize:11,fontWeight:700,color:C.coral}}>{img.product}</span>}
+              {img.category&&<span style={{fontSize:10,fontWeight:600,color:C.teal,background:"#E6FFFA",padding:"1px 6px",borderRadius:999}}>{img.category}</span>}
+            </div>
+            {img.description&&<div style={{fontSize:11.5,color:C.sub,lineHeight:1.4,marginBottom:6,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{img.description}</div>}
+            <div style={{display:"flex",flexWrap:"wrap",gap:3,marginBottom:6}}>
+              {(img.tags||[]).slice(0,4).map((t,i)=><span key={i}style={{fontSize:9.5,color:C.sub,background:"#F3F4F6",padding:"1px 6px",borderRadius:999}}>{t}</span>)}
+            </div>
+            {(me.role==="admin"||me.role==="brand")&&<button onClick={()=>del(img.id)}style={{border:"none",background:"none",color:"#DC2626",fontSize:10.5,cursor:"pointer",padding:0,fontWeight:600}}>Delete</button>}
+          </div>
+        </div>)}
+      </div>}
+
+    {/* Preview modal */}
+    {preview&&<div onClick={()=>setPreview(null)}style={{position:"fixed",inset:0,background:"rgba(15,23,42,.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:20}}>
+      <div onClick={e=>e.stopPropagation()}style={{background:"#fff",borderRadius:14,maxWidth:680,width:"100%",maxHeight:"88vh",overflowY:"auto"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 18px",borderBottom:`1px solid ${C.line}`}}>
+          <span style={{fontWeight:800}}>{preview.product||preview.file_name||"Image"}</span>
+          <button onClick={()=>setPreview(null)}style={{border:"none",background:"none",cursor:"pointer",color:C.sub}}><X size={20}/></button>
+        </div>
+        <div style={{padding:18}}>
+          <ImageFull id={preview.id}/>
+          <div style={{marginTop:12,fontSize:13,lineHeight:1.6}}>
+            {preview.description&&<div style={{marginBottom:8}}>{preview.description}</div>}
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{(preview.tags||[]).map((t,i)=><span key={i}style={{fontSize:11,color:C.sub,background:"#F3F4F6",padding:"2px 9px",borderRadius:999}}>{t}</span>)}</div>
+          </div>
+        </div>
+      </div>
+    </div>}
+  </div>;
+}
+
+// Lazy thumbnail loader — fetches the image data on demand
+function ImageThumb({id,alt}){
+  const[src,setSrc]=useState(null);
+  useEffect(()=>{let on=true;api.get("/api/image-library/"+id).then(r=>{if(on)setSrc(r.file_data);}).catch(()=>{});return()=>{on=false;};},[id]);
+  if(!src)return<ImageIcon size={28}color={C.line}/>;
+  return<img src={src}alt={alt||""}style={{width:"100%",height:"100%",objectFit:"cover"}}/>;
+}
+function ImageFull({id}){
+  const[src,setSrc]=useState(null);
+  useEffect(()=>{let on=true;api.get("/api/image-library/"+id).then(r=>{if(on)setSrc(r.file_data);}).catch(()=>{});return()=>{on=false;};},[id]);
+  if(!src)return<div style={{aspectRatio:"4/3",background:"#F3F4F6",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center"}}><Loader2 size={22}style={{animation:"spin 1s linear infinite"}}/></div>;
+  return<img src={src}alt=""style={{width:"100%",borderRadius:10}}/>;
+}
+
 function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,saveFeedback,campaigns,onOpen,toast,onDelete}){
   // Copy page shows: assets still in copy stage, PLUS any non-archived asset whose copy
   // was already approved (those have moved on to Design/Done but should remain visible here).
@@ -1943,6 +2392,30 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
     const[refineText,setRefineText]=useState("");
     const[showAll,setShowAll]=useState(false);
     const[manualMode,setManualMode]=useState(null); // null | "add" | "edit"
+    const[brandRejecting,setBrandRejecting]=useState(false);
+    const[brandReason,setBrandReason]=useState("");
+    const canBrandReview=(me.role==="brand"||me.role==="admin");
+
+    // Ilena/admin approves the copy → server releases it to design (or done for push)
+    const brandApprove=async()=>{
+      setBusy(true);setErr("");
+      try{
+        await api.post(`/api/campaigns/${c.id}/brand-approve`,{});
+        if(c.channel==="Push notification"){
+          await api.put(`/api/campaigns/${c.id}`,{stage:"done",design_approver:me.name,went_live_at:new Date().toISOString()});
+        }
+        if(toast)toast("Brand approved ✓ — released to "+(c.channel==="Push notification"?"Done":"Design"),"success");
+        window.location.reload();
+      }catch(e){setErr(e.message||"Approve failed");setBusy(false);}
+    };
+    const brandReject=async()=>{
+      setBusy(true);setErr("");
+      try{
+        await api.post(`/api/campaigns/${c.id}/brand-reject`,{reason:brandReason.trim()});
+        if(toast)toast("Sent back to the copy team","success");
+        window.location.reload();
+      }catch(e){setErr(e.message||"Reject failed");setBusy(false);}
+    };
 
     // Show even without brief - just disable generation
     const rtbsArr=(activeBrief?.rtbs||c.rtbs||[]).filter(Boolean);
@@ -2005,15 +2478,9 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         patch(c.id,{data:{...(c.data||{}),selectedCopyIdx:null},stage:"content",copy_approver:null});
         if(toast)toast("Copy unselected — pick another option","success");
       } else {
-        const isPush=c.channel==="Push notification";
-        if(isPush){
-          // Push needs no design asset — approving the copy completes the asset.
-          patch(c.id,{data:{...(c.data||{}),selectedCopyIdx:idx},stage:"done",copy_approver:me.name,design_approver:me.name,went_live_at:new Date().toISOString()});
-          if(toast)toast("Copy approved ✓ — Push needs no design, moved to Done","success");
-        } else {
-          patch(c.id,{data:{...(c.data||{}),selectedCopyIdx:idx},stage:"design",copy_approver:me.name});
-          if(toast)toast("Copy approved ✓ — go to Design tab when ready","success");
-        }
+        // Every copy now goes to Ilena (brand) for review before design/done.
+        patch(c.id,{data:{...(c.data||{}),selectedCopyIdx:idx},stage:"brand_review",copy_approver:me.name});
+        if(toast)toast("Copy selected ✓ — sent to brand review (Ilena)","success");
       }
     };
 
@@ -2025,7 +2492,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       else{newOpts=[...base,{...opt,manual:true}];newSel=newOpts.length-1;}
       const isPush=c.channel==="Push notification";
       const patchFields={data:{...(c.data||{}),copyOptions:newOpts,selectedCopyIdx:newSel},copy_approver:me.name};
-      if(sel==null){patchFields.stage=isPush?"done":"design";if(isPush){patchFields.design_approver=me.name;patchFields.went_live_at=new Date().toISOString();}}
+      if(sel==null){patchFields.stage="brand_review";}
       patch(c.id,patchFields);
       // Learning signal: store the team-written copy as feedback so future generations emulate it
       const learnText=`TEAM-WRITTEN COPY THAT WORKS (emulate this voice & structure) — ${c.product||""} · ${c.channel||"WhatsApp"} · ${c.objective||""}:\nHeader: ${opt.header}\nBody: ${opt.body}\nCTA: ${opt.cta}`;
@@ -2046,7 +2513,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
     // Once copy is approved, use shared openId accordion — collapsed by default.
     if(sel!=null){
       const o=opts?.[sel];
-      const tone=ROW_TONE[c.stage==="done"?"done":"approved"];
+      const tone=c.stage==="brand_review"?{bar:"#9333EA",bg:"#FAF5FF"}:ROW_TONE[c.stage==="done"?"done":"approved"];
       const isPush=c.channel==="Push notification";
       return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`4px solid ${tone.bar}`,background:tone.bg}}>
         {/* Collapsed header — always visible, click to expand */}
@@ -2056,8 +2523,10 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
             <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{c.product||"—"}</span>
             <span style={{fontSize:11,fontWeight:700,color:C.coral}}>{normCrmType(c.crm_type)}</span>
             <span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel||"WhatsApp"}</span>
-            <span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#5B21B6",background:"#EDE9FE",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>Copy approved</span>
-            {c.stage!=="content"&&<StageBadge stage={c.stage}/>}
+            {c.stage==="brand_review"
+              ?<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#9333EA",background:"#F3E8FF",padding:"3px 9px",borderRadius:999}}><Eye size={11}/>In brand review</span>
+              :<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#5B21B6",background:"#EDE9FE",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>Copy approved</span>}
+            {c.stage!=="content"&&c.stage!=="brand_review"&&<StageBadge stage={c.stage}/>}
             {isOpen&&o?.direction&&<span style={{fontSize:11,color:C.sub,fontStyle:"italic"}}>{o.direction}</span>}
             {c.created_at&&<span style={{marginLeft:"auto",fontSize:11,color:C.sub,background:"#F3F4F6",padding:"2px 7px",borderRadius:5}}>{fmtDate(c.created_at)}</span>}
           </div>
@@ -2079,6 +2548,25 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
             <button onClick={()=>select(null)}style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,fontWeight:600,padding:"4px 10px",borderRadius:8,border:`1px solid ${C.line}`,background:"#fff",color:C.sub,cursor:"pointer"}}><X size={12}/>Unselect</button>
             {c.copy_approver&&<span style={{fontSize:11,color:C.sub}}>Approved by {c.copy_approver}</span>}
           </div>
+
+          {/* Brand review controls — shown while awaiting Ilena's sign-off */}
+          {c.stage==="brand_review"&&<div style={{marginTop:12,border:`1.5px solid #E9D5FF`,background:"#FAF5FF",borderRadius:10,padding:"12px 14px"}}>
+            <div style={{fontSize:11.5,fontWeight:800,color:"#9333EA",display:"flex",alignItems:"center",gap:6,marginBottom:canBrandReview?8:0}}><Eye size={13}/>{canBrandReview?"Brand review — your approval is needed":"Awaiting brand approval (Ilena)"}</div>
+            {canBrandReview&&<div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:brandRejecting?10:0}}>
+              {busy?<Spin label="Working…"/>:<>
+                <Btn small onClick={brandApprove}><CheckCircle2 size={13}/>Approve &amp; release to design</Btn>
+                <Btn small variant="ghost"onClick={()=>setBrandRejecting(v=>!v)}><X size={13}/>Send back</Btn>
+              </>}
+            </div>}
+            {brandRejecting&&canBrandReview&&<div style={{display:"flex",gap:7,marginTop:4}}>
+              <input value={brandReason}onChange={e=>setBrandReason(e.target.value)}placeholder="What needs changing?"style={{flex:1,border:`1.5px solid ${C.line}`,borderRadius:18,padding:"7px 13px",fontSize:13,outline:"none"}}/>
+              <Btn small onClick={brandReject}disabled={busy}>Send back</Btn>
+            </div>}
+          </div>}
+          {c.stage!=="brand_review"&&c.brand_approver&&<div style={{marginTop:12,fontSize:11,color:"#9333EA",fontWeight:700,display:"flex",alignItems:"center",gap:5}}><CheckCircle2 size={12}/>Brand approved by {c.brand_approver}</div>}
+
+          {/* Comments — available to everyone, always */}
+          <CommentThread campaignId={c.id}context="copy"me={me}/>
           {manualMode&&<ManualCopyForm initial={manualMode==="edit"?o:null}channel={c.channel}onSave={saveManual}onCancel={()=>setManualMode(null)}/>}
         </div>}
       </div>;
@@ -2159,15 +2647,21 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       :<div>
         {(()=>{
           const needsCopy=allCopy.filter(c=>c.stage==="content"&&c.data?.selectedCopyIdx==null);
-          const approved=allCopy.filter(c=>c.data?.selectedCopyIdx!=null&&c.data?.copyOptions);
+          const inReview=allCopy.filter(c=>c.stage==="brand_review");
+          // "approved" = brand-approved and moved on (design/done), but still listed here
+          const approved=allCopy.filter(c=>c.stage!=="content"&&c.stage!=="brand_review"&&c.data?.selectedCopyIdx!=null&&c.data?.copyOptions);
           const archivedCopy=(campaigns||[]).filter(c=>isArchived(c)&&c.data?.copyOptions);
           return<>
             {needsCopy.length>0&&<div style={{marginBottom:16}}>
               <div style={{fontSize:11,fontWeight:700,color:"#92400E",textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>⬤ Needs attention · {needsCopy.length}</div>
               {groupByDate(needsCopy).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.purple}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}/>)}</Card></div>)}
             </div>}
+            {inReview.length>0&&<div style={{marginBottom:16}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#9333EA",textTransform:"uppercase",letterSpacing:.5,marginBottom:8,display:"flex",alignItems:"center",gap:5}}><Eye size={12}/>Pending brand approval · {inReview.length}{(me.role==="brand"||me.role==="admin")?"":" (awaiting Ilena)"}</div>
+              {groupByDate(inReview).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={"#9333EA"}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}/>)}</Card></div>)}
+            </div>}
             {approved.length>0&&<div>
-              <div style={{fontSize:11,fontWeight:700,color:"#5B21B6",textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>✓ Copy approved · {approved.length}</div>
+              <div style={{fontSize:11,fontWeight:700,color:"#5B21B6",textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>✓ Brand approved · {approved.length}</div>
               <div>{groupByDate(approved).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.purple}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}/>)}</Card></div>)}</div>
             </div>}
             {archivedCopy.length>0&&<div style={{marginTop:16}}>
@@ -2189,9 +2683,41 @@ function ManualCopyForm({initial,channel,onSave,onCancel}){
   const[cta,setCta]=useState(initial?.cta||"");
   const[subj,setSubj]=useState(initial?.subject||"");
   const[dir,setDir]=useState(initial?.direction||"Team-written");
+  const[checking,setChecking]=useState(false);
+  const[gc,setGc]=useState(null); // grammar-check result {hasIssues,issues,corrected}
+  const[gcErr,setGcErr]=useState("");
+
+  const buildOpt=(over={})=>({direction:dir.trim()||"Team-written",header:(over.header??h).trim(),body:(over.body??b).trim(),cta:(over.cta??cta).trim(),...(isEmail?{subject:(over.subject??subj).trim()}:{})});
+
+  // Step 1: run British-English grammar check before saving
+  const runCheck=async()=>{
+    setChecking(true);setGcErr("");
+    try{
+      const res=await grammarCheckCopy({...(isEmail?{subject:subj}:{}),header:h,body:b,cta});
+      if(res&&res.hasIssues&&Array.isArray(res.issues)&&res.issues.length){
+        setGc(res);
+      } else {
+        onSave(buildOpt()); // clean — save as-is
+      }
+    }catch(e){
+      // If the check fails, don't block the user — surface a note and let them save directly
+      setGcErr("Grammar check unavailable — you can still save.");
+    }
+    setChecking(false);
+  };
+
+  const acceptCorrection=()=>{
+    const cor=gc.corrected||{};
+    if(cor.header!=null)setH(cor.header);
+    if(cor.body!=null)setB(cor.body);
+    if(cor.cta!=null)setCta(cor.cta);
+    if(isEmail&&cor.subject!=null)setSubj(cor.subject);
+    onSave(buildOpt(cor));
+  };
+
   return<div style={{border:`1.5px solid ${C.purple}`,borderRadius:12,padding:14,background:"#FBFAFF",marginTop:10,marginBottom:10}}>
     <div style={{fontWeight:700,fontSize:13,marginBottom:4,display:"flex",alignItems:"center",gap:6}}><PenLine size={13}color={C.purple}/>{initial?"Edit copy":"Write copy manually"}</div>
-    <div style={{fontSize:11.5,color:C.sub,marginBottom:10}}>Saved copy is approved straight away, and the engine learns from it for future suggestions.</div>
+    <div style={{fontSize:11.5,color:C.sub,marginBottom:10}}>On save we run a British English grammar check, then the engine learns from your copy for future suggestions.</div>
     <Field label="Direction / label"value={dir}onChange={setDir}placeholder="e.g. Team-written, Warm reminder"/>
     {isEmail&&<><Field label="Subject line (under 50 chars)"value={subj}onChange={setSubj}placeholder="e.g. Your dog's dinner just got an upgrade"/>
     <div style={{display:"flex",gap:10,fontSize:10.5,color:C.sub,marginTop:-6,marginBottom:10}}><span style={{color:subj.length>50?"#DC2626":C.sub}}>Subject {subj.length}/50</span></div></>}
@@ -2199,10 +2725,33 @@ function ManualCopyForm({initial,channel,onSave,onCancel}){
     <Field label={isPush?"Body (keep under 90 chars)":isEmail?"Body copy":"Body / caption"}value={b}onChange={setB}textarea rows={isPush?2:5}/>
     {isPush&&<div style={{display:"flex",gap:10,fontSize:10.5,color:C.sub,marginTop:-6,marginBottom:10}}><span style={{color:h.length>50?"#DC2626":C.sub}}>Title {h.length}/50</span><span style={{color:b.length>90?"#DC2626":C.sub}}>Body {b.length}/90</span></div>}
     <Field label="CTA"value={cta}onChange={setCta}placeholder="e.g. Shop now"/>
-    <div style={{display:"flex",gap:8}}>
-      <Btn onClick={()=>onSave({direction:dir.trim()||"Team-written",header:h.trim(),body:b.trim(),cta:cta.trim(),...(isEmail?{subject:subj.trim()}:{})})}disabled={!h.trim()&&!b.trim()}><Check size={14}/>Save &amp; approve</Btn>
+
+    {/* Grammar-check results panel */}
+    {gc&&gc.hasIssues&&<div style={{border:`1.5px solid #F59E0B`,background:"#FFFBEB",borderRadius:10,padding:"11px 13px",marginBottom:10}}>
+      <div style={{fontSize:12,fontWeight:800,color:"#B45309",display:"flex",alignItems:"center",gap:6,marginBottom:7}}><AlertCircle size={13}/>British English check — {gc.issues.length} suggestion{gc.issues.length>1?"s":""}</div>
+      <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
+        {gc.issues.map((it,i)=><div key={i}style={{fontSize:12,lineHeight:1.5}}>
+          <span style={{textDecoration:"line-through",color:"#DC2626"}}>{it.wrong}</span>
+          <span style={{color:C.sub}}> → </span>
+          <span style={{color:"#15803D",fontWeight:700}}>{it.right}</span>
+          {it.why&&<span style={{color:C.sub,fontSize:11}}> · {it.why}</span>}
+        </div>)}
+      </div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <Btn small onClick={acceptCorrection}><Check size={13}/>Apply fixes &amp; approve</Btn>
+        <Btn small variant="ghost"onClick={()=>onSave(buildOpt())}>Keep mine &amp; approve</Btn>
+        <Btn small variant="ghost"onClick={()=>setGc(null)}>Back to editing</Btn>
+      </div>
+    </div>}
+
+    {gcErr&&<div style={{color:C.coral,fontSize:12,marginBottom:8,display:"flex",alignItems:"center",gap:5}}><AlertCircle size={13}/>{gcErr}</div>}
+
+    {!gc&&<div style={{display:"flex",gap:8}}>
+      {checking
+        ?<Spin label="Checking British English…"/>
+        :<Btn onClick={runCheck}disabled={!h.trim()&&!b.trim()}><Check size={14}/>{gcErr?"Save &amp; approve":"Check & approve"}</Btn>}
       <Btn variant="ghost"onClick={onCancel}>Cancel</Btn>
-    </div>
+    </div>}
   </div>;
 }
 
@@ -2325,67 +2874,67 @@ function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,
   </div>;
 }
 
-function SmartLibraryPicker({d,setD,copy,brief,product}){
-  const[suggested,setSuggested]=useState(null);
+function SmartLibraryPicker({d,setD,copy,brief,product,campaignId}){
+  const[items,setItems]=useState(null);
   const[loading,setLoading]=useState(false);
-  const[promptRequest,setPromptRequest]=useState(null);
+  const[q,setQ]=useState("");
+  const[searchMode,setSearchMode]=useState(false);
 
-  React.useEffect(()=>{
-    // Auto-suggest on mount based on copy + product
-    suggestMatches();
-  },[]);
-
-  const suggestMatches=async()=>{
+  const loadSuggested=async()=>{
     setLoading(true);
     try{
-      const context=`Product: ${product||""}\nCopy direction: ${copy?.direction||""}\nHeader: ${copy?.header||""}\nBrief idea: ${brief?.idea||""}`;
-      const libraryList=LIBRARY.map(l=>`${l.id}: ${l.label} — tags: ${l.tags.join(", ")} — ${l.desc}`).join("\n");
-      const sys=`You are a creative director. Given campaign copy, pick the 3-4 best matching library assets. Return ONLY JSON: {picks:["l1","l3",...], reasoning:"one line why these match"}`;
-      const j=await callClaude(sys,`${context}\n\nLibrary:\n${libraryList}`,true);
-      const picked=(j.picks||[]).map(id=>LIBRARY.find(l=>l.id===id)).filter(Boolean);
-      setSuggested({items:picked,reasoning:j.reasoning});
-    }catch(e){
-      // fallback: show first 4
-      setSuggested({items:LIBRARY.slice(0,4),reasoning:"Showing available assets"});
-    }
+      const res=await api.get("/api/image-library-suggest/"+campaignId);
+      setItems(res);
+    }catch(e){setItems([]);}
     setLoading(false);
   };
+  const runSearch=async(val)=>{
+    setLoading(true);
+    try{setItems(await api.get("/api/image-library"+(val?`?q=${encodeURIComponent(val)}`:"")));}
+    catch(e){setItems([]);}
+    setLoading(false);
+  };
+  React.useEffect(()=>{loadSuggested();},[campaignId]);
 
-  const all=suggested?.items||LIBRARY.slice(0,4);
+  const all=items||[];
 
   return<div style={{marginBottom:12}}>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-      <div style={{fontSize:12,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5}}>Suggested from library</div>
-      <button onClick={suggestMatches}style={{fontSize:11.5,background:"none",border:`1px solid ${C.line}`,borderRadius:6,padding:"3px 9px",cursor:"pointer",color:C.sub,fontWeight:600,display:"flex",alignItems:"center",gap:4}}><RefreshCw size={11}/>Re-suggest</button>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:8}}>
+      <div style={{fontSize:12,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5}}>{searchMode?"Search library":"Suggested from library"}</div>
+      <div style={{display:"flex",gap:6}}>
+        <button onClick={()=>{setSearchMode(false);loadSuggested();}}style={{fontSize:11.5,background:searchMode?"none":C.tealSoft,border:`1px solid ${C.line}`,borderRadius:6,padding:"3px 9px",cursor:"pointer",color:searchMode?C.sub:C.teal,fontWeight:600,display:"flex",alignItems:"center",gap:4}}><Wand2 size={11}/>Suggested</button>
+        <button onClick={()=>setSearchMode(true)}style={{fontSize:11.5,background:searchMode?C.tealSoft:"none",border:`1px solid ${C.line}`,borderRadius:6,padding:"3px 9px",cursor:"pointer",color:searchMode?C.teal:C.sub,fontWeight:600,display:"flex",alignItems:"center",gap:4}}><SearchIcon size={11}/>Search</button>
+      </div>
     </div>
-    {suggested?.reasoning&&<div style={{fontSize:12,color:C.sub,marginBottom:8,fontStyle:"italic"}}>"{suggested.reasoning}"</div>}
-    {loading?<Spin label="Finding best matches…"/>:<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+
+    {searchMode&&<div style={{position:"relative",marginBottom:10}}>
+      <SearchIcon size={14}color={C.sub}style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)"}}/>
+      <input value={q}onChange={e=>{setQ(e.target.value);runSearch(e.target.value);}}placeholder="Search by product, tag, mood…"style={{width:"100%",border:`1.5px solid ${C.line}`,borderRadius:20,padding:"8px 14px 8px 34px",fontSize:13,boxSizing:"border-box",outline:"none"}}/>
+    </div>}
+
+    {!searchMode&&<div style={{fontSize:12,color:C.sub,marginBottom:8,fontStyle:"italic"}}>Matched to {product||"this campaign"} by product &amp; tags.</div>}
+
+    {loading?<Spin label="Finding best matches…"/>
+      :all.length===0
+      ?<div style={{padding:"14px 16px",background:"#F8FAFC",border:`1px dashed ${C.line}`,borderRadius:10,fontSize:12.5,color:C.sub}}>No library images{searchMode?" match that search":" matched yet"}. Upload images in the Image Library tab — the engine tags them and they'll appear here.</div>
+      :<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
       {all.map(l=>{
         const picked=d.libraryPick===l.id;
         return<div key={l.id}style={{border:`2px solid ${picked?C.teal:C.line}`,borderRadius:10,overflow:"hidden",background:picked?C.tealSoft:"#fff"}}>
-          <div onClick={()=>setD({libraryPick:l.id})}style={{padding:"10px 12px",cursor:"pointer"}}>
-            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
-              <div style={{width:28,height:28,borderRadius:6,background:l.tone+"33",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><ImageIcon size={14}color={l.tone}/></div>
-              <div style={{fontSize:12.5,fontWeight:700,lineHeight:1.3,flex:1}}>{l.label}</div>
-              {picked&&<CheckCircle2 size={14}color={C.teal}/>}
+          <div onClick={()=>setD({libraryPick:l.id,libraryPickMeta:{label:l.product||l.file_name||"Library image",desc:l.description||"",tags:l.tags||[]}})}style={{cursor:"pointer"}}>
+            <div style={{aspectRatio:"4/3",background:"#F3F4F6",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}><ImageThumb id={l.id}alt={l.description}/></div>
+            <div style={{padding:"8px 11px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
+                {l.product&&<span style={{fontSize:11,fontWeight:700,color:C.coral}}>{l.product}</span>}
+                {picked&&<CheckCircle2 size={13}color={C.teal}style={{marginLeft:"auto"}}/>}
+              </div>
+              {l.description&&<div style={{fontSize:11,color:C.sub,lineHeight:1.4,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{l.description}</div>}
+              <div style={{display:"flex",flexWrap:"wrap",gap:3,marginTop:5}}>{(l.tags||[]).slice(0,3).map((t,i)=><span key={i}style={{fontSize:9,color:C.sub,background:"#F3F4F6",padding:"1px 5px",borderRadius:999}}>{t}</span>)}</div>
             </div>
-            <div style={{fontSize:11,color:C.sub,lineHeight:1.4}}>{l.desc}</div>
           </div>
-          <div style={{borderTop:`1px solid ${C.line}`,display:"flex",gap:0}}>
-            <a href={`mailto:design@huft.com?subject=Library asset: ${l.label}&body=Requesting download of: ${l.label}%0A%0ACampaign: ${copy?.direction||""}`}
-              style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:4,padding:"6px",fontSize:11,fontWeight:600,color:C.sub,textDecoration:"none",borderRight:`1px solid ${C.line}`}}>
-              <Download size={11}/>Download
-            </a>
-            <button onClick={()=>setPromptRequest(promptRequest===l.id?null:l.id)}
-              style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:4,padding:"6px",fontSize:11,fontWeight:600,color:promptRequest===l.id?C.coral:C.sub,background:"transparent",border:"none",cursor:"pointer"}}>
-              <Wand2 size={11}/>Request prompt
-            </button>
-          </div>
-          {promptRequest===l.id&&<PromptRequestForm asset={l}copy={copy}onClose={()=>setPromptRequest(null)}/>}
         </div>;
       })}
     </div>}
-    {d.libraryPick&&<LibraryMatchCheck pick={LIBRARY.find(l=>l.id===d.libraryPick)}copy={copy}/>}
   </div>;
 }
 
@@ -2659,7 +3208,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
         </div>}
 
         {/* Library picker */}
-        {imageMode==="library"&&<SmartLibraryPicker d={d}setD={setD}copy={copy}brief={c.data?.brief}product={c.product}/>}
+        {imageMode==="library"&&<SmartLibraryPicker d={d}setD={setD}copy={copy}brief={c.data?.brief}product={c.product}campaignId={c.id}/>}
 
         {/* Design complete flow — requires uploaded file/link before marking done */}
         {(approvedPrompt||d.libraryPick)&&<FinalDesignUpload c={c}d={d}patch={patch}me={me}/>}
@@ -2739,7 +3288,7 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete}){
     const p=parseName(c.name);
     const design=c.data?.design||{};
     const approvedPrompt=design.imagePrompts&&design.approvedPromptIdx!=null?design.imagePrompts[design.approvedPromptIdx]:null;
-    const libPick=design.libraryPick?LIBRARY.find(l=>l.id===design.libraryPick):null;
+    const libPick=design.libraryPick?(design.libraryPickMeta||{label:"Library image",desc:""}):null;
     const finalFile=design.finalFile;
     const tone=ROW_TONE.done;
     const canManage=me.role==="admin"||me.role==="business";
