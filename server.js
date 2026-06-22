@@ -16,7 +16,14 @@ const PORT = process.env.PORT || 8080;
 const JWT_SECRET = process.env.JWT_SECRET || "huft-crm-dev-secret-change-in-prod";
 
 app.use(express.json({ limit: "10mb" }));
-app.use(express.static(path.join(__dirname, "public")));
+app.use(express.static(path.join(__dirname, "public"), {
+  setHeaders: (res, filePath) => {
+    // Never let the browser/CDN serve a stale index.html after a deploy.
+    if (filePath.endsWith(".html")) {
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    }
+  }
+}));
 
 const dns = require("dns");
 dns.setDefaultResultOrder("ipv4first");
@@ -972,9 +979,10 @@ app.post("/api/audiences/seed", authMiddleware, async (req, res) => {
 });
 
 // ── SPA fallback ──────────────────────────────────────────────────────────────
-app.get("*", (req, res) =>
-  res.sendFile(path.join(__dirname, "public", "index.html"))
-);
+app.get("*", (req, res) => {
+  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 app.listen(PORT, async () => {
