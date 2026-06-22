@@ -9,6 +9,7 @@ const { Pool } = require("pg");
 const bcrypt  = require("bcryptjs");
 const jwt     = require("jsonwebtoken");
 const path    = require("path");
+const crypto  = require("crypto");
 
 const app  = express();
 const PORT = process.env.PORT || 8080;
@@ -320,30 +321,42 @@ app.get("/api/campaigns", authMiddleware, async (req, res) => {
       FROM   campaigns c
       LEFT JOIN audiences a ON c.audience_id = a.id
       ORDER BY
-        CASE c.stage WHEN 'brief' THEN 1 WHEN 'content' THEN 2 WHEN 'design' THEN 3 ELSE 4 END,
+        CASE c.stage WHEN 'brief' THEN 1 WHEN 'content' THEN 2 WHEN 'brand_review' THEN 3 WHEN 'design' THEN 4 ELSE 5 END,
         c.updated_at DESC
     `);
-    // Ensure data field is always a parsed object
+    const parse = (v, fb) => v == null ? fb : (typeof v === "string" ? (()=>{try{return JSON.parse(v);}catch{return fb;}})() : v);
     res.json(rows.map(r => ({
       ...r,
-      data: r.data
-        ? (typeof r.data === 'string' ? JSON.parse(r.data) : r.data)
-        : {}
+      data: parse(r.data, {}),
+      rtbs: parse(r.rtbs, []),
+      references: parse(r.references, []),
     })));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post("/api/campaigns", authMiddleware, async (req, res) => {
-  const { name, channel, product, audience_id, audience_label, segment,
-          objective, offer, crm_type } = req.body;
+  const b = req.body || {};
   const id = uid();
+  // Columns that can be set at creation time
+  const cols = ["name","channel","product","audience_id","audience_label","segment",
+    "objective","offer","crm_type","stage","go_live_date","campaign_week","campaign_month",
+    "tat_brief_due","tat_content_due","tat_design_due","brief_started_at"];
+  const jsonCols = { data: true, rtbs: true, references: true };
   try {
+    const names = ["id"]; const ph = ["$1"]; const vals = [id]; let i = 2;
+    for (const c of cols) {
+      if (b[c] !== undefined) { names.push(c); ph.push(`$${i++}`); vals.push(b[c]); }
+    }
+    for (const c of Object.keys(jsonCols)) {
+      if (b[c] !== undefined) {
+        names.push(c === "references" ? '"references"' : c);
+        ph.push(`$${i++}`); vals.push(JSON.stringify(b[c]));
+      }
+    }
+    names.push("created_by"); ph.push(`$${i++}`); vals.push(req.user.id);
     const rows = await db(
-      `INSERT INTO campaigns
-       (id,name,channel,product,audience_id,audience_label,segment,objective,offer,crm_type,created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
-      [id, name||"", channel||"WhatsApp", product||"", audience_id||null,
-       audience_label||"", segment||"", objective||"", offer||"", crm_type||"D2C", req.user.id]
+      `INSERT INTO campaigns (${names.join(",")}) VALUES (${ph.join(",")}) RETURNING *`,
+      vals
     );
     res.json(rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -355,6 +368,7 @@ app.put("/api/campaigns/:id", authMiddleware, async (req, res) => {
     "offer","crm_type","stage","data","go_live_date","campaign_week","campaign_month",
     "tat_brief_due","tat_content_due","tat_design_due",
     "brief_started_at","content_started_at","design_started_at","went_live_at",
+    "rtbs","references",
   ];
   const special = { copy_approver: null, design_approver: null };
 
@@ -365,8 +379,10 @@ app.put("/api/campaigns/:id", authMiddleware, async (req, res) => {
 
     for (const key of allowed) {
       if (req.body[key] !== undefined) {
-        sets.push(`${key}=$${i++}`);
-        vals.push(key === "data" ? JSON.stringify(req.body[key]) : req.body[key]);
+        const col = key === "references" ? '"references"' : key;       // reserved word
+        sets.push(`${col}=$${i++}`);
+        const jsonCols = key === "data" || key === "rtbs" || key === "references";
+        vals.push(jsonCols ? JSON.stringify(req.body[key]) : req.body[key]);
       }
     }
     if (req.body.copy_approver !== undefined) {
@@ -376,6 +392,10 @@ app.put("/api/campaigns/:id", authMiddleware, async (req, res) => {
     if (req.body.design_approver !== undefined) {
       sets.push(`design_approver=$${i++}`, `design_approved_at=NOW()`);
       vals.push(req.body.design_approver);
+    }
+    if (req.body.brand_approver !== undefined) {
+      sets.push(`brand_approver=$${i++}`, `brand_approved_at=NOW()`);
+      vals.push(req.body.brand_approver);
     }
 
     if (!sets.length) return res.json({ ok: true });
@@ -443,6 +463,252 @@ app.post("/api/feedback", authMiddleware, async (req, res) => {
     res.json(rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+
+// ── BRAND REVIEW · COMMENTS · SHEETS SYNC (v2) ───────────────────────────────
+// BLOCK B — Comments API
+// Paste anywhere among the other route definitions (e.g. after the
+// feedback routes).
+// ─────────────────────────────────────────────────────────────
+
+// List comments for a campaign (optionally by context)
+app.get("/api/campaigns/:id/comments", authMiddleware, async (req, res) => {
+  try {
+    const ctx = req.query.context;
+    const rows = ctx
+      ? await db("SELECT * FROM comments WHERE campaign_id=$1 AND context=$2 ORDER BY created_at ASC", [req.params.id, ctx])
+      : await db("SELECT * FROM comments WHERE campaign_id=$1 ORDER BY created_at ASC", [req.params.id]);
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Add a comment or reply. Any authenticated user can comment & reply.
+app.post("/api/campaigns/:id/comments", authMiddleware, async (req, res) => {
+  const { body, context, parent_id } = req.body;
+  if (!body || !body.trim()) return res.status(400).json({ error: "Empty comment" });
+  try {
+    const rows = await db(
+      `INSERT INTO comments (campaign_id, context, parent_id, body, author_id, author_name, author_role)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [req.params.id, context === "design" ? "design" : "copy", parent_id || null,
+       body.trim(), req.user.id, req.user.name, req.user.role]
+    );
+    res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Resolve / unresolve a comment thread (brand lead or admin)
+app.put("/api/comments/:id", authMiddleware, async (req, res) => {
+  try {
+    if (req.body.resolved !== undefined)
+      await db("UPDATE comments SET resolved=$1 WHERE id=$2", [!!req.body.resolved, req.params.id]);
+    if (req.body.body !== undefined)
+      await db("UPDATE comments SET body=$1 WHERE id=$2 AND author_id=$3", [req.body.body, req.params.id, req.user.id]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete("/api/comments/:id", authMiddleware, async (req, res) => {
+  try {
+    // author or admin can delete
+    await db("DELETE FROM comments WHERE id=$1 AND (author_id=$2 OR $3='admin')",
+      [req.params.id, req.user.id, req.user.role]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+
+// ─────────────────────────────────────────────────────────────
+// BLOCK C — Brand approval gate (server-side enforcement)
+// This makes the brand approval authoritative: only a 'brand' or
+// 'admin' user can move a campaign from brand_review → design.
+// Paste among the routes.
+// ─────────────────────────────────────────────────────────────
+
+app.post("/api/campaigns/:id/brand-approve", authMiddleware, roles("brand", "admin"), async (req, res) => {
+  try {
+    const rows = await db(
+      `UPDATE campaigns
+         SET stage='design', brand_approver=$1, brand_approved_at=NOW()
+       WHERE id=$2 AND stage='brand_review'
+       RETURNING *`,
+      [req.user.name, req.params.id]
+    );
+    if (!rows.length) return res.status(409).json({ error: "Campaign is not awaiting brand review." });
+    res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Brand lead sends copy back to the content team with required changes
+app.post("/api/campaigns/:id/brand-reject", authMiddleware, roles("brand", "admin"), async (req, res) => {
+  try {
+    const rows = await db(
+      `UPDATE campaigns SET stage='content', copy_approver=NULL WHERE id=$1 AND stage='brand_review' RETURNING *`,
+      [req.params.id]
+    );
+    if (!rows.length) return res.status(409).json({ error: "Campaign is not awaiting brand review." });
+    // Optionally log the reason as a comment
+    if (req.body.reason && req.body.reason.trim()) {
+      await db(
+        `INSERT INTO comments (campaign_id, context, body, author_id, author_name, author_role)
+         VALUES ($1,'copy',$2,$3,$4,$5)`,
+        [req.params.id, "Sent back: " + req.body.reason.trim(), req.user.id, req.user.name, req.user.role]
+      );
+    }
+    res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+
+// ─────────────────────────────────────────────────────────────
+// BLOCK D — Google Sheets sync
+// Requires a Google service account with read access to the sheet,
+// OR a sheet published to the web as CSV. The simplest, credential-free
+// path is the published-CSV approach used below.
+//
+// Env needed: none for published-CSV. For private sheets, set
+//   GOOGLE_SHEETS_API_KEY  and share the sheet as "anyone with link (viewer)".
+//
+// Paste among the routes.
+// ─────────────────────────────────────────────────────────────
+
+const rowKey = (r) => crypto.createHash("md5").update(JSON.stringify(r)).digest("hex").slice(0, 12);
+
+// Save / connect the sheet config (admin or business)
+app.put("/api/sheet-sync", authMiddleware, roles("admin", "business"), async (req, res) => {
+  const { sheet_id, sheet_range, enabled } = req.body;
+  try {
+    await db(
+      `INSERT INTO sheet_sync (id, sheet_id, sheet_range, enabled, created_by)
+       VALUES ('default',$1,$2,$3,$4)
+       ON CONFLICT (id) DO UPDATE SET sheet_id=$1, sheet_range=$2, enabled=$3`,
+      [sheet_id || null, sheet_range || "Briefs!A:K", !!enabled, req.user.id]
+    );
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get("/api/sheet-sync", authMiddleware, async (req, res) => {
+  try {
+    const rows = await db("SELECT id, sheet_id, sheet_range, enabled, last_synced FROM sheet_sync WHERE id='default'");
+    res.json(rows[0] || { enabled: false });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Core sync routine — fetch sheet rows, skip already-imported, generate + insert briefs.
+async function runSheetSync() {
+  const cfgRows = await db("SELECT * FROM sheet_sync WHERE id='default'");
+  const cfg = cfgRows[0];
+  if (!cfg || !cfg.enabled || !cfg.sheet_id) return { skipped: true, reason: "sync disabled or no sheet" };
+
+  // Published-CSV fetch (sheet must be: File → Share → Publish to web → CSV)
+  // Format: https://docs.google.com/spreadsheets/d/<ID>/gviz/tq?tqx=out:csv&sheet=Briefs
+  const sheetName = (cfg.sheet_range || "Briefs").split("!")[0];
+  const url = `https://docs.google.com/spreadsheets/d/${cfg.sheet_id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error("Could not fetch sheet (is it published to web as CSV?)");
+  const csv = await r.text();
+
+  // Minimal CSV parse (handles quoted cells)
+  const parseCSV = (text) => {
+    const rows = []; let row = [], cell = "", q = false;
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (q) {
+        if (ch === '"' && text[i + 1] === '"') { cell += '"'; i++; }
+        else if (ch === '"') q = false;
+        else cell += ch;
+      } else {
+        if (ch === '"') q = true;
+        else if (ch === ",") { row.push(cell); cell = ""; }
+        else if (ch === "\n") { row.push(cell); rows.push(row); row = []; cell = ""; }
+        else if (ch === "\r") {} else cell += ch;
+      }
+    }
+    if (cell.length || row.length) { row.push(cell); rows.push(row); }
+    return rows;
+  };
+  const raw = parseCSV(csv).filter(r => r.some(c => (c || "").trim()));
+  if (!raw.length) return { created: 0, reason: "empty sheet" };
+
+  const hdrIdx = raw.findIndex(r => r.some(c => String(c).trim().toLowerCase() === "product"));
+  if (hdrIdx < 0) throw new Error("No 'Product' header found in sheet");
+  const headers = raw[hdrIdx].map(c => String(c || "").trim().toLowerCase());
+  const col = (n) => headers.findIndex(h => h === n);
+  const map = { crmType: col("crm type"), channel: col("channel"), product: col("product"),
+    pillar: col("pillar"), audience: col("audience"), objective: col("objective"),
+    offer: col("offer"), hook: col("hook / angle"), rtbs: col("rtbs"),
+    references: col("reference links"), goLive: col("go live date") };
+  const splitList = v => String(v || "").split(/[;\n]/).map(x => x.trim()).filter(Boolean);
+
+  const imported = new Set(cfg.imported_keys || []);
+  let created = 0; const newKeys = [];
+
+  for (let idx = hdrIdx + 1; idx < raw.length; idx++) {
+    const rr = raw[idx];
+    const get = k => (map[k] >= 0 ? rr[map[k]] : undefined);
+    const product = String(get("product") || "").trim();
+    if (!product || String(get("goLive") || "").includes("example")) continue;
+
+    const norm = {
+      crmType: String(get("crmType") || "D2C").trim(),
+      channel: String(get("channel") || "WhatsApp").trim(),
+      product,
+      pillar: String(get("pillar") || "").trim(),
+      audience: String(get("audience") || "").trim(),
+      objective: String(get("objective") || "").trim(),
+      offer: String(get("offer") || "").trim(),
+      hook: String(get("hook") || "").trim(),
+      rtbs: splitList(get("rtbs")),
+      references: splitList(get("references")),
+      goLive: String(get("goLive") || "").trim(),
+    };
+    const key = rowKey(norm);
+    if (imported.has(key)) continue;       // already imported this exact row
+
+    // Generate the brief via the LLM
+    const sys = `You write tight CRM creative briefs for HUFT. Return ONLY JSON: {"campaignName":"MonYY_Product_Hook_Aud","strategicInsight":"","idea":"","proofPoints":["","",""],"pillar":"Importance","copyDirection":"","whatsappNote":""}`;
+    const usr = `CRM type: ${norm.crmType}\nChannel: ${norm.channel}\nProduct: ${norm.product}\nPillar: ${norm.pillar || "Importance"}\nAudience: ${norm.audience}\nObjective: ${norm.objective}\nOffer: ${norm.offer || "none"}\nHook: ${norm.hook || "derive"}\nRTBs: ${norm.rtbs.join("; ") || "derive"}\nReferences: ${norm.references.join(" , ") || "none"}`;
+    let j = {};
+    try { const txt = await generate(sys, usr); j = JSON.parse(txt.replace(/```json|```/g, "").trim().replace(/^[^[{]*/, "")); }
+    catch { j = { campaignName: norm.product, strategicInsight: "", idea: "", proofPoints: norm.rtbs, pillar: norm.pillar || "Importance", copyDirection: "", whatsappNote: "" }; }
+    if (norm.rtbs.length) j.proofPoints = norm.rtbs;
+
+    const isRetail = norm.crmType.toLowerCase() === "retail";
+    const channel = isRetail ? "WhatsApp" : norm.channel;
+    const gl = norm.goLive || null;
+    await db(
+      `INSERT INTO campaigns (name, channel, product, audience_label, segment, objective, offer, crm_type, go_live_date, rtbs, "references", data, stage, brief_started_at)
+       VALUES ($1,$2,$3,$4,$4,$5,$6,$7,$8,$9,$10,$11,'content',NOW())`,
+      [j.campaignName || norm.product, channel, norm.product, norm.audience, norm.objective,
+       norm.offer, norm.crmType, gl, JSON.stringify(norm.rtbs), JSON.stringify(norm.references),
+       JSON.stringify({ brief: { ...j, rtbs: norm.rtbs, references: norm.references, source: "sheet" } })]
+    );
+    created++; newKeys.push(key);
+  }
+
+  const merged = [...(cfg.imported_keys || []), ...newKeys].slice(-5000); // cap memory
+  await db("UPDATE sheet_sync SET last_synced=NOW(), imported_keys=$1 WHERE id='default'", [JSON.stringify(merged)]);
+  return { created };
+}
+
+// Manual trigger (button in the app) — admin/business
+app.post("/api/sheet-sync/run", authMiddleware, roles("admin", "business"), async (req, res) => {
+  try { res.json(await runSheetSync()); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Cron trigger — called by Vercel Cron every 6h. Protected by a shared secret.
+app.get("/api/cron/sheet-sync", async (req, res) => {
+  if (!process.env.CRON_SECRET) return res.status(503).json({ error: "CRON_SECRET not configured" });
+  const secret = req.headers["authorization"] || req.query.key || "";
+  if (secret !== `Bearer ${process.env.CRON_SECRET}` && secret !== process.env.CRON_SECRET) {
+    return res.status(401).json({ error: "Unauthorised" });
+  }
+  try { res.json(await runSheetSync()); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 
 // ── PERFORMANCE REPORTS ───────────────────────────────────────────────────────
 
