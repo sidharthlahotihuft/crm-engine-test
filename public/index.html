@@ -54,7 +54,7 @@ async function callClaude(system,prompt,expectJson){
 // Role-based default tab
 const ROLE_TAB={admin:"dashboard",business:"dashboard",content:"content",design:"design",brand:"dashboard"};
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v5 · analytics + month report + go-live required";
+const BUILD="v7 · creative composer (packshot + text)";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -622,6 +622,31 @@ function ApproverChip({name,at,color=C.teal}){if(!name)return null;return<span s
 const copyTextFromOption=(o)=>{if(!o)return"";return[o.subject?("Subject: "+o.subject):"",o.subject?"":undefined,o.header,"",o.body,"",o.cta?("CTA: "+o.cta):""].filter(x=>x!==undefined).join("\n").replace(/\n{3,}/g,"\n\n").trim();};
 // How many copy options to generate per channel — Email gets 2, WhatsApp/Push get 5
 const copyOptionCount=(ch)=>{const c=(ch||"").toLowerCase();return(c.includes("email")&&!c.includes("whatsapp"))?2:5;};
+
+// Reusable copy generator (shared by the per-card flow and bulk generate).
+function briefBlockFor(c){
+  const b=c.data?.brief||{};
+  const rtbsArr=(b.rtbs||c.rtbs||[]).filter(Boolean);
+  const refsArr=(b.references||c.references||[]).filter(Boolean);
+  return "Brief\nProduct: "+c.product+"\nAudience: "+(c.audience_label||c.segment)+"\nObjective: "+c.objective+"\nOffer: "+(c.offer||"none")+"\nCRM: "+(c.crm_type||"D2C")+"\nInsight: "+b.strategicInsight+"\nIdea: "+b.idea+"\nPillar: "+(b.pillar||"—")+"\nCopy direction: "+(b.copyDirection||"—")+(rtbsArr.length?"\nRTBs to weave into the body (use these as the proof points): "+rtbsArr.join("; "):"")+(refsArr.length?"\nReference links (honour their tone & direction): "+refsArr.join(" , "):"");
+}
+async function genCopyOptionsFor(c, ruleStr, fb){
+  const isPush=c.channel==="Push notification";
+  const isEmail=c.channel==="Email"||c.channel==="WhatsApp + Email";
+  const channelRules=isPush
+    ?`PUSH NOTIFICATION RULES (NON-NEGOTIABLE):\n- Title: MAX 50 chars. Short, punchy.\n- Body: MAX 90 chars. One sentence. No bullets.\n- Max 1 emoji. 2-second read.\n- CTA: 2-3 words.`
+    :isEmail
+    ?`EMAIL RULES:\n- Subject line: under 50 chars, curiosity or benefit-led.\n- Header / image copy: 2-3 short punchy lines for the hero image overlay.\n- Body: warm opener + 3-4 ✓ proof bullets + sign-off. Slightly longer than WhatsApp is fine.\n- CTA: clear action phrase.`
+    :`WHATSAPP RULES:\n- Header: 2-3 short punchy lines.\n- Body: opener + 3-4 ✓ bullets + sign-off.\n- CTA: clear action phrase.`;
+  const nOpts=copyOptionCount(c.channel);
+  const shape=isPush
+    ?"each: {direction,header,body,cta}. header=push title MAX 50 chars, body=MAX 90 chars one sentence, cta=2-3 words"
+    :isEmail
+    ?"each: {direction,subject,header,body,cta}. subject=email subject line under 50 chars, header=image copy/overlay 2-3 short lines, body=email opener+✓ bullets+sign-off, cta=action phrase"
+    :"each: {direction,header,body,cta}. header=image overlay 2-3 short punchy lines, body=WhatsApp opener+bullets+sign-off, cta=action phrase";
+  const sys="You write "+(c.channel||"WhatsApp")+" CRM copy for HUFT.\n"+BRAND_CONTEXT+"\n"+channelRules+"\nRULEBOOK:\n"+ruleStr+(fb?"\nTeam feedback:\n"+fb:"")+"\nReturn ONLY JSON array of "+nOpts+" options, "+shape;
+  return await callClaude(sys, briefBlockFor(c), true);
+}
 // One-click "Copy text" button with copied-state feedback
 function CopyBtn({text,label="Copy text",small=true,style}){
   const[done,setDone]=useState(false);
@@ -833,6 +858,53 @@ function App(){
     setCampaigns(cs=>[c,...cs]);setActiveId(c.id);setTab("brief");
   };
 
+  // Multi-copy split: turn 2+ generated copies into separate assets; optionally archive the rest.
+  const splitCopyAssets=async(src,indices,archiveRest)=>{
+    const opts=src.data?.copyOptions||[];
+    if(!indices||indices.length<1)return;
+    const base={name:src.name,channel:src.channel,product:src.product,audience_id:src.audience_id,audience_label:src.audience_label,segment:src.segment,objective:src.objective,offer:src.offer,crm_type:src.crm_type,go_live_date:src.go_live_date,campaign_week:src.campaign_week,campaign_month:src.campaign_month,rtbs:src.rtbs,references:src.references};
+    const sorted=[...indices].sort((a,b)=>a-b);
+    const first=sorted[0], rest=sorted.slice(1);
+    try{
+      await api.put("/api/campaigns/"+src.id,{data:{...(src.data||{}),selectedCopyIdx:first},stage:"brand_review",copy_approver:me.name});
+      const made=[];
+      for(const idx of rest){
+        const nc=await api.post("/api/campaigns",{...base,stage:"brand_review",data:{...(src.data||{}),copyOptions:[opts[idx]],selectedCopyIdx:0,splitFrom:src.id}});
+        await api.put("/api/campaigns/"+nc.id,{copy_approver:me.name}).catch(()=>{});
+        made.push({...nc,copy_approver:me.name});
+      }
+      if(archiveRest){
+        const leftover=opts.map((o,i)=>i).filter(i=>!sorted.includes(i));
+        for(const idx of leftover){
+          const nc=await api.post("/api/campaigns",{...base,stage:"content",data:{...(src.data||{}),copyOptions:[opts[idx]],selectedCopyIdx:null,archived:true,splitFrom:src.id}});
+          made.push(nc);
+        }
+      }
+      setCampaigns(cs=>[...made,...cs.map(x=>x.id===src.id?{...x,data:{...(x.data||{}),selectedCopyIdx:first},stage:"brand_review",copy_approver:me.name}:x)]);
+      if(toast)toast("Split into "+sorted.length+" asset"+(sorted.length>1?"s":"")+(archiveRest?" · extras archived":"")+" ✓","success");
+      setTab("content");
+    }catch(e){if(toast)toast("Split failed: "+(e.message||"error"),"error");}
+  };
+
+  // Bulk generate: run the copy engine for every brief that has no copy yet.
+  const bulkGenerate=async(onProgress)=>{
+    const ruleStr=activeRuleText(rules.filter(r=>r.type==="copy"));
+    const pending=(campaigns||[]).filter(c=>!isArchived(c)&&c.data&&c.data.brief&&c.stage==="content"&&!c.data.copyOptions);
+    const total=pending.length; let done=0;
+    if(onProgress)onProgress(0,total);
+    for(const c of pending){
+      try{
+        const fb=recentFeedback("content");
+        const j=await genCopyOptionsFor(c,ruleStr,fb);
+        await api.put("/api/campaigns/"+c.id,{data:{...(c.data||{}),copyOptions:j,selectedCopyIdx:null},copy_approver:null,stage:"content"});
+        setCampaigns(cs=>cs.map(x=>x.id===c.id?{...x,data:{...(x.data||{}),copyOptions:j,selectedCopyIdx:null}}:x));
+      }catch(e){console.error("bulk gen failed:",c.id,e);}
+      done++; if(onProgress)onProgress(done,total);
+    }
+    if(toast)toast("Generated copy for "+done+" of "+total+" briefs ✓","success");
+    return {done,total};
+  };
+
   // Bulk import: takes normalised rows, runs each through the AI brief engine, creates campaigns.
   // Returns {created, failed, errors}. onProgress(done,total) for UI feedback.
   const bulkImportBriefs=async(rows,onProgress)=>{
@@ -932,8 +1004,8 @@ function App(){
     <div style={{flex:1,minWidth:0,height:"100vh",overflowY:"auto"}}>
     <div style={{maxWidth:1120,margin:"0 auto",padding:"28px 28px"}}>
       {tab==="dashboard"&&<Dashboard campaigns={campaigns}onNew={newCampaign}onOpen={open}me={me}setTab={setTab}/>}
-      {tab==="brief"&&<BriefTab active={active}patch={patch}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}audiences={audiences}onDelete={delCampaign}onNew={newCampaign}onBulkImport={bulkImportBriefs}toast={toast}/>}
-      {(tab==="content"||tab==="brand_review")&&<ContentTab active={active}patch={patch}copyRules={copyRules}addRule={addRule}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}toast={toast}onDelete={delCampaign}/>}
+      {tab==="brief"&&<BriefTab active={active}patch={patch}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}audiences={audiences}onDelete={delCampaign}onNew={newCampaign}onBulkImport={bulkImportBriefs}onBulkGenerate={bulkGenerate}toast={toast}/>}
+      {(tab==="content"||tab==="brand_review")&&<ContentTab active={active}patch={patch}copyRules={copyRules}addRule={addRule}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}toast={toast}onDelete={delCampaign}onSplit={splitCopyAssets}/>}
       {tab==="design"&&<DesignTab active={active}patch={patch}promptRules={promptRules}addRule={addRule}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}onDelete={delCampaign}/>}
       {tab==="library"&&<ImageLibraryTab me={me}toast={toast}/>}
       {tab==="done"&&<DoneTab campaigns={campaigns}patch={patch}onOpen={open}me={me}setTab={setTab}onDelete={delCampaign}/>}
@@ -1702,7 +1774,7 @@ function BriefChat({campaignId,patch,onBriefReady,me,recentFeedback,product}){
 const AlertCircle=p=><Svg{...p}><circle cx="12"cy="12"r="10"/><path d="M12 8v4M12 16h.01"/></Svg>;
 
 /* ===== Brief Tab ======================================================== */
-function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,onOpen,onDelete,onNew,onBulkImport,toast}){
+function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,onOpen,onDelete,onNew,onBulkImport,onBulkGenerate,toast}){
   const[view,setView]=useState("list");
   const canCreate=me.role==="admin"||me.role==="business";
   const[importing,setImporting]=useState(false); // false | "open" | "working" | "done"
@@ -1710,6 +1782,15 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
   const[importProg,setImportProg]=useState({done:0,total:0});
   const[importResult,setImportResult]=useState(null);
   const[importErr,setImportErr]=useState("");
+  const[bulkGen,setBulkGen]=useState(null); // null | {done,total}
+  const pendingCopy=(campaigns||[]).filter(c=>!isArchived(c)&&c.data&&c.data.brief&&c.stage==="content"&&!c.data.copyOptions);
+  const runBulkGenerate=async()=>{
+    if(!onBulkGenerate||!pendingCopy.length)return;
+    setBulkGen({done:0,total:pendingCopy.length});
+    await onBulkGenerate((done,total)=>setBulkGen({done,total}));
+    setBulkGen(null);
+    setTab("content");
+  };
   const allBriefs=(campaigns||[]).filter(c=>c.stage==="brief"&&!isArchived(c));
   const briefedElsewhere=(campaigns||[]).filter(c=>c.stage!=="brief"&&!isArchived(c)&&c.data?.brief).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
   const briefArchived=(campaigns||[]).filter(c=>isArchived(c)&&c.data?.brief).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
@@ -1913,6 +1994,14 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
       :(allBriefs.length===0&&briefedElsewhere.length===0&&briefArchived.length===0)
       ?<Card><Empty icon={<FileText size={26}color={C.sub}/>}title="No briefs yet"sub="Start a new asset and the engine walks it through Brief → Copy → Design."action={canCreate?<Btn onClick={onNew}><Plus size={16}/>New asset</Btn>:null}/></Card>
       :<div>
+        {(pendingCopy.length>0||bulkGen)&&<div style={{marginBottom:16,border:`1.5px solid ${C.coral}`,borderRadius:12,padding:"14px 16px",background:C.coralSoft,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+          <div style={{width:36,height:36,borderRadius:10,background:C.coral,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={19}/></div>
+          <div style={{flex:1,minWidth:160}}>
+            <div style={{fontWeight:800,fontSize:15,color:C.ink}}>{bulkGen?`Generating copy… ${bulkGen.done}/${bulkGen.total}`:`${pendingCopy.length} brief${pendingCopy.length>1?"s":""} ready for copy`}</div>
+            <div style={{fontSize:12.5,color:C.sub}}>{bulkGen?"The engine is writing copy for each brief — hang tight.":"Generate copy for the whole batch in one go, then review in the Copy tab."}</div>
+          </div>
+          {bulkGen?<Spin label=""/>:<Btn onClick={runBulkGenerate}><Sparkles size={15}/>Generate all copy</Btn>}
+        </div>}
         {allBriefs.length>0&&<div style={{marginBottom:16}}>
           <div style={{fontSize:11,fontWeight:700,color:C.coral,textTransform:"uppercase",letterSpacing:.5,marginBottom:8,display:"flex",alignItems:"center",gap:5}}><Sparkles size={12}/>New assets · awaiting brief · {allBriefs.length}</div>
           {groupByDate(allBriefs).map(([date,items])=><div key={date}style={{marginBottom:10}}>
@@ -2416,7 +2505,7 @@ function ImageFull({id}){
   return<img src={src}alt=""style={{width:"100%",borderRadius:10}}/>;
 }
 
-function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,saveFeedback,campaigns,onOpen,toast,onDelete}){
+function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,saveFeedback,campaigns,onOpen,toast,onDelete,onSplit}){
   // Copy page shows: assets still in copy stage, PLUS any non-archived asset whose copy
   // was already approved (those have moved on to Design/Done but should remain visible here).
   const allCopy=(campaigns||[]).filter(c=>!isArchived(c)&&(c.stage==="content"||(c.data?.copyOptions&&c.data?.selectedCopyIdx!=null)));
@@ -2439,6 +2528,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
     const[refineText,setRefineText]=useState("");
     const[showAll,setShowAll]=useState(false);
     const[manualMode,setManualMode]=useState(null); // null | "add" | "edit"
+    const[multiPick,setMultiPick]=useState([]);
     const[brandRejecting,setBrandRejecting]=useState(false);
     const[brandReason,setBrandReason]=useState("");
     const canBrandReview=(me.role==="brand"||me.role==="admin");
@@ -2658,6 +2748,34 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
             <ContentCard o={opts[sel]}idx={sel}sel={true}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}onEditSave={editDirectly}channel={c.channel}/>
           </div>}
           {sel!=null&&<button onClick={()=>setShowAll(v=>!v)}style={{display:"flex",alignItems:"center",gap:5,background:"none",border:"none",cursor:"pointer",color:C.sub,fontSize:12.5,fontWeight:600,marginBottom:8}}>{showAll?<><ChevronDown size={13}/>Hide other options</>:<><Eye size={13}/>See other {opts.length-1} options</>}</button>}
+          {sel==null&&opts&&opts.length>1&&onSplit&&(()=>{
+            const toggle=i=>setMultiPick(p=>p.includes(i)?p.filter(x=>x!==i):[...p,i]);
+            const n=multiPick.length;
+            return <div style={{marginBottom:12,border:`1.5px solid ${C.coral}`,borderRadius:12,overflow:"hidden"}}>
+              <div style={{padding:"10px 14px",background:C.coralSoft,fontSize:12.5,fontWeight:700,color:C.ink,display:"flex",alignItems:"center",gap:7}}><Copy size={14}color={C.coral}/>Use more than one — tick 2+ copies to split each into its own asset</div>
+              <div style={{padding:"6px 14px"}}>
+                {opts.map((o,i)=>{const on=multiPick.includes(i);return(
+                  <label key={i}style={{display:"flex",alignItems:"flex-start",gap:9,padding:"8px 0",cursor:"pointer",borderBottom:i<opts.length-1?`1px solid ${C.line}`:"none"}}>
+                    <input type="checkbox"checked={on}onChange={()=>toggle(i)}style={{marginTop:3,width:15,height:15,accentColor:C.coral}}/>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:10,fontWeight:700,color:C.purple,textTransform:"uppercase",letterSpacing:.4}}>{o.direction||("Option "+(i+1))}</div>
+                      <div style={{fontSize:13,fontWeight:600,color:C.ink,whiteSpace:"pre-line"}}>{o.header}</div>
+                    </div>
+                  </label>);})}
+                <div style={{display:"flex",alignItems:"center",gap:12,margin:"10px 0 4px",flexWrap:"wrap"}}>
+                  <Btn small disabled={n<2||busy}onClick={()=>{
+                    const leftover=opts.length-n;
+                    let archiveRest=false;
+                    if(leftover>0)archiveRest=window.confirm("Create "+n+" assets from the selected copies.\n\nAlso keep the remaining "+leftover+" unselected cop"+(leftover>1?"ies":"y")+" by adding "+(leftover>1?"them":"it")+" to the Archive?\n\nOK = archive the extras · Cancel = discard the extras");
+                    onSplit(c,[...multiPick].sort((a,b)=>a-b),archiveRest);
+                    setMultiPick([]);
+                  }}><Copy size={13}/>Create {n>1?n+" assets":"assets"}</Btn>
+                  {n>0&&<span style={{fontSize:12,color:C.sub}}>{n} selected</span>}
+                  <span style={{fontSize:11.5,color:C.sub}}>Or pick a single option below to send just one to brand review.</span>
+                </div>
+              </div>
+            </div>;
+          })()}
           {(sel==null||showAll)&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
             {opts.map((o,i)=>{if(sel!=null&&i===sel)return null;return<ContentCard key={i}o={o}idx={i}sel={false}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}onEditSave={editDirectly}channel={c.channel}/>;})}</div>}
         </div>}
@@ -3112,6 +3230,143 @@ function FinalDesignUpload({c,d,patch,me}){
   </div>;
 }
 
+// ===== Creative Composer: real packshot + brand-font text on a canvas, exact export =====
+const COMPOSER_SIZES=[
+  {label:"WhatsApp 4:5",w:1080,h:1350},
+  {label:"WhatsApp 9:16",w:1080,h:1920},
+  {label:"Square 1:1",w:1080,h:1080},
+  {label:"Email header",w:1200,h:600},
+];
+const COMPOSER_FONTS=["Arial","Arial Black","Helvetica","Georgia","Impact","Trebuchet MS","Verdana"];
+function loadImage(src){return new Promise((res,rej)=>{const im=new Image();im.crossOrigin="anonymous";im.onload=()=>res(im);im.onerror=rej;im.src=src;});}
+function CreativeComposer({c,copy,toast}){
+  const ref=React.useRef(null);
+  const[sizeIdx,setSizeIdx]=useState(0);
+  const sz=COMPOSER_SIZES[sizeIdx];
+  const[bgMode,setBgMode]=useState("color");
+  const[bgColor,setBgColor]=useState(C.navy);
+  const[bgId,setBgId]=useState("");
+  const[bgImg,setBgImg]=useState(null);
+  const[packId,setPackId]=useState(c.data&&c.data.design&&c.data.design.libraryPick?c.data.design.libraryPick:"");
+  const[packImg,setPackImg]=useState(null);
+  const[packScale,setPackScale]=useState(0.62);
+  const[packY,setPackY]=useState(0.58);
+  const[shadow,setShadow]=useState(true);
+  const[headline,setHeadline]=useState((copy&&copy.header)||"");
+  const[cta,setCta]=useState((copy&&copy.cta)||"");
+  const[textPos,setTextPos]=useState("top");
+  const[textColor,setTextColor]=useState("#FFFFFF");
+  const[ctaBg,setCtaBg]=useState(C.coral);
+  const[font,setFont]=useState("Arial Black");
+  const[items,setItems]=useState([]);
+  const[saving,setSaving]=useState(false);
+
+  React.useEffect(()=>{let on=true;api.get("/api/image-library").then(r=>{if(on)setItems(r||[]);}).catch(()=>{});return()=>{on=false;};},[]);
+  React.useEffect(()=>{let on=true;if(!bgId){setBgImg(null);return;}api.get("/api/image-library/"+bgId).then(r=>loadImage(r.file_data)).then(im=>{if(on)setBgImg(im);}).catch(()=>{});return()=>{on=false;};},[bgId]);
+  React.useEffect(()=>{let on=true;if(!packId){setPackImg(null);return;}api.get("/api/image-library/"+packId).then(r=>loadImage(r.file_data)).then(im=>{if(on)setPackImg(im);}).catch(()=>{});return()=>{on=false;};},[packId]);
+
+  const wrapFit=(ctx,text,maxW,startPx,maxLines)=>{
+    let px=startPx;
+    while(px>14){
+      ctx.font="700 "+px+"px '"+font+"'";
+      const words=(text||"").split(/\s+/);const lines=[];let line="";
+      for(const w of words){const t=line?line+" "+w:w;if(ctx.measureText(t).width>maxW&&line){lines.push(line);line=w;}else line=t;}
+      if(line)lines.push(line);
+      if(lines.length<=maxLines)return{lines,px};
+      px-=4;
+    }
+    ctx.font="700 "+px+"px '"+font+"'";return{lines:[text||""],px};
+  };
+
+  const draw=React.useCallback(async()=>{
+    const cv=ref.current;if(!cv)return;
+    cv.width=sz.w;cv.height=sz.h;
+    const ctx=cv.getContext("2d");
+    try{await document.fonts.ready;}catch(e){}
+    // background
+    if(bgMode==="library"&&bgImg){
+      const s=Math.max(sz.w/bgImg.width,sz.h/bgImg.height);
+      const dw=bgImg.width*s,dh=bgImg.height*s;
+      ctx.drawImage(bgImg,(sz.w-dw)/2,(sz.h-dh)/2,dw,dh);
+    }else{ctx.fillStyle=bgColor;ctx.fillRect(0,0,sz.w,sz.h);}
+    // packshot + contact shadow
+    if(packImg){
+      const maxW=sz.w*packScale, ratio=packImg.height/packImg.width;
+      const pw=maxW, ph=maxW*ratio;
+      const px=(sz.w-pw)/2, py=sz.h*packY-ph/2;
+      if(shadow){
+        const cx=sz.w/2, cy=py+ph*0.99, rx=pw*0.42, ry=ph*0.05;
+        const g=ctx.createRadialGradient(cx,cy,0,cx,cy,rx);
+        g.addColorStop(0,"rgba(0,0,0,0.38)");g.addColorStop(1,"rgba(0,0,0,0)");
+        ctx.save();ctx.translate(cx,cy);ctx.scale(1,ry/rx);ctx.fillStyle=g;
+        ctx.beginPath();ctx.arc(0,0,rx,0,Math.PI*2);ctx.fill();ctx.restore();
+      }
+      ctx.drawImage(packImg,px,py,pw,ph);
+    }
+    // text block
+    const pad=sz.w*0.07, maxW=sz.w-pad*2;
+    ctx.textAlign="left";ctx.textBaseline="top";
+    const {lines,px:hpx}=wrapFit(ctx,headline,maxW,Math.round(sz.w*0.085),4);
+    const lineH=hpx*1.12;
+    const blockH=lines.length*lineH;
+    let ty=textPos==="top"?sz.h*0.07:sz.h*0.93-blockH-(cta?hpx*1.6:0);
+    ctx.font="700 "+hpx+"px '"+font+"'";ctx.fillStyle=textColor;
+    ctx.shadowColor="rgba(0,0,0,0.25)";ctx.shadowBlur=6;ctx.shadowOffsetY=2;
+    for(const ln of lines){ctx.fillText(ln,pad,ty);ty+=lineH;}
+    ctx.shadowColor="transparent";ctx.shadowBlur=0;ctx.shadowOffsetY=0;
+    if(cta){
+      const cpx=Math.round(sz.w*0.045);ctx.font="700 "+cpx+"px '"+font+"'";
+      const tw=ctx.measureText(cta).width, bx=pad, by=ty+hpx*0.4, bw=tw+cpx*1.6, bh=cpx*2;
+      ctx.fillStyle=ctaBg;
+      if(ctx.roundRect){ctx.beginPath();ctx.roundRect(bx,by,bw,bh,bh/2);ctx.fill();}else{ctx.fillRect(bx,by,bw,bh);}
+      ctx.fillStyle="#FFFFFF";ctx.textBaseline="middle";ctx.fillText(cta,bx+cpx*0.8,by+bh/2);ctx.textBaseline="top";
+    }
+  },[sz,bgMode,bgColor,bgImg,packImg,packScale,packY,shadow,headline,cta,textPos,textColor,ctaBg,font]);
+
+  React.useEffect(()=>{draw();},[draw]);
+
+  const exportPng=()=>{const cv=ref.current;if(!cv)return;cv.toBlob(b=>{const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download=(c.product||"creative").replace(/\s+/g,"_")+"_"+sz.w+"x"+sz.h+".png";a.click();URL.revokeObjectURL(u);},"image/png");};
+  const saveToLib=async()=>{const cv=ref.current;if(!cv)return;setSaving(true);try{const dataUrl=cv.toDataURL("image/png");await api.post("/api/image-library",{file_name:(c.product||"creative")+"_composed.png",file_data:dataUrl,file_type:"image/png"});if(toast)toast("Saved to Image library ✓","success");}catch(e){if(toast)toast("Save failed","error");}setSaving(false);};
+
+  const packOptions=items.filter(i=>i.id!==bgId);
+  const fieldL={fontSize:11,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.4,marginBottom:5,display:"block"};
+  const ctrl={width:"100%",border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 9px",fontSize:13,boxSizing:"border-box"};
+  return<div style={{marginTop:14,border:`1px solid ${C.line}`,borderRadius:12,overflow:"hidden"}}>
+    <div style={{padding:"11px 16px",background:C.paper,borderBottom:`1px solid ${C.line}`,display:"flex",alignItems:"center",gap:8}}>
+      <ImageIcon size={15}color={C.coral}/><span style={{fontWeight:800,fontSize:13.5,color:C.ink}}>Creative Composer</span>
+      <span style={{fontSize:11.5,color:C.sub}}>Real packshot + brand text · exact export</span>
+    </div>
+    <div style={{display:"flex",gap:16,padding:16,flexWrap:"wrap"}}>
+      {/* preview */}
+      <div style={{flex:"0 0 auto"}}>
+        <canvas ref={ref}style={{width:Math.min(300,sz.w/3),maxWidth:300,height:"auto",borderRadius:8,border:`1px solid ${C.line}`,boxShadow:"0 4px 14px rgba(0,0,0,.12)",display:"block",background:"#fff"}}/>
+        <div style={{display:"flex",gap:8,marginTop:10}}>
+          <Btn small onClick={exportPng}>Download PNG</Btn>
+          <Btn small variant="ghost"disabled={saving}onClick={saveToLib}>{saving?"Saving…":"Save to library"}</Btn>
+        </div>
+      </div>
+      {/* controls */}
+      <div style={{flex:1,minWidth:240,display:"grid",gridTemplateColumns:"1fr 1fr",gap:11}}>
+        <div><label style={fieldL}>Size</label><select value={sizeIdx}onChange={e=>setSizeIdx(+e.target.value)}style={ctrl}>{COMPOSER_SIZES.map((s,i)=><option key={i}value={i}>{s.label} ({s.w}×{s.h})</option>)}</select></div>
+        <div><label style={fieldL}>Font</label><select value={font}onChange={e=>setFont(e.target.value)}style={ctrl}>{COMPOSER_FONTS.map(f=><option key={f}value={f}>{f}</option>)}</select></div>
+        <div><label style={fieldL}>Background</label><select value={bgMode}onChange={e=>setBgMode(e.target.value)}style={ctrl}><option value="color">Brand colour</option><option value="library">Library image (scene)</option></select></div>
+        {bgMode==="color"
+          ?<div><label style={fieldL}>Colour</label><input type="color"value={bgColor}onChange={e=>setBgColor(e.target.value)}style={{...ctrl,padding:2,height:34}}/></div>
+          :<div><label style={fieldL}>Scene image</label><select value={bgId}onChange={e=>setBgId(e.target.value)}style={ctrl}><option value="">— pick —</option>{items.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select></div>}
+        <div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Product packshot</label><select value={packId}onChange={e=>setPackId(e.target.value)}style={ctrl}><option value="">— none —</option>{packOptions.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select></div>
+        <div><label style={fieldL}>Packshot size</label><input type="range"min="20"max="100"value={Math.round(packScale*100)}onChange={e=>setPackScale(e.target.value/100)}style={{width:"100%"}}/></div>
+        <div><label style={fieldL}>Packshot height</label><input type="range"min="20"max="90"value={Math.round(packY*100)}onChange={e=>setPackY(e.target.value/100)}style={{width:"100%"}}/></div>
+        <div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Headline</label><input value={headline}onChange={e=>setHeadline(e.target.value)}style={ctrl}/></div>
+        <div><label style={fieldL}>CTA</label><input value={cta}onChange={e=>setCta(e.target.value)}style={ctrl}/></div>
+        <div><label style={fieldL}>Text position</label><select value={textPos}onChange={e=>setTextPos(e.target.value)}style={ctrl}><option value="top">Top</option><option value="bottom">Bottom</option></select></div>
+        <div><label style={fieldL}>Text colour</label><input type="color"value={textColor}onChange={e=>setTextColor(e.target.value)}style={{...ctrl,padding:2,height:34}}/></div>
+        <div><label style={fieldL}>CTA colour</label><input type="color"value={ctaBg}onChange={e=>setCtaBg(e.target.value)}style={{...ctrl,padding:2,height:34}}/></div>
+        <label style={{gridColumn:"1 / -1",display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.ink,cursor:"pointer"}}><input type="checkbox"checked={shadow}onChange={e=>setShadow(e.target.checked)}/>Contact shadow under packshot</label>
+      </div>
+    </div>
+  </div>;
+}
+
 function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedback,campaigns,onOpen,onDelete}){
   const allDesign=(campaigns||[]).filter(c=>c.stage==="design"&&c.channel!=="Push notification"&&!isArchived(c));
   const[openId,setOpenId]=useState(null);
@@ -3260,6 +3515,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
         {/* Design complete flow — requires uploaded file/link before marking done */}
         {(approvedPrompt||d.libraryPick)&&<FinalDesignUpload c={c}d={d}patch={patch}me={me}/>}
 
+        {isOpen&&copy&&<CreativeComposer c={c}copy={copy}toast={(typeof toast!=="undefined"?toast:null)}/>}
         <FeedbackBar stage="design"by={me.name}onSave={saveFeedback}/>
         {/* Art direction comments — design context, available to everyone */}
         <CommentThread campaignId={c.id}context="design"me={me}/>
