@@ -54,7 +54,7 @@ async function callClaude(system,prompt,expectJson){
 // Role-based default tab
 const ROLE_TAB={admin:"dashboard",business:"dashboard",content:"content",design:"design",brand:"dashboard"};
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v3";
+const BUILD="v4 · HUFT UI · left-nav + role dash + archive search";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -102,10 +102,11 @@ const monthLabel=(d)=>{if(!d)return"";const dt=new Date(d);return dt.toLocaleDat
 const isLastWeekOfMonth=()=>{const now=new Date();const lastDay=new Date(now.getFullYear(),now.getMonth()+1,0).getDate();return now.getDate()>=lastDay-6;};
 const isFirstWeekOfMonth=()=>new Date().getDate()<=7;
 
-const C={navy:"#15192B",navy2:"#1E2538",coral:"#F2603A",coralSoft:"#FDEAE4",
-  teal:"#0E9488",tealSoft:"#E2F4F1",ink:"#1F2734",sub:"#6B7280",line:"#E6E8EE",
-  paper:"#F6F7FA",white:"#FFFFFF",purple:"#7C4DFF",purpleSoft:"#EDE9FE",
-  green:"#16A34A",greenSoft:"#DCFCE7",orange:"#FF6A13"};
+/* HUFT brand palette — logo orange #E8632A on a warm-dark sidebar */
+const C={navy:"#241A14",navy2:"#32241B",coral:"#E8632A",coralSoft:"#FBE7DA",
+  teal:"#0E9488",tealSoft:"#E2F4F1",ink:"#1F2734",sub:"#6B7280",line:"#EAE6E1",
+  paper:"#FAF7F4",white:"#FFFFFF",purple:"#7C4DFF",purpleSoft:"#EDE9FE",
+  green:"#16A34A",greenSoft:"#DCFCE7",orange:"#E8632A"};
 
 /* ===== BRAND CONTEXT (full — sourced from all 5 brand docs) ============= */
 const BRAND_CONTEXT = `
@@ -881,7 +882,7 @@ function App(){
     {k:"content",label:"Copy",icon:<MessageSquare size={16}/>,count:pending.brand_review||undefined},
     {k:"design",label:"Design",icon:<Palette size={16}/>},
     {k:"library",label:"Image library",icon:<ImageIcon size={16}/>},
-    {k:"done",label:"Done",icon:<CheckCircle2 size={16}/>,count:(campaigns||[]).filter(c=>c.stage==="done"&&!isArchived(c)).length},
+    {k:"done",label:"Finalized Assets",icon:<CheckCircle2 size={16}/>,count:(campaigns||[]).filter(c=>c.stage==="done"&&!isArchived(c)).length},
     {k:"archive",label:"Archive",icon:<ArchiveIcon size={16}/>,count:(campaigns||[]).filter(c=>isArchived(c)).length},
   ];
   const TABS=(me.role==="admin"||me.role==="brand")?allTabs:allTabs.filter(t=>t.k==="dashboard"||t.k===ROLE_TAB[me.role]||t.k==="done"||(t.k==="archive"&&me.role==="business"));
@@ -891,43 +892,52 @@ function App(){
     return<span style={{background:(cols[me.role]||C.sub)+"22",color:cols[me.role]||C.sub,fontSize:10.5,fontWeight:700,padding:"2px 8px",borderRadius:999,textTransform:"capitalize"}}>{me.role}</span>;
   };
 
-  return<div style={{minHeight:"100vh",background:C.paper}}>
-    <div style={{background:C.navy,color:"#fff",position:"sticky",top:0,zIndex:30,boxShadow:"0 2px 8px rgba(0,0,0,.15)"}}>
-      <div style={{maxWidth:1120,margin:"0 auto",padding:"0 20px",display:"flex",alignItems:"center",height:54}}>
-        <div style={{display:"flex",alignItems:"center",gap:8,marginRight:28}}>
-          <div style={{width:30,height:30,borderRadius:8,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center"}}><Sparkles size={16}color="#fff"/></div>
-          <span style={{fontWeight:800,fontSize:15,letterSpacing:-.3}}>CRM Engine</span>
-          <span title="Frontend build currently loaded" style={{fontSize:9,fontWeight:600,color:"rgba(255,255,255,.35)",marginLeft:2}}>{BUILD}</span>
+  const sideBtn={display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:9,border:"none",cursor:"pointer",background:"transparent",color:"rgba(255,255,255,.7)",fontSize:13,fontWeight:600,width:"100%",textAlign:"left"};
+
+  return<div style={{minHeight:"100vh",background:C.paper,display:"flex"}}>
+    {/* ===== LEFT SIDEBAR ===== */}
+    <div style={{width:230,flexShrink:0,background:C.navy,color:"#fff",position:"sticky",top:0,height:"100vh",display:"flex",flexDirection:"column",boxShadow:"2px 0 14px rgba(0,0,0,.14)",zIndex:30}}>
+      <div style={{padding:"18px 16px 16px",display:"flex",alignItems:"center",gap:10,borderBottom:"1px solid rgba(255,255,255,.08)"}}>
+        <div style={{width:34,height:34,borderRadius:9,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={18}color="#fff"/></div>
+        <div style={{lineHeight:1.15,minWidth:0}}>
+          <div style={{fontWeight:800,fontSize:15,letterSpacing:-.3}}>CRM Engine</div>
+          <div title="Frontend build loaded" style={{fontSize:9,fontWeight:600,color:"rgba(255,255,255,.32)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{BUILD}</div>
         </div>
-        <div style={{display:"flex",gap:2,flex:1}}>
-          {TABS.map(t=>{
-            const count=pending[t.k]||0;
-            return<button key={t.k}onClick={()=>setTab(t.k)}style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",borderRadius:8,border:"none",cursor:"pointer",fontSize:13.5,fontWeight:600,background:tab===t.k?"rgba(255,255,255,.13)":"transparent",color:tab===t.k?"#fff":"rgba(255,255,255,.6)",transition:"all .15s",position:"relative"}}>
-              {t.icon}{t.label}
-              {count>0&&t.k!=="dashboard"&&<span style={{background:C.coral,color:"#fff",fontSize:10,fontWeight:800,padding:"1px 6px",borderRadius:999,marginLeft:2}}>{count}</span>}
-            </button>;
-          })}
-        </div>
-        <div style={{display:"flex",gap:8,alignItems:"center"}}>
-          <button onClick={()=>setDrawer("rules")}style={{display:"flex",alignItems:"center",gap:6,padding:"7px 12px",borderRadius:8,border:"none",cursor:"pointer",background:"rgba(255,255,255,.1)",color:"rgba(255,255,255,.8)",fontSize:13,fontWeight:600}}><BookMarked size={14}/>Rulebook</button>
-          {me.role==="admin"&&<button onClick={()=>setDrawer("team")}style={{display:"flex",alignItems:"center",gap:6,padding:"7px 12px",borderRadius:8,border:"none",cursor:"pointer",background:"rgba(255,255,255,.1)",color:"rgba(255,255,255,.8)",fontSize:13,fontWeight:600}}><Users size={14}/>Team</button>}
-          <button onClick={()=>setDrawer("audiences")}style={{display:"flex",alignItems:"center",gap:6,padding:"7px 12px",borderRadius:8,border:"none",cursor:"pointer",background:"rgba(255,255,255,.1)",color:"rgba(255,255,255,.8)",fontSize:13,fontWeight:600}}><Target size={14}/>Audiences</button>
-          <div style={{fontSize:13,color:"rgba(255,255,255,.7)",paddingLeft:8,borderLeft:"1px solid rgba(255,255,255,.15)",display:"flex",alignItems:"center",gap:7}}>
-            <span>{me.name}</span><RoleBadge/>
-            <button onClick={logout}style={{background:"transparent",border:"none",cursor:"pointer",color:"rgba(255,255,255,.5)",padding:2}}><LogOut size={14}/></button>
+      </div>
+      <div style={{flex:1,overflowY:"auto",padding:"12px 10px",display:"flex",flexDirection:"column",gap:3}}>
+        {TABS.map(t=>{
+          const count=pending[t.k]||0;const on=tab===t.k;
+          return<button key={t.k}onClick={()=>setTab(t.k)}style={{display:"flex",alignItems:"center",gap:11,padding:"10px 12px",borderRadius:9,border:"none",cursor:"pointer",fontSize:13.5,fontWeight:600,width:"100%",textAlign:"left",background:on?C.coral:"transparent",color:on?"#fff":"rgba(255,255,255,.62)",transition:"all .15s"}}>
+            <span style={{display:"flex",alignItems:"center"}}>{t.icon}</span>
+            <span style={{flex:1}}>{t.label}</span>
+            {count>0&&t.k!=="dashboard"&&<span style={{background:on?"rgba(255,255,255,.28)":C.coral,color:"#fff",fontSize:10,fontWeight:800,padding:"1px 7px",borderRadius:999}}>{count}</span>}
+          </button>;
+        })}
+      </div>
+      <div style={{padding:"10px 10px 12px",borderTop:"1px solid rgba(255,255,255,.08)",display:"flex",flexDirection:"column",gap:3}}>
+        <button onClick={()=>setDrawer("rules")}style={sideBtn}><BookMarked size={15}/>Rulebook</button>
+        {me.role==="admin"&&<button onClick={()=>setDrawer("team")}style={sideBtn}><Users size={15}/>Team</button>}
+        <button onClick={()=>setDrawer("audiences")}style={sideBtn}><Target size={15}/>Audiences</button>
+        <div style={{marginTop:8,padding:"10px 12px",borderRadius:10,background:"rgba(255,255,255,.06)",display:"flex",alignItems:"center",gap:8}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:13,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{me.name}</div>
+            <div style={{marginTop:3}}><RoleBadge/></div>
           </div>
+          <button onClick={logout}title="Log out"style={{background:"transparent",border:"none",cursor:"pointer",color:"rgba(255,255,255,.5)",padding:2}}><LogOut size={15}/></button>
         </div>
       </div>
     </div>
-    <div style={{maxWidth:1120,margin:"0 auto",padding:"28px 20px"}}>
-      {tab==="dashboard"&&<Dashboard campaigns={campaigns}onNew={newCampaign}onOpen={open}me={me}/>}
+    {/* ===== MAIN ===== */}
+    <div style={{flex:1,minWidth:0,height:"100vh",overflowY:"auto"}}>
+    <div style={{maxWidth:1120,margin:"0 auto",padding:"28px 28px"}}>
+      {tab==="dashboard"&&<Dashboard campaigns={campaigns}onNew={newCampaign}onOpen={open}me={me}setTab={setTab}/>}
       {tab==="brief"&&<BriefTab active={active}patch={patch}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}audiences={audiences}onDelete={delCampaign}onNew={newCampaign}onBulkImport={bulkImportBriefs}toast={toast}/>}
       {(tab==="content"||tab==="brand_review")&&<ContentTab active={active}patch={patch}copyRules={copyRules}addRule={addRule}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}toast={toast}onDelete={delCampaign}/>}
       {tab==="design"&&<DesignTab active={active}patch={patch}promptRules={promptRules}addRule={addRule}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}onDelete={delCampaign}/>}
       {tab==="library"&&<ImageLibraryTab me={me}toast={toast}/>}
       {tab==="done"&&<DoneTab campaigns={campaigns}patch={patch}onOpen={open}me={me}setTab={setTab}onDelete={delCampaign}/>}
       {tab==="archive"&&<ArchiveTab campaigns={campaigns}patch={patch}onOpen={open}me={me}onDelete={delCampaign}/>}
-    </div>
+    </div></div>
     {showMonthlyPrompt&&<MonthlyPrompt me={me}campaigns={campaigns}onClose={()=>setShowMonthlyPrompt(false)}/>}
     <div style={{position:"fixed",bottom:24,right:24,zIndex:9999,display:"flex",flexDirection:"column",gap:8,pointerEvents:"none"}}>{toasts.map(t=><div key={t.id}style={{background:t.type==="success"?"#15192B":"#B91C1C",color:"#fff",padding:"12px 18px",borderRadius:10,fontSize:13.5,fontWeight:600,display:"flex",alignItems:"center",gap:8,boxShadow:"0 4px 16px rgba(0,0,0,.25)",minWidth:260}}>{t.type==="success"?<CheckCircle2 size={16}/>:<X size={16}/>}{t.msg}</div>)}</div>
     {drawer==="rules"&&<RulesDrawer onClose={()=>setDrawer(null)}copyRules={copyRules}promptRules={promptRules}addRule={addRule}toggleRule={toggleRule}delRule={delRule}me={me}feedback={feedback}/>}
@@ -1159,7 +1169,7 @@ function CalendarView({campaigns,onOpen,filterStage}){
   </div>;
 }
 
-function Dashboard({campaigns,onNew,onOpen,me}){
+function Dashboard({campaigns,onNew,onOpen,me,setTab}){
   const[view,setView]=useState("list");
   const counts={brief:0,content:0,design:0,done:0};campaigns.forEach(c=>{if(isArchived(c))return;counts[c.stage]=(counts[c.stage]||0)+1;});
   const stat=[{k:"brief",label:"In Brief",color:C.coral},{k:"content",label:"In Copy",color:C.purple},{k:"design",label:"In Design",color:C.teal},{k:"done",label:"Ready",color:C.green}];
@@ -1212,6 +1222,38 @@ function Dashboard({campaigns,onNew,onOpen,me}){
     <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:18}}>
       {stat.map(s=><Card key={s.k}style={{padding:16}}><div style={{fontSize:30,fontWeight:800,color:s.color}}>{counts[s.k]||0}</div><div style={{fontSize:13,color:C.sub,fontWeight:600}}>{s.label}</div></Card>)}
     </div>
+    {/* ===== Role-based spotlight ===== */}
+    {(me.role==="admin"||me.role==="brand")&&(()=>{
+      const q=campaigns.filter(c=>c.stage==="brand_review"&&!isArchived(c));
+      return<Card style={{padding:0,overflow:"hidden",marginBottom:18,border:`1.5px solid ${C.coral}`}}>
+        <div onClick={()=>setTab&&setTab("content")}style={{display:"flex",alignItems:"center",gap:12,padding:"15px 18px",cursor:"pointer",background:C.coralSoft}}>
+          <div style={{width:36,height:36,borderRadius:10,background:C.coral,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><CheckCircle2 size={19}/></div>
+          <div style={{flex:1}}><div style={{fontWeight:800,fontSize:15.5,color:C.ink}}>Pending your approval · {q.length}</div><div style={{fontSize:12.5,color:C.sub}}>{q.length?"Copy is waiting for your sign-off — click to review.":"Nothing waiting. You're all caught up."}</div></div>
+          <ChevronRight size={20}color={C.coral}/>
+        </div>
+        {q.slice(0,6).map(c=><div key={c.id}onClick={()=>onOpen(c.id,"content")}style={{display:"flex",alignItems:"center",gap:8,padding:"11px 18px",borderTop:`1px solid ${C.line}`,cursor:"pointer",background:"#fff"}}>
+          <span style={{fontWeight:700,fontSize:13.5,color:C.ink}}>{c.product||parseName(c.name).product||c.name}</span>
+          <span style={{fontSize:12,color:C.sub}}>· {normCrmType(c.crm_type)} · {c.channel||"WhatsApp"}</span>
+          {c.copy_approver&&<span style={{fontSize:11,color:C.sub,marginLeft:"auto"}}>copy by {c.copy_approver}</span>}
+          <ChevronRight size={16}color={C.sub}style={{marginLeft:c.copy_approver?8:"auto"}}/>
+        </div>)}
+      </Card>;
+    })()}
+    {me.role==="business"&&(()=>{
+      const ready=campaigns.filter(c=>c.stage==="done"&&!isArchived(c));
+      return<Card style={{padding:0,overflow:"hidden",marginBottom:18,border:`1.5px solid ${C.green}`}}>
+        <div onClick={()=>setTab&&setTab("done")}style={{display:"flex",alignItems:"center",gap:12,padding:"15px 18px",cursor:"pointer",background:C.greenSoft}}>
+          <div style={{width:36,height:36,borderRadius:10,background:C.green,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><CheckCircle2 size={19}/></div>
+          <div style={{flex:1}}><div style={{fontWeight:800,fontSize:15.5,color:C.ink}}>Assets ready · {ready.length}</div><div style={{fontSize:12.5,color:C.sub}}>{ready.length?"Finalized assets ready to schedule and to log performance.":"Nothing finalized yet."}</div></div>
+          <ChevronRight size={20}color={C.green}/>
+        </div>
+        {ready.slice(0,6).map(c=><div key={c.id}onClick={()=>onOpen(c.id)}style={{display:"flex",alignItems:"center",gap:8,padding:"11px 18px",borderTop:`1px solid ${C.line}`,cursor:"pointer",background:"#fff"}}>
+          <span style={{fontWeight:700,fontSize:13.5,color:C.ink}}>{c.product||parseName(c.name).product||c.name}</span>
+          <span style={{fontSize:12,color:C.sub}}>· {normCrmType(c.crm_type)} · {c.channel||"WhatsApp"}</span>
+          <ChevronRight size={16}color={C.sub}style={{marginLeft:"auto"}}/>
+        </div>)}
+      </Card>;
+    })()}
     {view==="calendar"
       ?<CalendarView campaigns={campaigns}onOpen={onOpen}/>
       :campaigns.length===0?<Card><Empty icon={<LayoutDashboard size={26}color={C.sub}/>}title="No assets yet"sub="Start one and the engine walks it through Brief → Copy → Design."/></Card>
@@ -3401,17 +3443,47 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete}){
 
 
 function ArchiveTab({campaigns,patch,onOpen,me,onDelete}){
+  const[q,setQ]=useState("");
+  const[fStage,setFStage]=useState("all");
+  const[fCrm,setFCrm]=useState("all");
   const archived=(campaigns||[]).filter(c=>isArchived(c)).sort((a,b)=>new Date(b.updated_at||b.created_at)-new Date(a.updated_at||a.created_at));
   const canManage=me.role==="admin"||me.role==="business";
   const restore=(c)=>{if(window.confirm("Restore this asset back into the active pipeline?"))patch(c.id,{data:{archived:false}});};
+  const ql=q.trim().toLowerCase();
+  const filtered=archived.filter(c=>{
+    if(fStage!=="all"&&c.stage!==fStage)return false;
+    if(fCrm!=="all"&&normCrmType(c.crm_type)!==fCrm)return false;
+    if(!ql)return true;
+    const p=parseName(c.name);
+    const hay=[c.product,p.product,c.name,c.channel,c.audience_label,c.segment,c.objective,c.crm_type,c.copy_approver,c.design_approver,c.data&&c.data.brief&&c.data.brief.idea].filter(Boolean).join(" ").toLowerCase();
+    return hay.includes(ql);
+  });
+  const pill=(on,label,onClick)=><button onClick={onClick}style={{fontSize:12,fontWeight:600,padding:"5px 11px",borderRadius:999,border:`1px solid ${on?C.coral:C.line}`,background:on?C.coralSoft:"#fff",color:on?C.coral:C.sub,cursor:"pointer"}}>{label}</button>;
   return<div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
       <div><Eyebrow color={C.sub}>Archive</Eyebrow><h1 style={{margin:"4px 0 0",fontSize:24,fontWeight:800}}>Archived</h1></div>
+      <div style={{fontSize:13,color:C.sub,fontWeight:600}}>{filtered.length} of {archived.length}</div>
     </div>
-    {archived.length===0
-      ?<Card><Empty icon={<ArchiveIcon size={26}color={C.sub}/>}title="Nothing archived"sub="Assets you archive from any stage land here. They stay out of the active pipeline until restored."/></Card>
+    <Card style={{padding:12,marginBottom:14}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,border:`1px solid ${C.line}`,borderRadius:10,padding:"9px 12px",background:"#fff"}}>
+        <SearchIcon size={17}color={C.sub}/>
+        <input value={q}onChange={e=>setQ(e.target.value)}placeholder="Search archive by product, audience, channel, objective, idea…"style={{border:"none",outline:"none",flex:1,fontSize:14,background:"transparent",color:C.ink}}/>
+        {q&&<button onClick={()=>setQ("")}style={{border:"none",background:"none",cursor:"pointer",color:C.sub,display:"flex"}}><X size={16}/></button>}
+      </div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:10,alignItems:"center"}}>
+        <span style={{fontSize:11,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.4,marginRight:2}}>Stage</span>
+        {pill(fStage==="all","All",()=>setFStage("all"))}
+        {["brief","content","brand_review","design","done"].map(s=><span key={s}>{pill(fStage===s,STAGE_LABEL[s]||s,()=>setFStage(s))}</span>)}
+        <span style={{width:1,height:18,background:C.line,margin:"0 4px"}}/>
+        <span style={{fontSize:11,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.4,marginRight:2}}>Type</span>
+        {pill(fCrm==="all","All",()=>setFCrm("all"))}
+        {["D2C","Retail"].map(t=><span key={t}>{pill(fCrm===t,t,()=>setFCrm(t))}</span>)}
+      </div>
+    </Card>
+    {filtered.length===0
+      ?<Card><Empty icon={<ArchiveIcon size={26}color={C.sub}/>}title={archived.length?"No matches":"Nothing archived"}sub={archived.length?"Try a different search term or clear the filters.":"Assets you archive from any stage land here. They stay out of the active pipeline until restored."}/></Card>
       :<Card style={{padding:0,overflow:"hidden"}}>
-        {archived.map(c=>{
+        {filtered.map(c=>{
           const brief=c.data?.brief;const p=parseName(c.name);
           return<div key={c.id}style={{borderBottom:`1px solid ${C.line}`,padding:"14px 18px",display:"flex",alignItems:"flex-start",gap:12,opacity:.85}}>
             <div style={{flex:1,minWidth:0}}>
