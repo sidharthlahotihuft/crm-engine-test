@@ -54,7 +54,7 @@ async function callClaude(system,prompt,expectJson){
 // Role-based default tab
 const ROLE_TAB={admin:"dashboard",business:"dashboard",content:"content",design:"design",brand:"dashboard"};
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v4 · HUFT UI · left-nav + role dash + archive search";
+const BUILD="v5 · analytics + month report + go-live required";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -515,9 +515,8 @@ const BRIEF_STEPS = [
   },
   {
     key:"go_live_date", question:"When does this asset go live?",
-    hint:"Pick the planned live date — sets the campaign week, month, and TAT deadlines.",
+    hint:"Required — pick the planned live date. Sets the campaign week, month, TAT deadlines, and the month-end performance report.",
     dateInput:true,
-    optional:true,
   },
 ];
 
@@ -589,6 +588,7 @@ const BellIcon=p=><Svg{...p}><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-
 const LinkIcon=p=><Svg{...p}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></Svg>;
 const ClockIcon=p=><Svg{...p}><circle cx="12"cy="12"r="10"/><path d="M12 6v6l4 2"/></Svg>;
 const ArchiveIcon=p=><Svg{...p}><rect x="3"y="4"width="18"height="4"rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/></Svg>;
+const BarChart3=p=><Svg{...p}><path d="M3 3v18h18"/><rect x="7"y="11"width="3"height="6"rx="1"/><rect x="12"y="7"width="3"height="10"rx="1"/><rect x="17"y="13"width="3"height="4"rx="1"/></Svg>;
 
 /* ===== UI atoms ========================================================= */
 function Btn({children,onClick,variant="primary",disabled,small,style}){
@@ -883,9 +883,10 @@ function App(){
     {k:"design",label:"Design",icon:<Palette size={16}/>},
     {k:"library",label:"Image library",icon:<ImageIcon size={16}/>},
     {k:"done",label:"Finalized Assets",icon:<CheckCircle2 size={16}/>,count:(campaigns||[]).filter(c=>c.stage==="done"&&!isArchived(c)).length},
+    {k:"analytics",label:"Analytics",icon:<BarChart3 size={16}/>},
     {k:"archive",label:"Archive",icon:<ArchiveIcon size={16}/>,count:(campaigns||[]).filter(c=>isArchived(c)).length},
   ];
-  const TABS=(me.role==="admin"||me.role==="brand")?allTabs:allTabs.filter(t=>t.k==="dashboard"||t.k===ROLE_TAB[me.role]||t.k==="done"||(t.k==="archive"&&me.role==="business"));
+  const TABS=(me.role==="admin"||me.role==="brand")?allTabs:allTabs.filter(t=>t.k==="dashboard"||t.k===ROLE_TAB[me.role]||t.k==="done"||t.k==="analytics"||(t.k==="archive"&&me.role==="business"));
 
   const RoleBadge=()=>{
     const cols={admin:C.coral,business:C.teal,content:C.purple,design:C.green,brand:"#9333EA"};
@@ -936,6 +937,7 @@ function App(){
       {tab==="design"&&<DesignTab active={active}patch={patch}promptRules={promptRules}addRule={addRule}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}onDelete={delCampaign}/>}
       {tab==="library"&&<ImageLibraryTab me={me}toast={toast}/>}
       {tab==="done"&&<DoneTab campaigns={campaigns}patch={patch}onOpen={open}me={me}setTab={setTab}onDelete={delCampaign}/>}
+      {tab==="analytics"&&<AnalyticsTab campaigns={campaigns}patch={patch}onOpen={open}me={me}/>}
       {tab==="archive"&&<ArchiveTab campaigns={campaigns}patch={patch}onOpen={open}me={me}onDelete={delCampaign}/>}
     </div></div>
     {showMonthlyPrompt&&<MonthlyPrompt me={me}campaigns={campaigns}onClose={()=>setShowMonthlyPrompt(false)}/>}
@@ -3442,6 +3444,111 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete}){
 }
 
 
+function AnalyticsTab({campaigns,patch,onOpen,me}){
+  const[finalOnly,setFinalOnly]=useState(true);
+  const[editId,setEditId]=useState(null);
+  const[form,setForm]=useState({});
+  const thisMonth=new Date().toISOString().slice(0,7);
+  const[repMonth,setRepMonth]=useState(thisMonth);
+  const nf=n=>(n||n===0)?Number(n).toLocaleString("en-IN"):"—";
+  const pct=(a,b)=>(b&&Number(b)>0)?((Number(a)/Number(b))*100):null;
+  const pf=v=>v==null?"—":v.toFixed(1)+"%";
+  const A=c=>(c.data&&c.data.analytics)||null;
+  // assets eligible for analytics: finalized (done) by default, or anything with metrics already; toggle shows all reached-content assets
+  const pool=(campaigns||[]).filter(c=>!isArchived(c)).filter(c=>{
+    const reached=c.stage==="done"||c.stage==="design"||c.stage==="brand_review"||A(c);
+    return finalOnly?(c.stage==="done"||A(c)):reached;
+  }).sort((a,b)=>(A(b)?1:0)-(A(a)?1:0)||new Date(b.updated_at||0)-new Date(a.updated_at||0));
+  // roll-up totals
+  const withM=pool.filter(A);
+  const tot=withM.reduce((t,c)=>{const a=A(c);["sent","delivered","read","clicks","orders","revenue"].forEach(k=>t[k]+=Number(a[k]||0));return t;},{sent:0,delivered:0,read:0,clicks:0,orders:0,revenue:0});
+  const startEdit=c=>{const a=A(c)||{};setForm({sent:a.sent??"",delivered:a.delivered??"",read:a.read??"",clicks:a.clicks??"",orders:a.orders??"",revenue:a.revenue??"",notes:a.notes||""});setEditId(c.id);};
+  const save=c=>{
+    const clean={};["sent","delivered","read","clicks","orders","revenue"].forEach(k=>{const v=form[k];clean[k]=v===""||v==null?null:Number(v);});
+    clean.notes=form.notes||"";clean.updated_by=me.name;clean.updated_at=new Date().toISOString();
+    patch(c.id,{data:{...(c.data||{}),analytics:clean}});
+    setEditId(null);
+  };
+  const exportReport=()=>{
+    const inMonth=(campaigns||[]).filter(c=>!isArchived(c)&&c.go_live_date&&String(c.go_live_date).slice(0,7)===repMonth);
+    const r2=(x,y)=>y>0?+((x/y)*100).toFixed(1):"";
+    const rows=inMonth.map(c=>{const a=A(c)||{};
+      const sent=Number(a.sent||0),del=Number(a.delivered||0),read=Number(a.read||0),clk=Number(a.clicks||0);
+      return {"Go-live":String(c.go_live_date).slice(0,10),"Product":c.product||parseName(c.name).product||c.name,
+        "Customer / Audience":c.audience_label||c.segment||"","CRM type":normCrmType(c.crm_type),"Channel":c.channel||"WhatsApp",
+        "Stage":STAGE_LABEL[c.stage]||c.stage,"Sent":a.sent==null?"":sent,"Delivered":a.delivered==null?"":del,"Read":a.read==null?"":read,
+        "Clicks":a.clicks==null?"":clk,"Orders":a.orders==null?"":Number(a.orders||0),"Revenue":a.revenue==null?"":Number(a.revenue||0),
+        "Delivered %":r2(del,sent),"Read %":r2(read,del),"CTR %":r2(clk,del),"Notes":a.notes||""};});
+    if(rows.length===0){window.alert("No assets have a go-live date in "+repMonth+". Set go-live dates on the briefs, or pick another month.");return;}
+    const sum=k=>inMonth.reduce((t,c)=>t+Number((A(c)||{})[k]||0),0);
+    const tSent=sum("sent"),tDel=sum("delivered"),tRead=sum("read"),tClk=sum("clicks");
+    rows.push({});
+    rows.push({"Product":"TOTAL","Sent":tSent,"Delivered":tDel,"Read":tRead,"Clicks":tClk,"Orders":sum("orders"),"Revenue":sum("revenue"),
+      "Delivered %":tSent>0?+((tDel/tSent)*100).toFixed(1):"","Read %":tDel>0?+((tRead/tDel)*100).toFixed(1):"","CTR %":tDel>0?+((tClk/tDel)*100).toFixed(1):""});
+    const header=["Go-live","Product","Customer / Audience","CRM type","Channel","Stage","Sent","Delivered","Read","Clicks","Orders","Revenue","Delivered %","Read %","CTR %","Notes"];
+    const ws=XLSX.utils.json_to_sheet(rows,{header});
+    ws["!cols"]=[{wch:11},{wch:26},{wch:24},{wch:9},{wch:14},{wch:14},{wch:9},{wch:10},{wch:8},{wch:8},{wch:8},{wch:10},{wch:11},{wch:8},{wch:8},{wch:30}];
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,repMonth);
+    XLSX.writeFile(wb,"HUFT_CRM_Performance_"+repMonth+".xlsx");
+  };
+  const num=(label,key,ph)=><div style={{flex:1,minWidth:120}}><div style={{fontSize:11,fontWeight:700,color:C.sub,marginBottom:4}}>{label}</div><input type="number"value={form[key]}onChange={e=>setForm(f=>({...f,[key]:e.target.value}))}placeholder={ph||"0"}style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:8,padding:"8px 10px",fontSize:14,boxSizing:"border-box"}}/></div>;
+  const Stat=({label,val,sub})=><Card style={{padding:14}}><div style={{fontSize:11,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.4}}>{label}</div><div style={{fontSize:24,fontWeight:800,color:C.ink,marginTop:3}}>{val}</div>{sub&&<div style={{fontSize:11,color:C.sub,marginTop:2}}>{sub}</div>}</Card>;
+  return<div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:16}}>
+      <div><Eyebrow color={C.coral}>Analytics</Eyebrow><h1 style={{margin:"4px 0 0",fontSize:24,fontWeight:800}}>Performance</h1>
+        <div style={{fontSize:13,color:C.sub,marginTop:4}}>Log how each asset performed. Metrics mirror the CRM sheet: Sent, Delivered, Read — plus clicks, orders and revenue.</div></div>
+      <div style={{display:"flex",alignItems:"center",gap:8}}>
+        <input type="month"value={repMonth}onChange={e=>setRepMonth(e.target.value)}title="Report month (by go-live date)"style={{border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 10px",fontSize:13,color:C.ink}}/>
+        <Btn onClick={exportReport}><BarChart3 size={15}/>Download month report</Btn>
+        <button onClick={()=>setFinalOnly(v=>!v)}style={{fontSize:12.5,fontWeight:600,padding:"7px 13px",borderRadius:999,border:`1px solid ${C.line}`,background:"#fff",color:C.sub,cursor:"pointer"}}>{finalOnly?"Finalized only":"All in-flight"}</button>
+      </div>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:18}}>
+      <Stat label="Total sent"val={nf(tot.sent)}sub={`${withM.length} asset${withM.length!==1?"s":""} with data`}/>
+      <Stat label="Avg delivered"val={pf(pct(tot.delivered,tot.sent))}sub={`${nf(tot.delivered)} delivered`}/>
+      <Stat label="Avg read"val={pf(pct(tot.read,tot.delivered))}sub={`${nf(tot.read)} read`}/>
+      <Stat label="Revenue"val={"₹"+nf(tot.revenue)}sub={`${nf(tot.orders)} orders`}/>
+    </div>
+    {pool.length===0
+      ?<Card><Empty icon={<BarChart3 size={26}color={C.sub}/>}title="No assets to report on yet"sub="Finalized assets appear here so you can log their performance. Toggle to all in-flight to log earlier."/></Card>
+      :<Card style={{padding:0,overflow:"hidden"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 16px",fontSize:11,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.4,background:C.paper,borderBottom:`1px solid ${C.line}`}}>
+          <span style={{flex:2}}>Asset</span><span style={{flex:1,textAlign:"right"}}>Sent</span><span style={{flex:1,textAlign:"right"}}>Deliv.</span><span style={{flex:1,textAlign:"right"}}>Read</span><span style={{flex:1,textAlign:"right"}}>CTR</span><span style={{flex:1,textAlign:"right"}}>Orders</span><span style={{width:90,textAlign:"right"}}></span>
+        </div>
+        {pool.map(c=>{
+          const a=A(c);const open=editId===c.id;
+          const dRate=a?pct(a.delivered,a.sent):null,rRate=a?pct(a.read,a.delivered):null,ctr=a?pct(a.clicks,a.delivered):null;
+          return<div key={c.id}style={{borderBottom:`1px solid ${C.line}`}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,padding:"12px 16px"}}>
+              <div style={{flex:2,minWidth:0}}>
+                <div style={{fontWeight:700,fontSize:13.5,color:C.ink,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.product||parseName(c.name).product||c.name}</div>
+                <div style={{fontSize:11.5,color:C.sub}}>{normCrmType(c.crm_type)} · {c.channel||"WhatsApp"}{c.stage==="done"?"":" · "+(STAGE_LABEL[c.stage]||c.stage)}</div>
+              </div>
+              <span style={{flex:1,textAlign:"right",fontSize:13,color:a?C.ink:C.sub}}>{a?nf(a.sent):"—"}</span>
+              <span style={{flex:1,textAlign:"right",fontSize:13,color:dRate!=null?C.ink:C.sub}}>{pf(dRate)}</span>
+              <span style={{flex:1,textAlign:"right",fontSize:13,color:rRate!=null?C.ink:C.sub}}>{pf(rRate)}</span>
+              <span style={{flex:1,textAlign:"right",fontSize:13,color:ctr!=null?C.ink:C.sub}}>{pf(ctr)}</span>
+              <span style={{flex:1,textAlign:"right",fontSize:13,color:a?C.ink:C.sub}}>{a?nf(a.orders):"—"}</span>
+              <div style={{width:90,textAlign:"right"}}><button onClick={()=>open?setEditId(null):startEdit(c)}style={{fontSize:12,fontWeight:700,padding:"5px 11px",borderRadius:8,border:"none",cursor:"pointer",background:a?C.coralSoft:C.coral,color:a?C.coral:"#fff"}}>{a?"Edit":"Add"}</button></div>
+            </div>
+            {open&&<div style={{padding:"4px 16px 16px",background:C.paper}}>
+              <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                {num("Sent","sent")}{num("Delivered","delivered")}{num("Read","read")}{num("Clicks","clicks")}{num("Orders","orders")}{num("Revenue (₹)","revenue")}
+              </div>
+              <div style={{marginTop:10}}><div style={{fontSize:11,fontWeight:700,color:C.sub,marginBottom:4}}>Notes</div><input value={form.notes}onChange={e=>setForm(f=>({...f,notes:e.target.value}))}placeholder="What worked, what to try next…"style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:8,padding:"8px 10px",fontSize:14,boxSizing:"border-box"}}/></div>
+              <div style={{display:"flex",gap:8,marginTop:12}}>
+                <Btn onClick={()=>save(c)}>Save metrics</Btn>
+                <Btn variant="ghost"onClick={()=>setEditId(null)}>Cancel</Btn>
+                {a&&a.updated_by&&<span style={{fontSize:11,color:C.sub,alignSelf:"center"}}>last updated by {a.updated_by}</span>}
+              </div>
+            </div>}
+            {a&&!open&&a.notes&&<div style={{padding:"0 16px 11px",fontSize:12,color:C.sub,fontStyle:"italic"}}>“{a.notes}”</div>}
+          </div>;
+        })}
+      </Card>}
+  </div>;
+}
+
 function ArchiveTab({campaigns,patch,onOpen,me,onDelete}){
   const[q,setQ]=useState("");
   const[fStage,setFStage]=useState("all");
@@ -3478,10 +3585,11 @@ function ArchiveTab({campaigns,patch,onOpen,me,onDelete}){
         <span style={{fontSize:11,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.4,marginRight:2}}>Type</span>
         {pill(fCrm==="all","All",()=>setFCrm("all"))}
         {["D2C","Retail"].map(t=><span key={t}>{pill(fCrm===t,t,()=>setFCrm(t))}</span>)}
+        {(fStage!=="all"||fCrm!=="all"||q)&&<button onClick={()=>{setFStage("all");setFCrm("all");setQ("");}}style={{marginLeft:"auto",fontSize:12,fontWeight:700,padding:"5px 11px",borderRadius:999,border:"none",background:C.coral,color:"#fff",cursor:"pointer",display:"flex",alignItems:"center",gap:5}}><X size={13}/>Clear filters</button>}
       </div>
     </Card>
     {filtered.length===0
-      ?<Card><Empty icon={<ArchiveIcon size={26}color={C.sub}/>}title={archived.length?"No matches":"Nothing archived"}sub={archived.length?"Try a different search term or clear the filters.":"Assets you archive from any stage land here. They stay out of the active pipeline until restored."}/></Card>
+      ?<Card><Empty icon={<ArchiveIcon size={26}color={C.sub}/>}title={archived.length?"No matches for the current filters":"Nothing archived"}sub={archived.length?`There are ${archived.length} archived asset${archived.length!==1?"s":""}, but none match your search/filters.`:"Assets you archive from any stage land here. They stay out of the active pipeline until restored."}action={archived.length?<Btn variant="ghost"onClick={()=>{setFStage("all");setFCrm("all");setQ("");}}><X size={14}/>Clear filters</Btn>:null}/></Card>
       :<Card style={{padding:0,overflow:"hidden"}}>
         {filtered.map(c=>{
           const brief=c.data?.brief;const p=parseName(c.name);
