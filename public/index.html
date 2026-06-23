@@ -1,6 +1,8 @@
 <!doctype html>
 <html lang="en">
 <head>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700;900&display=swap" rel="stylesheet"/>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>HUFT CRM Creative Engine</title>
@@ -54,7 +56,7 @@ async function callClaude(system,prompt,expectJson){
 // Role-based default tab
 const ROLE_TAB={admin:"dashboard",business:"dashboard",content:"content",design:"design",brand:"dashboard"};
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v7 · creative composer (packshot + text)";
+const BUILD="v8 · composer: brand palettes + typography + roles";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -3237,29 +3239,53 @@ const COMPOSER_SIZES=[
   {label:"Square 1:1",w:1080,h:1080},
   {label:"Email header",w:1200,h:600},
 ];
-const COMPOSER_FONTS=["Arial","Arial Black","Helvetica","Georgia","Impact","Trebuchet MS","Verdana"];
+const COMPOSER_FONTS=["Rubik","Arial Black","Impact","Arial","Georgia","Trebuchet MS","Verdana"];
+// Brand palettes sourced from the HUFT Book of Tails + Sara's brand manual
+const BRAND_PALETTES=[
+  {name:"HUFT Orange / Cream",bg:"#FEF1E5",text:"#222222",cta:"#FF6A13"},
+  {name:"HUFT Orange / Dark",bg:"#2A211C",text:"#FFFFFF",cta:"#FF6A13"},
+  {name:"Sara's Navy / Cream",bg:"#102242",text:"#E8C09B",cta:"#FF6A13"},
+  {name:"Sara's Cream / Navy",bg:"#E8C09B",text:"#102242",cta:"#DC5829"},
+  {name:"Chicken & Turkey (Yellow)",bg:"#102242",text:"#FAAB18",cta:"#FAAB18"},
+  {name:"Lamb & Apple (Pink)",bg:"#102242",text:"#CC1C6A",cta:"#CC1C6A"},
+  {name:"Chicken & Brown Rice (Orange)",bg:"#E8C09B",text:"#DC5829",cta:"#DC5829"},
+  {name:"Paneer & Eggs (Teal)",bg:"#E8C09B",text:"#00A6B4",cta:"#00A6B4"},
+];
+const COMPOSER_POS=[
+  {k:"tl",label:"Top L",align:"left"},{k:"tc",label:"Top C",align:"center"},{k:"tr",label:"Top R",align:"right"},
+  {k:"bl",label:"Bot L",align:"left"},{k:"bc",label:"Bot C",align:"center"},{k:"br",label:"Bot R",align:"right"},
+];
 function loadImage(src){return new Promise((res,rej)=>{const im=new Image();im.crossOrigin="anonymous";im.onload=()=>res(im);im.onerror=rej;im.src=src;});}
-function CreativeComposer({c,copy,toast}){
+function CreativeComposer({c,copy,toast,me,patch}){
   const ref=React.useRef(null);
+  const isBiz=me&&me.role==="business";
   const[sizeIdx,setSizeIdx]=useState(0);
   const sz=COMPOSER_SIZES[sizeIdx];
-  const[bgMode,setBgMode]=useState("color");
-  const[bgColor,setBgColor]=useState(C.navy);
-  const[bgId,setBgId]=useState("");
+  const usingLibBg=(c.data&&c.data.design&&c.data.design.imageSource==="library"&&c.data.design.libraryPick);
+  const[bgMode,setBgMode]=useState(usingLibBg?"library":"color");
+  const[paletteIdx,setPaletteIdx]=useState(0);
+  const[bgColor,setBgColor]=useState(BRAND_PALETTES[0].bg);
+  const[bgId,setBgId]=useState(usingLibBg?c.data.design.libraryPick:"");
   const[bgImg,setBgImg]=useState(null);
-  const[packId,setPackId]=useState(c.data&&c.data.design&&c.data.design.libraryPick?c.data.design.libraryPick:"");
+  const[customColours,setCustomColours]=useState(false);
+  // packshot only relevant when NOT using a finished library image as the base
+  const[packId,setPackId]=useState("");
   const[packImg,setPackImg]=useState(null);
   const[packScale,setPackScale]=useState(0.62);
-  const[packY,setPackY]=useState(0.58);
+  const[packY,setPackY]=useState(0.6);
   const[shadow,setShadow]=useState(true);
   const[headline,setHeadline]=useState((copy&&copy.header)||"");
   const[cta,setCta]=useState((copy&&copy.cta)||"");
-  const[textPos,setTextPos]=useState("top");
-  const[textColor,setTextColor]=useState("#FFFFFF");
-  const[ctaBg,setCtaBg]=useState(C.coral);
-  const[font,setFont]=useState("Arial Black");
+  const[pos,setPos]=useState("tl");
+  const[textColor,setTextColor]=useState(BRAND_PALETTES[0].text);
+  const[ctaBg,setCtaBg]=useState(BRAND_PALETTES[0].cta);
+  const[font,setFont]=useState("Rubik");
+  const[sizeMul,setSizeMul]=useState(1);
+  const[upper,setUpper]=useState(false);
   const[items,setItems]=useState([]);
   const[saving,setSaving]=useState(false);
+
+  const applyPalette=(i)=>{const p=BRAND_PALETTES[i];setPaletteIdx(i);setBgColor(p.bg);setTextColor(p.text);setCtaBg(p.cta);setCustomColours(false);setBgMode("color");};
 
   React.useEffect(()=>{let on=true;api.get("/api/image-library").then(r=>{if(on)setItems(r||[]);}).catch(()=>{});return()=>{on=false;};},[]);
   React.useEffect(()=>{let on=true;if(!bgId){setBgImg(null);return;}api.get("/api/image-library/"+bgId).then(r=>loadImage(r.file_data)).then(im=>{if(on)setBgImg(im);}).catch(()=>{});return()=>{on=false;};},[bgId]);
@@ -3289,8 +3315,8 @@ function CreativeComposer({c,copy,toast}){
       const dw=bgImg.width*s,dh=bgImg.height*s;
       ctx.drawImage(bgImg,(sz.w-dw)/2,(sz.h-dh)/2,dw,dh);
     }else{ctx.fillStyle=bgColor;ctx.fillRect(0,0,sz.w,sz.h);}
-    // packshot + contact shadow
-    if(packImg){
+    // packshot + contact shadow (only when not a finished library base)
+    if(packImg&&bgMode!=="library"){
       const maxW=sz.w*packScale, ratio=packImg.height/packImg.width;
       const pw=maxW, ph=maxW*ratio;
       const px=(sz.w-pw)/2, py=sz.h*packY-ph/2;
@@ -3304,64 +3330,93 @@ function CreativeComposer({c,copy,toast}){
       ctx.drawImage(packImg,px,py,pw,ph);
     }
     // text block
+    const posDef=COMPOSER_POS.find(p=>p.k===pos)||COMPOSER_POS[0];
+    const align=posDef.align, isBottom=pos[0]==="b";
     const pad=sz.w*0.07, maxW=sz.w-pad*2;
-    ctx.textAlign="left";ctx.textBaseline="top";
-    const {lines,px:hpx}=wrapFit(ctx,headline,maxW,Math.round(sz.w*0.085),4);
+    ctx.textBaseline="top";
+    const base=Math.round(sz.w*0.085*sizeMul);
+    const headText=upper?(headline||"").toUpperCase():headline;
+    const {lines,px:hpx}=wrapFit(ctx,headText,maxW,base,5);
     const lineH=hpx*1.12;
     const blockH=lines.length*lineH;
-    let ty=textPos==="top"?sz.h*0.07:sz.h*0.93-blockH-(cta?hpx*1.6:0);
-    ctx.font="700 "+hpx+"px '"+font+"'";ctx.fillStyle=textColor;
-    ctx.shadowColor="rgba(0,0,0,0.25)";ctx.shadowBlur=6;ctx.shadowOffsetY=2;
-    for(const ln of lines){ctx.fillText(ln,pad,ty);ty+=lineH;}
+    const ctaH=cta?hpx*1.7:0;
+    let ty=isBottom?sz.h*0.94-blockH-ctaH:sz.h*0.07;
+    const anchorX=align==="left"?pad:align==="right"?sz.w-pad:sz.w/2;
+    ctx.textAlign=align;ctx.fillStyle=textColor;
+    ctx.font="700 "+hpx+"px '"+font+"'";
+    ctx.shadowColor="rgba(0,0,0,0.22)";ctx.shadowBlur=6;ctx.shadowOffsetY=2;
+    for(const ln of lines){ctx.fillText(ln,anchorX,ty);ty+=lineH;}
     ctx.shadowColor="transparent";ctx.shadowBlur=0;ctx.shadowOffsetY=0;
     if(cta){
-      const cpx=Math.round(sz.w*0.045);ctx.font="700 "+cpx+"px '"+font+"'";
-      const tw=ctx.measureText(cta).width, bx=pad, by=ty+hpx*0.4, bw=tw+cpx*1.6, bh=cpx*2;
+      const cpx=Math.round(hpx*0.52);const ctaText=upper?cta.toUpperCase():cta;
+      ctx.font="700 "+cpx+"px '"+font+"'";
+      const tw=ctx.measureText(ctaText).width, bw=tw+cpx*1.6, bh=cpx*2.1;
+      const bx=align==="left"?pad:align==="right"?sz.w-pad-bw:sz.w/2-bw/2;
+      const by=ty+hpx*0.3;
       ctx.fillStyle=ctaBg;
       if(ctx.roundRect){ctx.beginPath();ctx.roundRect(bx,by,bw,bh,bh/2);ctx.fill();}else{ctx.fillRect(bx,by,bw,bh);}
-      ctx.fillStyle="#FFFFFF";ctx.textBaseline="middle";ctx.fillText(cta,bx+cpx*0.8,by+bh/2);ctx.textBaseline="top";
+      ctx.fillStyle="#FFFFFF";ctx.textAlign="left";ctx.textBaseline="middle";ctx.fillText(ctaText,bx+cpx*0.8,by+bh/2);ctx.textBaseline="top";
     }
-  },[sz,bgMode,bgColor,bgImg,packImg,packScale,packY,shadow,headline,cta,textPos,textColor,ctaBg,font]);
+  },[sz,bgMode,bgColor,bgImg,packImg,packScale,packY,shadow,headline,cta,pos,textColor,ctaBg,font,sizeMul,upper]);
 
   React.useEffect(()=>{draw();},[draw]);
 
   const exportPng=()=>{const cv=ref.current;if(!cv)return;cv.toBlob(b=>{const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download=(c.product||"creative").replace(/\s+/g,"_")+"_"+sz.w+"x"+sz.h+".png";a.click();URL.revokeObjectURL(u);},"image/png");};
   const saveToLib=async()=>{const cv=ref.current;if(!cv)return;setSaving(true);try{const dataUrl=cv.toDataURL("image/png");await api.post("/api/image-library",{file_name:(c.product||"creative")+"_composed.png",file_data:dataUrl,file_type:"image/png"});if(toast)toast("Saved to Image library ✓","success");}catch(e){if(toast)toast("Save failed","error");}setSaving(false);};
+  const requestDesign=()=>{if(!patch)return;patch(c.id,{data:{...(c.data||{}),design:{...((c.data||{}).design||{}),needsDesignTeam:true,requestedBy:me?me.name:""}}});if(toast)toast("Sent to the design team for help ✓","success");};
 
   const packOptions=items.filter(i=>i.id!==bgId);
   const fieldL={fontSize:11,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.4,marginBottom:5,display:"block"};
   const ctrl={width:"100%",border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 9px",fontSize:13,boxSizing:"border-box"};
+  const swatch=(i)=>{const p=BRAND_PALETTES[i];return <button key={i}onClick={()=>applyPalette(i)}title={p.name}style={{display:"flex",alignItems:"center",gap:0,border:`2px solid ${paletteIdx===i&&!customColours?C.coral:C.line}`,borderRadius:8,overflow:"hidden",cursor:"pointer",padding:0,height:30}}><span style={{width:22,height:26,background:p.bg}}/><span style={{width:14,height:26,background:p.text}}/><span style={{width:14,height:26,background:p.cta}}/></button>;};
+
   return<div style={{marginTop:14,border:`1px solid ${C.line}`,borderRadius:12,overflow:"hidden"}}>
     <div style={{padding:"11px 16px",background:C.paper,borderBottom:`1px solid ${C.line}`,display:"flex",alignItems:"center",gap:8}}>
       <ImageIcon size={15}color={C.coral}/><span style={{fontWeight:800,fontSize:13.5,color:C.ink}}>Creative Composer</span>
-      <span style={{fontSize:11.5,color:C.sub}}>Real packshot + brand text · exact export</span>
+      <span style={{fontSize:11.5,color:C.sub}}>{usingLibBg?"Library image + brand text":"Real packshot + brand text"} · exact export</span>
+      {isBiz&&<span style={{marginLeft:"auto",fontSize:10.5,fontWeight:700,color:C.coral,background:C.coralSoft,padding:"2px 8px",borderRadius:999}}>Simple mode</span>}
     </div>
     <div style={{display:"flex",gap:16,padding:16,flexWrap:"wrap"}}>
       {/* preview */}
       <div style={{flex:"0 0 auto"}}>
         <canvas ref={ref}style={{width:Math.min(300,sz.w/3),maxWidth:300,height:"auto",borderRadius:8,border:`1px solid ${C.line}`,boxShadow:"0 4px 14px rgba(0,0,0,.12)",display:"block",background:"#fff"}}/>
-        <div style={{display:"flex",gap:8,marginTop:10}}>
+        <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap"}}>
           <Btn small onClick={exportPng}>Download PNG</Btn>
           <Btn small variant="ghost"disabled={saving}onClick={saveToLib}>{saving?"Saving…":"Save to library"}</Btn>
         </div>
+        {isBiz&&<button onClick={requestDesign}style={{marginTop:10,width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6,fontSize:12.5,fontWeight:700,padding:"8px 12px",borderRadius:9,border:`1.5px dashed ${C.line}`,background:"#fff",color:C.sub,cursor:"pointer"}}><Wand2 size={14}/>Can't get it right? Request design team</button>}
       </div>
       {/* controls */}
       <div style={{flex:1,minWidth:240,display:"grid",gridTemplateColumns:"1fr 1fr",gap:11}}>
+        {/* Brand palette presets — shown first */}
+        {!usingLibBg&&<div style={{gridColumn:"1 / -1"}}>
+          <label style={fieldL}>Brand colours</label>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {BRAND_PALETTES.map((p,i)=>swatch(i))}
+            <button onClick={()=>setCustomColours(v=>!v)}style={{fontSize:11.5,fontWeight:600,padding:"4px 10px",borderRadius:8,border:`1px solid ${customColours?C.coral:C.line}`,background:customColours?C.coralSoft:"#fff",color:customColours?C.coral:C.sub,cursor:"pointer"}}>Custom</button>
+          </div>
+        </div>}
+        {customColours&&!usingLibBg&&<>
+          <div><label style={fieldL}>Background</label><input type="color"value={bgColor}onChange={e=>{setBgColor(e.target.value);setBgMode("color");}}style={{...ctrl,padding:2,height:34}}/></div>
+          <div><label style={fieldL}>Text colour</label><input type="color"value={textColor}onChange={e=>setTextColor(e.target.value)}style={{...ctrl,padding:2,height:34}}/></div>
+          <div><label style={fieldL}>CTA colour</label><input type="color"value={ctaBg}onChange={e=>setCtaBg(e.target.value)}style={{...ctrl,padding:2,height:34}}/></div>
+        </>}
         <div><label style={fieldL}>Size</label><select value={sizeIdx}onChange={e=>setSizeIdx(+e.target.value)}style={ctrl}>{COMPOSER_SIZES.map((s,i)=><option key={i}value={i}>{s.label} ({s.w}×{s.h})</option>)}</select></div>
         <div><label style={fieldL}>Font</label><select value={font}onChange={e=>setFont(e.target.value)}style={ctrl}>{COMPOSER_FONTS.map(f=><option key={f}value={f}>{f}</option>)}</select></div>
-        <div><label style={fieldL}>Background</label><select value={bgMode}onChange={e=>setBgMode(e.target.value)}style={ctrl}><option value="color">Brand colour</option><option value="library">Library image (scene)</option></select></div>
-        {bgMode==="color"
-          ?<div><label style={fieldL}>Colour</label><input type="color"value={bgColor}onChange={e=>setBgColor(e.target.value)}style={{...ctrl,padding:2,height:34}}/></div>
-          :<div><label style={fieldL}>Scene image</label><select value={bgId}onChange={e=>setBgId(e.target.value)}style={ctrl}><option value="">— pick —</option>{items.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select></div>}
-        <div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Product packshot</label><select value={packId}onChange={e=>setPackId(e.target.value)}style={ctrl}><option value="">— none —</option>{packOptions.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select></div>
-        <div><label style={fieldL}>Packshot size</label><input type="range"min="20"max="100"value={Math.round(packScale*100)}onChange={e=>setPackScale(e.target.value/100)}style={{width:"100%"}}/></div>
-        <div><label style={fieldL}>Packshot height</label><input type="range"min="20"max="90"value={Math.round(packY*100)}onChange={e=>setPackY(e.target.value/100)}style={{width:"100%"}}/></div>
         <div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Headline</label><input value={headline}onChange={e=>setHeadline(e.target.value)}style={ctrl}/></div>
         <div><label style={fieldL}>CTA</label><input value={cta}onChange={e=>setCta(e.target.value)}style={ctrl}/></div>
-        <div><label style={fieldL}>Text position</label><select value={textPos}onChange={e=>setTextPos(e.target.value)}style={ctrl}><option value="top">Top</option><option value="bottom">Bottom</option></select></div>
-        <div><label style={fieldL}>Text colour</label><input type="color"value={textColor}onChange={e=>setTextColor(e.target.value)}style={{...ctrl,padding:2,height:34}}/></div>
-        <div><label style={fieldL}>CTA colour</label><input type="color"value={ctaBg}onChange={e=>setCtaBg(e.target.value)}style={{...ctrl,padding:2,height:34}}/></div>
-        <label style={{gridColumn:"1 / -1",display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.ink,cursor:"pointer"}}><input type="checkbox"checked={shadow}onChange={e=>setShadow(e.target.checked)}/>Contact shadow under packshot</label>
+        <div><label style={fieldL}>Text placement</label><select value={pos}onChange={e=>setPos(e.target.value)}style={ctrl}>{COMPOSER_POS.map(p=><option key={p.k}value={p.k}>{p.label}</option>)}</select></div>
+        <div><label style={fieldL}>Headline size</label><input type="range"min="60"max="160"value={Math.round(sizeMul*100)}onChange={e=>setSizeMul(e.target.value/100)}style={{width:"100%"}}/></div>
+        <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.ink,cursor:"pointer",alignSelf:"end"}}><input type="checkbox"checked={upper}onChange={e=>setUpper(e.target.checked)}/>UPPERCASE</label>
+        {/* Packshot controls — hidden when the base is a finished library image, and trimmed for business */}
+        {!usingLibBg&&<>
+          <div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Product packshot</label><select value={packId}onChange={e=>setPackId(e.target.value)}style={ctrl}><option value="">— none —</option>{packOptions.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select></div>
+          {!isBiz&&packId&&<>
+            <div><label style={fieldL}>Packshot size</label><input type="range"min="20"max="100"value={Math.round(packScale*100)}onChange={e=>setPackScale(e.target.value/100)}style={{width:"100%"}}/></div>
+            <div><label style={fieldL}>Packshot height</label><input type="range"min="20"max="90"value={Math.round(packY*100)}onChange={e=>setPackY(e.target.value/100)}style={{width:"100%"}}/></div>
+            <label style={{gridColumn:"1 / -1",display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.ink,cursor:"pointer"}}><input type="checkbox"checked={shadow}onChange={e=>setShadow(e.target.checked)}/>Contact shadow under packshot</label>
+          </>}
+        </>}
       </div>
     </div>
   </div>;
@@ -3515,7 +3570,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
         {/* Design complete flow — requires uploaded file/link before marking done */}
         {(approvedPrompt||d.libraryPick)&&<FinalDesignUpload c={c}d={d}patch={patch}me={me}/>}
 
-        {isOpen&&copy&&<CreativeComposer c={c}copy={copy}toast={(typeof toast!=="undefined"?toast:null)}/>}
+        {isOpen&&copy&&<CreativeComposer c={c}copy={copy}me={me}patch={patch}toast={(typeof toast!=="undefined"?toast:null)}/>}
         <FeedbackBar stage="design"by={me.name}onSave={saveFeedback}/>
         {/* Art direction comments — design context, available to everyone */}
         <CommentThread campaignId={c.id}context="design"me={me}/>
