@@ -15,7 +15,7 @@ const app  = express();
 const PORT = process.env.PORT || 8080;
 const JWT_SECRET = process.env.JWT_SECRET || "huft-crm-dev-secret-change-in-prod";
 
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "25mb" }));
 app.use(express.static(path.join(__dirname, "public"), {
   setHeaders: (res, filePath) => {
     // Never let the browser/CDN serve a stale index.html after a deploy.
@@ -65,7 +65,41 @@ const GEMINI_KEY   = process.env.GEMINI_API_KEY   || "";
 const CLAUDE_KEY   = process.env.ANTHROPIC_API_KEY || "";
 const PROVIDER     = CLAUDE_KEY ? "claude" : GEMINI_KEY ? "gemini" : "mock";
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+// Image generation uses a Gemini image model (works even if text PROVIDER is Claude).
+// gemini-2.5-flash-image works today; gemini-2.5-flash-image retires Oct 2 2026 — swap to
+// gemini-3.1-flash-image (Nano Banana 2) via env when ready, no code change needed.
+const GEMINI_IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-image";
 const CLAUDE_MODEL = process.env.CLAUDE_MODEL || "claude-sonnet-4-6";
+
+// Text-to-image via Gemini. Returns a data URL (data:image/png;base64,...).
+// aspectRatio is one of Gemini's supported ratios: 1:1, 4:5, 9:16, 16:9, 3:4, 4:3, etc.
+async function generateImageFromPrompt(prompt, aspectRatio = "1:1") {
+  if (!GEMINI_KEY) throw new Error("Image generation needs GEMINI_API_KEY in the server env.");
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_IMAGE_MODEL}:generateContent?key=${GEMINI_KEY}`;
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio } },
+    }),
+  });
+  const data = await r.json();
+  if (!r.ok) {
+    console.error("Gemini image error:", JSON.stringify(data));
+    throw new Error(data.error?.message || "Gemini image error " + r.status);
+  }
+  const parts = data.candidates?.[0]?.content?.parts || [];
+  const imgPart = parts.find(p => p.inlineData || p.inline_data);
+  const inline = imgPart && (imgPart.inlineData || imgPart.inline_data);
+  if (!inline?.data) {
+    // Model sometimes returns a text refusal instead of an image
+    const txt = parts.map(p => p.text || "").join(" ").trim();
+    throw new Error(txt ? ("No image returned: " + txt.slice(0, 200)) : "No image returned by the model.");
+  }
+  const mime = inline.mimeType || inline.mime_type || "image/png";
+  return `data:${mime};base64,${inline.data}`;
+}
 
 async function generate(system, prompt) {
   if (PROVIDER === "gemini") {
@@ -762,7 +796,7 @@ app.get("/api/cron/sheet-sync", async (req, res) => {
 
 // Upload an image: the engine analyses it (product, category, tags, context) then stores it.
 // body: { file_name, file_data (data URL or raw base64), file_type, notes }
-app.post("/api/image-library", authMiddleware, roles("admin", "brand"), async (req, res) => {
+app.post("/api/image-library", authMiddleware, roles("admin", "brand", "design", "business"), async (req, res) => {
   const { file_name, file_data, file_type, notes } = req.body;
   if (!file_data) return res.status(400).json({ error: "file_data required" });
   // Strip a data: URL prefix if present, to get raw base64 for the vision call
@@ -795,6 +829,20 @@ app.post("/api/image-library", authMiddleware, roles("admin", "brand"), async (r
     );
     res.json(rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Generate a background/scene image from a text prompt (Composer "Generate image").
+// body: { prompt, negativePrompt?, aspectRatio? }  →  { image: dataURL }
+app.post("/api/generate-image", authMiddleware, roles("admin", "brand", "design", "business"), async (req, res) => {
+  const { prompt, negativePrompt, aspectRatio } = req.body || {};
+  if (!prompt || !String(prompt).trim()) return res.status(400).json({ error: "prompt required" });
+  const full = negativePrompt ? `${prompt}\n\nAvoid: ${negativePrompt}` : String(prompt);
+  try {
+    const image = await generateImageFromPrompt(full, aspectRatio || "1:1");
+    res.json({ image });
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
 });
 
 // List / search the library. ?q= free-text across product/category/tags/description.
