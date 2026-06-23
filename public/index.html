@@ -62,7 +62,7 @@ async function callClaude(system,prompt,expectJson){
 // Role-based default tab
 const ROLE_TAB={admin:"dashboard",business:"dashboard",content:"content",design:"design",brand:"dashboard"};
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v9 · composer: headline+subhead, logo, mockup, AI generate";
+const BUILD="v10 · composer: brand palettes, role source, image-copy fix";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -3252,17 +3252,33 @@ const PLACEMENTS=[
   {k:"mid-left",label:"Mid L"},{k:"mid-center",label:"Mid C"},{k:"mid-right",label:"Mid R"},
   {k:"bottom-left",label:"Bot L"},{k:"bottom-center",label:"Bot C"},{k:"bottom-right",label:"Bot R"},
 ];
+// Pre-made brand colour combinations from the Book of Tails / Sara's manual {bg, text, cta}
+const BRAND_PALETTES=[
+  {name:"HUFT Orange · Cream",bg:"#FBF1DF",text:"#241A14",cta:"#E8632A"},
+  {name:"HUFT Orange · Dark",bg:"#241A14",text:"#FFFFFF",cta:"#E8632A"},
+  {name:"Sara's Navy · Cream",bg:"#102242",text:"#F5E9D0",cta:"#E8632A"},
+  {name:"Chicken & Turkey",bg:"#102242",text:"#FAAB18",cta:"#FAAB18"},
+  {name:"Lamb & Apple",bg:"#102242",text:"#CC1C6A",cta:"#CC1C6A"},
+  {name:"Chicken & Brown Rice",bg:"#102242",text:"#DC5829",cta:"#DC5829"},
+  {name:"Paneer & Eggs",bg:"#102242",text:"#00A6B4",cta:"#00A6B4"},
+];
 function loadImage(src){return new Promise((res,rej)=>{const im=new Image();im.crossOrigin="anonymous";im.onload=()=>res(im);im.onerror=rej;im.src=src;});}
 
 function CreativeComposer({c,copy,toast,me,approvedPrompt}){
   const ref=React.useRef(null);
+  const role=(me&&me.role)||"";
+  const isBusiness=role==="business";        // business = simplified generate (no prompt editing)
+  const dsg=(c.data&&c.data.design)||{};
+  const initSource = dsg.imageSource==="library"||dsg.libraryPick ? "library"
+                   : dsg.imageSource==="prompt" ? "generate" : "plain";
+
   const[sizeIdx,setSizeIdx]=useState(0);
   const sz=COMPOSER_SIZES[sizeIdx];
 
-  // background: color | library | generate(gemini)
-  const[bgMode,setBgMode]=useState("color");
-  const[bgColor,setBgColor]=useState(C.navy);
-  const[bgId,setBgId]=useState("");
+  // background source: plain (brand colour + product) | library | generate(AI)
+  const[bgMode,setBgMode]=useState(initSource);
+  const[bgColor,setBgColor]=useState("#102242");
+  const[bgId,setBgId]=useState(dsg.libraryPick||"");
   const[bgImg,setBgImg]=useState(null);
   const[genImg,setGenImg]=useState(null);
   const[genPrompt,setGenPrompt]=useState((approvedPrompt&&approvedPrompt.prompt)||"");
@@ -3270,8 +3286,8 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt}){
   const[genBusy,setGenBusy]=useState(false);
   const[genErr,setGenErr]=useState("");
 
-  // product / mockup
-  const initPack=c.data&&c.data.design&&c.data.design.libraryPick?c.data.design.libraryPick:"";
+  // product / mockup — user picks this explicitly (libraryPick drives the background, not the product)
+  const initPack="";
   const[packId,setPackId]=useState(initPack);
   const[packImg,setPackImg]=useState(null);
   const[packScale,setPackScale]=useState(0.6);
@@ -3285,26 +3301,28 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt}){
   const[logoScale,setLogoScale]=useState(0.22);
   const[logoCorner,setLogoCorner]=useState("top-left");
 
-  // text — headline + sub-headline, each independently editable
-  const[hl,setHl]=useState({text:(copy&&copy.header)||"",font:"Korolev",size:1,kern:0,dx:0,dy:0});
-  const[sh,setSh]=useState({text:(copy&&copy.body)||"",font:"Rubik",size:1,kern:0,dx:0,dy:0});
+  // text — ONLY the image copy (copy.header = on-image overlay, 2-3 short lines), never copy.body
+  const headerLines=(((copy&&copy.header)||"").split(/\r?\n/).map(s=>s.trim()).filter(Boolean));
+  const[hl,setHl]=useState({text:headerLines[0]||"",font:"Korolev",size:1,kern:0,dx:0,dy:0});
+  const[sh,setSh]=useState({text:headerLines.slice(1).join(" ")||"",font:"Rubik",size:1,kern:0,dx:0,dy:0});
   const[textColor,setTextColor]=useState("#FFFFFF");
-  const[anchor,setAnchor]=useState("top-left");   // placement set on the headline block; sub-head follows
-  const[editing,setEditing]=useState("");          // "" | "hl" | "sh"
+  const[anchor,setAnchor]=useState("top-left");
+  const[editing,setEditing]=useState("");
 
   // CTA (optional)
   const[cta,setCta]=useState((copy&&copy.cta)||"");
   const[ctaBg,setCtaBg]=useState(C.coral);
 
   const[items,setItems]=useState([]);
+  const[loadingItems,setLoadingItems]=useState(true);
   const[saving,setSaving]=useState(false);
 
-  React.useEffect(()=>{let on=true;api.get("/api/image-library").then(r=>{if(on)setItems(r||[]);}).catch(()=>{});return()=>{on=false;};},[]);
+  const reloadLib=React.useCallback(()=>{setLoadingItems(true);api.get("/api/image-library").then(r=>setItems(r||[])).catch(()=>{}).finally(()=>setLoadingItems(false));},[]);
+  React.useEffect(()=>{reloadLib();},[reloadLib]);
   React.useEffect(()=>{let on=true;if(!bgId){setBgImg(null);return;}api.get("/api/image-library/"+bgId).then(r=>loadImage(r.file_data)).then(im=>{if(on)setBgImg(im);}).catch(()=>{});return()=>{on=false;};},[bgId]);
   React.useEffect(()=>{let on=true;if(!packId){setPackImg(null);return;}api.get("/api/image-library/"+packId).then(r=>loadImage(r.file_data)).then(im=>{if(on)setPackImg(im);}).catch(()=>{});return()=>{on=false;};},[packId]);
   React.useEffect(()=>{let on=true;if(!logoId){setLogoImg(null);return;}api.get("/api/image-library/"+logoId).then(r=>loadImage(r.file_data)).then(im=>{if(on)setLogoImg(im);}).catch(()=>{});return()=>{on=false;};},[logoId]);
 
-  // wrap + auto-shrink text to fit a max width / line budget, for a given element
   const wrapFit=(ctx,el,maxW,basePx,maxLines)=>{
     let px=Math.round(basePx*(el.size||1));
     const fam="'"+el.font+"'";
@@ -3319,14 +3337,12 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt}){
     }
     return{lines:(el.text||"").split(/\s+/).filter(Boolean).length?[el.text]:[],px};
   };
-
   const drawBgImage=(ctx,img)=>{const s=Math.max(sz.w/img.width,sz.h/img.height);const dw=img.width*s,dh=img.height*s;ctx.drawImage(img,(sz.w-dw)/2,(sz.h-dh)/2,dw,dh);};
 
   const draw=React.useCallback(async()=>{
     const cv=ref.current;if(!cv)return;
     cv.width=sz.w;cv.height=sz.h;
     const ctx=cv.getContext("2d");
-    // make sure both element fonts are loaded before measuring/drawing (no fallback flash)
     try{await Promise.all([
       document.fonts.load("700 "+Math.round(sz.w*0.085)+"px '"+hl.font+"'"),
       document.fonts.load("700 "+Math.round(sz.w*0.042)+"px '"+sh.font+"'"),
@@ -3336,7 +3352,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt}){
     // 1) background
     if(bgMode==="generate"&&genImg) drawBgImage(ctx,genImg);
     else if(bgMode==="library"&&bgImg) drawBgImage(ctx,bgImg);
-    else{ctx.fillStyle=bgColor;ctx.fillRect(0,0,sz.w,sz.h);}
+    else{ctx.fillStyle=bgColor;ctx.fillRect(0,0,sz.w,sz.h);}   // plain
 
     // 2) product / mockup (+ contact shadow)
     if(packImg){
@@ -3352,13 +3368,12 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt}){
       ctx.drawImage(packImg,px,py,pw,ph);
     }
 
-    // 3) text block (headline + sub-headline stacked), anchored by `anchor`
+    // 3) text block (image copy only) — headline + sub-headline, anchored by `anchor`
     const pad=sz.w*0.07, maxW=sz.w-pad*2;
     const [vPos,hPos]=anchor.split("-");
     const hAlign=hPos==="left"?"left":hPos==="right"?"right":"center";
     const anchorX=hPos==="left"?pad:hPos==="right"?sz.w-pad:sz.w/2;
     ctx.textBaseline="top";
-
     const H=wrapFit(ctx,hl,maxW,sz.w*0.085,4);
     const S=wrapFit(ctx,sh,maxW,sz.w*0.042,5);
     const hLineH=H.px*1.12, sLineH=S.px*1.32, gap=H.px*0.55;
@@ -3366,28 +3381,19 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt}){
     const sBlock=S.lines.length? gap+S.lines.length*sLineH : 0;
     const ctaH=cta? H.px*1.7 : 0;
     const blockH=hBlock+sBlock+ctaH;
-
     let topY = vPos==="top"? sz.h*0.08 : vPos==="bottom"? sz.h*0.92-blockH : (sz.h-blockH)/2;
 
-    // headline
     ctx.fillStyle=textColor;ctx.textAlign=hAlign;
     ctx.font="700 "+H.px+"px '"+hl.font+"'";try{ctx.letterSpacing=(hl.kern||0)+"px";}catch(e){}
     ctx.shadowColor="rgba(0,0,0,0.25)";ctx.shadowBlur=6;ctx.shadowOffsetY=2;
-    let y=topY+ (hl.dy||0)*sz.h;
-    const hx=anchorX+(hl.dx||0)*sz.w;
+    let y=topY+(hl.dy||0)*sz.h;const hx=anchorX+(hl.dx||0)*sz.w;
     for(const ln of H.lines){ctx.fillText(ln,hx,y);y+=hLineH;}
-
-    // sub-headline — automatically under the headline, with its own nudge/size/kerning
     if(S.lines.length){
       ctx.font="600 "+S.px+"px '"+sh.font+"'";try{ctx.letterSpacing=(sh.kern||0)+"px";}catch(e){}
-      let sy=topY+hBlock+gap+(sh.dy||0)*sz.h;
-      const sx=anchorX+(sh.dx||0)*sz.w;
+      let sy=topY+hBlock+gap+(sh.dy||0)*sz.h;const sx=anchorX+(sh.dx||0)*sz.w;
       for(const ln of S.lines){ctx.fillText(ln,sx,sy);sy+=sLineH;}
     }
-    ctx.shadowColor="transparent";ctx.shadowBlur=0;ctx.shadowOffsetY=0;
-    try{ctx.letterSpacing="0px";}catch(e){}
-
-    // CTA pill — under the text block, aligned to the headline
+    ctx.shadowColor="transparent";ctx.shadowBlur=0;ctx.shadowOffsetY=0;try{ctx.letterSpacing="0px";}catch(e){}
     if(cta){
       const cpx=Math.round(sz.w*0.04);ctx.font="700 "+cpx+"px '"+sh.font+"'";
       const tw=ctx.measureText(cta).width, bw=tw+cpx*1.7, bh=cpx*2.1;
@@ -3399,12 +3405,11 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt}){
       ctx.fillText(cta,bx+cpx*0.85,by+bh/2);ctx.textBaseline="top";
     }
 
-    // 4) logo overlay (sub-brand), corner-placed
+    // 4) logo overlay
     if(logoImg){
       const lw=sz.w*logoScale, lh=lw*(logoImg.height/logoImg.width), m=sz.w*0.05;
       const [lv,lh2]=logoCorner.split("-");
-      const lx=lh2==="left"?m:sz.w-lw-m;
-      const ly=lv==="top"?m:sz.h-lh-m;
+      const lx=lh2==="left"?m:sz.w-lw-m, ly=lv==="top"?m:sz.h-lh-m;
       ctx.drawImage(logoImg,lx,ly,lw,lh);
     }
   },[sz,bgMode,bgColor,bgImg,genImg,packImg,packScale,packX,packY,shadow,hl,sh,textColor,anchor,cta,ctaBg,logoImg,logoScale,logoCorner]);
@@ -3412,17 +3417,15 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt}){
   React.useEffect(()=>{draw();},[draw]);
 
   const runGenerate=async()=>{
-    if(!genPrompt.trim()){setGenErr("Add a prompt describing the scene/background.");return;}
+    if(!genPrompt.trim()){setGenErr("No prompt available to generate from.");return;}
     setGenBusy(true);setGenErr("");
     try{
       const r=await api.post("/api/generate-image",{prompt:genPrompt,negativePrompt:genNeg,aspectRatio:sz.ar});
-      const im=await loadImage(r.image);
-      setGenImg(im);setBgMode("generate");
-      if(toast)toast("Background generated ✓ — product & text kept on top","success");
+      const im=await loadImage(r.image);setGenImg(im);setBgMode("generate");
+      if(toast)toast("Image generated ✓ — product & copy kept on top","success");
     }catch(e){setGenErr(e.message||"Generation failed");}
     setGenBusy(false);
   };
-
   const exportPng=()=>{const cv=ref.current;if(!cv)return;cv.toBlob(b=>{const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download=(c.product||"creative").replace(/\s+/g,"_")+"_"+sz.w+"x"+sz.h+".png";a.click();URL.revokeObjectURL(u);},"image/png");};
   const saveToLib=async()=>{const cv=ref.current;if(!cv)return;setSaving(true);try{const dataUrl=cv.toDataURL("image/png");await api.post("/api/image-library",{file_name:(c.product||"creative")+"_composed.png",file_data:dataUrl,file_type:"image/png"});if(toast)toast("Saved to Image library ✓","success");}catch(e){if(toast)toast(e.status===403?"You don't have permission to save":"Save failed","error");}setSaving(false);};
 
@@ -3430,8 +3433,6 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt}){
   const fieldL={fontSize:11,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.4,marginBottom:5,display:"block"};
   const ctrl={width:"100%",border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 9px",fontSize:13,boxSizing:"border-box"};
   const slider=(label,val,min,max,set,fmt)=><div><label style={fieldL}>{label}{fmt?" · "+fmt(val):""}</label><input type="range"min={min}max={max}value={val}onChange={e=>set(+e.target.value)}style={{width:"100%"}}/></div>;
-
-  // per-element edit panel (font, size, kerning, horizontal, vertical)
   const editPanel=(el,setEl)=><div style={{gridColumn:"1 / -1",display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,padding:"10px 12px",background:C.paper,border:`1px solid ${C.line}`,borderRadius:8}}>
     <div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Font</label><select value={el.font}onChange={e=>setEl({...el,font:e.target.value})}style={ctrl}>{COMPOSER_FONTS.map(f=><option key={f}value={f}>{f}</option>)}</select></div>
     {slider("Font size",Math.round(el.size*100),50,200,v=>setEl({...el,size:v/100}),v=>v+"%")}
@@ -3443,10 +3444,9 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt}){
   return<div style={{marginTop:14,border:`1px solid ${C.line}`,borderRadius:12,overflow:"hidden"}}>
     <div style={{padding:"11px 16px",background:C.paper,borderBottom:`1px solid ${C.line}`,display:"flex",alignItems:"center",gap:8}}>
       <ImageIcon size={15}color={C.coral}/><span style={{fontWeight:800,fontSize:13.5,color:C.ink}}>Creative Composer</span>
-      <span style={{fontSize:11.5,color:C.sub}}>Real product + brand text · exact export</span>
+      <span style={{fontSize:11.5,color:C.sub}}>Real product + image copy · exact export</span>
     </div>
     <div style={{display:"flex",gap:16,padding:16,flexWrap:"wrap"}}>
-      {/* preview */}
       <div style={{flex:"0 0 auto"}}>
         <canvas ref={ref}style={{width:Math.min(300,sz.w/3),maxWidth:300,height:"auto",borderRadius:8,border:`1px solid ${C.line}`,boxShadow:"0 4px 14px rgba(0,0,0,.12)",display:"block",background:"#fff"}}/>
         <div style={{display:"flex",gap:8,marginTop:10}}>
@@ -3454,33 +3454,68 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt}){
           <Btn small variant="ghost"disabled={saving}onClick={saveToLib}>{saving?"Saving…":"Save to library"}</Btn>
         </div>
       </div>
-      {/* controls */}
       <div style={{flex:1,minWidth:260,display:"grid",gridTemplateColumns:"1fr 1fr",gap:11,alignContent:"start"}}>
         <div><label style={fieldL}>Size</label><select value={sizeIdx}onChange={e=>setSizeIdx(+e.target.value)}style={ctrl}>{COMPOSER_SIZES.map((s,i)=><option key={i}value={i}>{s.label} ({s.w}×{s.h})</option>)}</select></div>
-        <div><label style={fieldL}>Background</label><select value={bgMode}onChange={e=>setBgMode(e.target.value)}style={ctrl}><option value="color">Brand colour</option><option value="library">Library image</option><option value="generate">Generate (AI)</option></select></div>
+        <div><label style={fieldL}>Source · keep or switch</label><select value={bgMode}onChange={e=>setBgMode(e.target.value)}style={ctrl}>
+          <option value="plain">Plain background + product</option>
+          <option value="library">Image from library</option>
+          <option value="generate">Generated image (AI)</option>
+        </select></div>
 
-        {bgMode==="color"&&<div><label style={fieldL}>Colour</label><input type="color"value={bgColor}onChange={e=>setBgColor(e.target.value)}style={{...ctrl,padding:2,height:34}}/></div>}
-        {bgMode==="library"&&<div><label style={fieldL}>Scene image</label><select value={bgId}onChange={e=>setBgId(e.target.value)}style={ctrl}><option value="">— pick —</option>{items.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select></div>}
+        {/* PLAIN — brand colour presets + custom */}
+        {bgMode==="plain"&&<div style={{gridColumn:"1 / -1"}}>
+          <label style={fieldL}>Brand colour combinations</label>
+          <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:8}}>
+            {BRAND_PALETTES.map(p=><button key={p.name}title={p.name}onClick={()=>{setBgColor(p.bg);setTextColor(p.text);setCtaBg(p.cta);}}
+              style={{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",borderRadius:8,cursor:"pointer",border:`1px solid ${bgColor===p.bg?C.coral:C.line}`,background:"#fff"}}>
+              <span style={{width:16,height:16,borderRadius:4,background:p.bg,border:`1px solid ${C.line}`,display:"inline-block"}}/>
+              <span style={{width:10,height:10,borderRadius:"50%",background:p.text,display:"inline-block"}}/>
+              <span style={{width:10,height:10,borderRadius:"50%",background:p.cta,display:"inline-block"}}/>
+              <span style={{fontSize:11,fontWeight:600,color:C.ink}}>{p.name}</span>
+            </button>)}
+          </div>
+          <div style={{display:"flex",gap:10,alignItems:"center"}}>
+            <label style={{...fieldL,margin:0}}>Custom</label>
+            <input type="color"value={bgColor}onChange={e=>setBgColor(e.target.value)}style={{width:40,height:30,border:`1px solid ${C.line}`,borderRadius:6,padding:2}}/>
+          </div>
+        </div>}
+
+        {/* LIBRARY image */}
+        {bgMode==="library"&&<div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Library image (scene)</label><select value={bgId}onChange={e=>setBgId(e.target.value)}style={ctrl}><option value="">— pick —</option>{items.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select></div>}
+
+        {/* GENERATE — role-gated */}
         {bgMode==="generate"&&<div style={{gridColumn:"1 / -1",display:"grid",gap:8,padding:"10px 12px",background:C.paper,border:`1px solid ${C.line}`,borderRadius:8}}>
-          <div><label style={fieldL}>Prompt (scene / background)</label><textarea value={genPrompt}onChange={e=>setGenPrompt(e.target.value)}rows={2}style={{...ctrl,resize:"vertical"}}placeholder="e.g. warm rustic kitchen counter, soft morning light, shallow depth of field"/></div>
-          <div><label style={fieldL}>Avoid (optional)</label><input value={genNeg}onChange={e=>setGenNeg(e.target.value)}style={ctrl}placeholder="text, watermarks, other products"/></div>
+          {isBusiness
+            ? <div style={{fontSize:12,color:C.sub}}>Generates a scene from the approved art-direction prompt. The product and copy stay on top, fully editable.</div>
+            : <>
+                <div><label style={fieldL}>Prompt (scene / background)</label><textarea value={genPrompt}onChange={e=>setGenPrompt(e.target.value)}rows={2}style={{...ctrl,resize:"vertical"}}placeholder="e.g. warm rustic kitchen counter, soft morning light, shallow depth of field"/></div>
+                <div><label style={fieldL}>Avoid (optional)</label><input value={genNeg}onChange={e=>setGenNeg(e.target.value)}style={ctrl}placeholder="text, watermarks, other products"/></div>
+              </>}
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             <Btn small disabled={genBusy}onClick={runGenerate}>{genBusy?"Generating…":"Generate image"}</Btn>
-            <span style={{fontSize:11,color:C.sub}}>Product & text stay on top, fully editable</span>
+            <span style={{fontSize:11,color:C.sub}}>{isBusiness?"One-click":"Product & copy stay on top"}</span>
           </div>
           {genErr&&<div style={{fontSize:11.5,color:"#DC2626"}}>{genErr}</div>}
         </div>}
 
         {/* product / mockup */}
         <div style={{gridColumn:"1 / -1",borderTop:`1px solid ${C.line}`,paddingTop:11,fontSize:11.5,fontWeight:800,color:C.ink}}>Product / mockup</div>
-        <div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Product image</label><select value={packId}onChange={e=>setPackId(e.target.value)}style={ctrl}><option value="">— none —</option>{packOptions.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select></div>
+        <div style={{gridColumn:"1 / -1"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
+            <label style={fieldL}>Product image</label>
+            <button onClick={reloadLib}style={{border:"none",background:"none",color:C.coral,fontSize:11,fontWeight:700,cursor:"pointer",padding:0}}>Refresh</button>
+          </div>
+          <select value={packId}onChange={e=>setPackId(e.target.value)}style={ctrl}><option value="">— none —</option>{packOptions.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select>
+          {!loadingItems&&items.length===0&&<div style={{fontSize:11,color:C.sub,marginTop:5}}>No images in the library yet — upload packshots (Image library) and hit Refresh.</div>}
+          {loadingItems&&<div style={{fontSize:11,color:C.sub,marginTop:5}}>Loading library…</div>}
+        </div>
         {slider("Size",Math.round(packScale*100),20,100,v=>setPackScale(v/100),v=>v+"%")}
         {slider("Horizontal",Math.round(packX*100),0,100,v=>setPackX(v/100),v=>v+"%")}
         {slider("Vertical",Math.round(packY*100),10,95,v=>setPackY(v/100),v=>v+"%")}
         <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.ink,cursor:"pointer"}}><input type="checkbox"checked={shadow}onChange={e=>setShadow(e.target.checked)}/>Contact shadow</label>
 
-        {/* text */}
-        <div style={{gridColumn:"1 / -1",borderTop:`1px solid ${C.line}`,paddingTop:11,fontSize:11.5,fontWeight:800,color:C.ink}}>Text</div>
+        {/* image copy */}
+        <div style={{gridColumn:"1 / -1",borderTop:`1px solid ${C.line}`,paddingTop:11,fontSize:11.5,fontWeight:800,color:C.ink}}>Image copy</div>
         <div style={{gridColumn:"1 / -1"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
             <label style={fieldL}>Headline</label>
@@ -3497,15 +3532,12 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt}){
           <input value={sh.text}onChange={e=>setSh({...sh,text:e.target.value})}style={ctrl}/>
         </div>
         {editing==="sh"&&editPanel(sh,setSh)}
-
         <div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Placement (headline · sub-headline follows)</label>
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:5}}>
             {PLACEMENTS.map(p=><button key={p.k}onClick={()=>setAnchor(p.k)}style={{padding:"6px 0",fontSize:11,fontWeight:700,borderRadius:7,cursor:"pointer",border:`1px solid ${anchor===p.k?C.coral:C.line}`,background:anchor===p.k?C.coral+"18":"#fff",color:anchor===p.k?C.coral:C.sub}}>{p.label}</button>)}
           </div>
         </div>
         <div><label style={fieldL}>Text colour</label><input type="color"value={textColor}onChange={e=>setTextColor(e.target.value)}style={{...ctrl,padding:2,height:34}}/></div>
-
-        {/* CTA */}
         <div><label style={fieldL}>CTA (optional)</label><input value={cta}onChange={e=>setCta(e.target.value)}style={ctrl}/></div>
         <div><label style={fieldL}>CTA colour</label><input type="color"value={ctaBg}onChange={e=>setCtaBg(e.target.value)}style={{...ctrl,padding:2,height:34}}/></div>
 
