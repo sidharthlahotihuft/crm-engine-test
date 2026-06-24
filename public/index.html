@@ -62,7 +62,7 @@ async function callClaude(system,prompt,expectJson){
 // Role-based default tab
 const ROLE_TAB={admin:"dashboard",business:"dashboard",content:"content",design:"design",brand:"dashboard"};
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v27.4 · smart copy auto-fit — whole copy block scales to fit its space so it never overflows or overlaps the product";
+const BUILD="v27.5 · product-hero prompt so the pack is actually placed in AI scenes + server confirms it received the product image";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -3759,7 +3759,9 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
       const r=await api.post("/api/generate-image",{prompt:fullPrompt,negativePrompt:genNeg,aspectRatio:sz.ar,productImages,textZone,productZone});
       const im=await loadImage(r.image);setGenImg(im);setBgMode("generate");
       setGenUsedProduct(productImages.length>0); // product is blended into the scene — don't composite again
-      if(toast)toast(productImages.length?"Scene generated ✓ — product blended in with matched lighting":"Image generated ✓ — copy kept on top","success");
+      if(productImages.length&&!r.productsReceived){
+        if(toast)toast("Scene made, but the product reference didn't reach the server — deploy the latest server.js, then regenerate.","error");
+      }else if(toast)toast(productImages.length?"Scene generated ✓ — product blended in with matched lighting":"Image generated ✓ — copy kept on top","success");
     }catch(e){setGenErr(e.message||"Generation failed");}
     setGenBusy(false);
   };
