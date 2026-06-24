@@ -62,7 +62,7 @@ async function callClaude(system,prompt,expectJson){
 // Role-based default tab
 const ROLE_TAB={admin:"dashboard",business:"dashboard",content:"content",design:"design",brand:"dashboard"};
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v28.3 · editor Elements panel now also adds an uploaded Image element (logo / sticker / badge) placed and sized anywhere on the canvas, alongside extra text & CTAs";
+const BUILD="v28.4 · Image library: Upload folder button (webkitdirectory) adds a whole folder at once, tagged with the selected kind — one folder per kind (packshots, lifestyle, mockup backgrounds, logos)";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -2493,6 +2493,7 @@ function ImageLibraryTab({me,toast}){
   const[uploadKind,setUploadKind]=useState("product"); // product mockup | asset
   const[uploadDims,setUploadDims]=useState("");        // optional packaging size, applies to this batch
   const fileRef=useRef(null);
+  const folderRef=useRef(null);
 
   const load=async(query)=>{
     try{setItems(await api.get("/api/image-library"+(query?`?q=${encodeURIComponent(query)}`:"")));}
@@ -2537,10 +2538,12 @@ function ImageLibraryTab({me,toast}){
               <button key={k}onClick={()=>setUploadKind(k)}style={{padding:"7px 11px",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",background:uploadKind===k?C.coral:"#fff",color:uploadKind===k?"#fff":C.sub}}>{lbl}</button>)}
           </div>
           <Btn onClick={()=>fileRef.current&&fileRef.current.click()}><UploadIcon size={16}/>Upload images</Btn>
+          <Btn variant="ghost"onClick={()=>folderRef.current&&folderRef.current.click()}><UploadIcon size={16}/>Upload folder</Btn>
           <input ref={fileRef}type="file"accept="image/*"multiple style={{display:"none"}}onChange={e=>{if(e.target.files&&e.target.files.length)handleFiles(e.target.files);e.target.value="";}}/>
+          <input ref={folderRef}type="file"webkitdirectory="" directory=""multiple style={{display:"none"}}onChange={e=>{const imgs=[...(e.target.files||[])].filter(f=>f.type&&f.type.startsWith("image/"));if(imgs.length)handleFiles(imgs);else if(toast)toast("No images found in that folder","error");e.target.value="";}}/>
         </div>
         {uploadKind==="product"&&<input value={uploadDims}onChange={e=>setUploadDims(e.target.value)}placeholder="Packaging size (cm) — optional, e.g. 22.4 x 16.3 x 3.1 cm"style={{width:300,border:`1px solid ${C.line}`,borderRadius:8,padding:"6px 9px",fontSize:12}}/>}
-        <span style={{fontSize:10.5,color:C.sub}}>“{({product:"Product packshot",asset:"Lifestyle / scene",mockup:"Mockup background",logo:"Logo / lockup"})[uploadKind]||"Asset"}” applies to the next upload · select multiple files to bulk-upload</span>
+        <span style={{fontSize:10.5,color:C.sub}}>“{({product:"Product packshot",asset:"Lifestyle / scene",mockup:"Mockup background",logo:"Logo / lockup"})[uploadKind]||"Asset"}” applies to this upload · pick multiple files, or “Upload folder” to add a whole folder at once (one folder = one kind)</span>
       </div>
     </div>
 
