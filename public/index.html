@@ -62,7 +62,7 @@ async function callClaude(system,prompt,expectJson){
 // Role-based default tab
 const ROLE_TAB={admin:"dashboard",business:"dashboard",content:"content",design:"design",brand:"dashboard"};
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v21 · cascade move (headline→all, sub→sub+cta) + reset position";
+const BUILD="v25 · Brand Assets hub (Assets/Styling/Rules/Audiences) + per-sub-brand styling applied in composer";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -961,7 +961,7 @@ function App(){
     {k:"brief",label:"Brief",icon:<FileText size={16}/>},
     {k:"content",label:"Copy",icon:<MessageSquare size={16}/>,count:pending.brand_review||undefined},
     {k:"design",label:"Design",icon:<Palette size={16}/>},
-    {k:"library",label:"Image library",icon:<ImageIcon size={16}/>},
+    {k:"library",label:"Brand Assets",icon:<ImageIcon size={16}/>},
     {k:"done",label:"Finalized Assets",icon:<CheckCircle2 size={16}/>,count:(campaigns||[]).filter(c=>c.stage==="done"&&!isArchived(c)).length},
     {k:"analytics",label:"Analytics",icon:<BarChart3 size={16}/>},
     {k:"archive",label:"Archive",icon:<ArchiveIcon size={16}/>,count:(campaigns||[]).filter(c=>isArchived(c)).length},
@@ -996,9 +996,7 @@ function App(){
         })}
       </div>
       <div style={{padding:"10px 10px 12px",borderTop:"1px solid rgba(255,255,255,.08)",display:"flex",flexDirection:"column",gap:3}}>
-        <button onClick={()=>setDrawer("rules")}style={sideBtn}><BookMarked size={15}/>Rulebook</button>
         {me.role==="admin"&&<button onClick={()=>setDrawer("team")}style={sideBtn}><Users size={15}/>Team</button>}
-        <button onClick={()=>setDrawer("audiences")}style={sideBtn}><Target size={15}/>Audiences</button>
         <div style={{marginTop:8,padding:"10px 12px",borderRadius:10,background:"rgba(255,255,255,.06)",display:"flex",alignItems:"center",gap:8}}>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:13,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{me.name}</div>
@@ -1015,7 +1013,7 @@ function App(){
       {tab==="brief"&&<BriefTab active={active}patch={patch}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}audiences={audiences}onDelete={delCampaign}onNew={newCampaign}onBulkImport={bulkImportBriefs}onBulkGenerate={bulkGenerate}toast={toast}/>}
       {(tab==="content"||tab==="brand_review")&&<ContentTab active={active}patch={patch}copyRules={copyRules}addRule={addRule}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}toast={toast}onDelete={delCampaign}onSplit={splitCopyAssets}/>}
       {tab==="design"&&<DesignTab active={active}patch={patch}promptRules={promptRules}addRule={addRule}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}onDelete={delCampaign}/>}
-      {tab==="library"&&<ImageLibraryTab me={me}toast={toast}/>}
+      {tab==="library"&&<BrandAssetsTab me={me}toast={toast}copyRules={copyRules}promptRules={promptRules}addRule={addRule}toggleRule={toggleRule}delRule={delRule}feedback={feedback}audiences={audiences}setAudiences={setAudiences}/>}
       {tab==="done"&&<DoneTab campaigns={campaigns}patch={patch}onOpen={open}me={me}setTab={setTab}onDelete={delCampaign}/>}
       {tab==="analytics"&&<AnalyticsTab campaigns={campaigns}patch={patch}onOpen={open}me={me}/>}
       {tab==="archive"&&<ArchiveTab campaigns={campaigns}patch={patch}onOpen={open}me={me}onDelete={delCampaign}/>}
@@ -2392,6 +2390,67 @@ function BrandReviewTab({campaigns,patch,me,toast,onOpen,setTab}){
 }
 
 // ── Image Library (AI-tagged) ─────────────────────────────────────────────────
+function BrandStylingTab({me,toast}){
+  const[styles,setStyles]=useState([]);
+  const[logos,setLogos]=useState([]);
+  const[form,setForm]=useState(null);
+  const canEdit=["admin","brand","design"].includes(me.role);
+  const blank=(sb)=>({sub_brand:sb||"",headline_font:"Korolev",subhead_font:"Rubik",cta_font:"Rubik",bg:"#102242",text_color:"#FFFFFF",cta_color:"#E8632A",logo_id:"",notes:""});
+  const load=async()=>{try{setStyles(await api.get("/api/brand-styles")||[]);}catch(e){}};
+  const loadLogos=async()=>{try{const all=await api.get("/api/image-library")||[];setLogos(all.filter(i=>i.kind==="logo"));}catch(e){}};
+  useEffect(()=>{load();loadLogos();},[]);
+  const save=async()=>{if(!form.sub_brand.trim()){toast&&toast("Enter a sub-brand name","error");return;}try{await api.put("/api/brand-styles/"+encodeURIComponent(form.sub_brand.trim()),form);toast&&toast("Saved "+form.sub_brand,"success");setForm(null);load();}catch(e){toast&&toast(e.message||"Save failed","error");}};
+  const del=async(sb)=>{if(!window.confirm("Delete brand style for "+sb+"?"))return;try{await api.del("/api/brand-styles/"+encodeURIComponent(sb));load();}catch(e){}};
+  const fontSel=(label,val,set)=><div><label style={{fontSize:12.5,fontWeight:600,color:C.sub,marginBottom:5,display:"block"}}>{label}</label><select value={val}onChange={e=>set(e.target.value)}style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:9,padding:"8px 10px",fontSize:13.5}}>{COMPOSER_FONTS.map(f=><option key={f}value={f}>{f}</option>)}</select></div>;
+  const colorIn=(label,val,set)=><div><label style={{fontSize:12.5,fontWeight:600,color:C.sub,marginBottom:5,display:"block"}}>{label}</label><input type="color"value={val||"#000000"}onChange={e=>set(e.target.value)}style={{width:"100%",height:36,border:`1px solid ${C.line}`,borderRadius:9,padding:2}}/></div>;
+  return<div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,flexWrap:"wrap",gap:12}}>
+      <div><Eyebrow>Brand styling</Eyebrow><h1 style={{margin:"4px 0 0",fontSize:24,fontWeight:800}}>Fonts, colours & logo per sub-brand</h1>
+        <div style={{fontSize:13.5,color:C.sub,marginTop:4}}>The composer auto-applies these to a brief's sub-brand — headline / sub-headline / CTA fonts, palette, and the sub-brand lockup.</div></div>
+      {canEdit&&<Btn onClick={()=>setForm(blank(""))}><Plus size={16}/>New sub-brand</Btn>}
+    </div>
+    {form&&<Card style={{marginBottom:16}}>
+      <div style={{fontWeight:800,fontSize:15,marginBottom:12}}>{styles.find(s=>s.sub_brand===form.sub_brand)?"Edit":"New"} sub-brand style</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
+        <div style={{gridColumn:"1 / -1"}}><label style={{fontSize:12.5,fontWeight:600,color:C.sub,marginBottom:5,display:"block"}}>Sub-brand name (matches the brief's product, e.g. “Sara's Wholesome”, “Hearty”)</label><input value={form.sub_brand}onChange={e=>setForm({...form,sub_brand:e.target.value})}placeholder="Sara's Wholesome"style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:9,padding:"8px 10px",fontSize:13.5,boxSizing:"border-box"}}/></div>
+        {fontSel("Headline font",form.headline_font,v=>setForm({...form,headline_font:v}))}
+        {fontSel("Sub-headline font",form.subhead_font,v=>setForm({...form,subhead_font:v}))}
+        {fontSel("CTA font",form.cta_font,v=>setForm({...form,cta_font:v}))}
+        {colorIn("Background",form.bg,v=>setForm({...form,bg:v}))}
+        {colorIn("Text",form.text_color,v=>setForm({...form,text_color:v}))}
+        {colorIn("CTA / accent",form.cta_color,v=>setForm({...form,cta_color:v}))}
+        <div style={{gridColumn:"1 / -1"}}><label style={{fontSize:12.5,fontWeight:600,color:C.sub,marginBottom:5,display:"block"}}>Sub-brand lockup (upload logos in Assets as “Logo / lockup”)</label><select value={form.logo_id||""}onChange={e=>setForm({...form,logo_id:e.target.value})}style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:9,padding:"8px 10px",fontSize:13.5}}><option value="">— none —</option>{logos.map(l=><option key={l.id}value={l.id}>{l.product||l.file_name}</option>)}</select></div>
+      </div>
+      <div style={{display:"flex",gap:8,marginTop:14}}><Btn onClick={save}>Save</Btn><Btn variant="ghost"onClick={()=>setForm(null)}>Cancel</Btn></div>
+    </Card>}
+    {styles.length===0&&!form?<Card><Empty icon={<Palette size={26}color={C.sub}/>}title="No brand styles yet"sub="Add a sub-brand to define its fonts, palette and logo."/></Card>
+     :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
+       {styles.map(s=><Card key={s.sub_brand}>
+         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+           <div style={{fontWeight:800,fontSize:15}}>{s.sub_brand}</div>
+           <div style={{display:"flex",gap:6}}>{[s.bg,s.text_color,s.cta_color].map((c,i)=><span key={i}style={{width:16,height:16,borderRadius:4,background:c,border:`1px solid ${C.line}`}}/>)}</div>
+         </div>
+         <div style={{fontSize:12.5,color:C.sub,lineHeight:1.7}}>Headline: <b style={{color:C.ink}}>{s.headline_font}</b><br/>Sub-headline: <b style={{color:C.ink}}>{s.subhead_font}</b><br/>CTA: <b style={{color:C.ink}}>{s.cta_font}</b><br/>Logo: <b style={{color:C.ink}}>{s.logo_id?(logos.find(l=>l.id===s.logo_id)||{}).product||"set":"none"}</b></div>
+         {canEdit&&<div style={{display:"flex",gap:8,marginTop:10}}><Btn small variant="ghost"onClick={()=>setForm({sub_brand:s.sub_brand,headline_font:s.headline_font||"Korolev",subhead_font:s.subhead_font||"Rubik",cta_font:s.cta_font||"Rubik",bg:s.bg||"#102242",text_color:s.text_color||"#FFFFFF",cta_color:s.cta_color||"#E8632A",logo_id:s.logo_id||"",notes:s.notes||""})}>Edit</Btn><Btn small variant="ghost"onClick={()=>del(s.sub_brand)}>Delete</Btn></div>}
+       </Card>)}
+     </div>}
+  </div>;
+}
+
+function BrandAssetsTab(props){
+  const[sub,setSub]=useState("assets");
+  const tabs=[["assets","Assets"],["styling","Brand styling"],["rules","Rules"],["audiences","Audiences"]];
+  return<div>
+    <div style={{display:"flex",gap:4,marginBottom:20,borderBottom:`1px solid ${C.line}`,flexWrap:"wrap"}}>
+      {tabs.map(([k,lbl])=><button key={k}onClick={()=>setSub(k)}style={{padding:"9px 16px",fontSize:13.5,fontWeight:700,border:"none",borderBottom:`2px solid ${sub===k?C.coral:"transparent"}`,background:"none",color:sub===k?C.ink:C.sub,cursor:"pointer",marginBottom:-1}}>{lbl}</button>)}
+    </div>
+    {sub==="assets"&&<ImageLibraryTab me={props.me}toast={props.toast}/>}
+    {sub==="styling"&&<BrandStylingTab me={props.me}toast={props.toast}/>}
+    {sub==="rules"&&<RulesDrawer inline copyRules={props.copyRules}promptRules={props.promptRules}addRule={props.addRule}toggleRule={props.toggleRule}delRule={props.delRule}me={props.me}feedback={props.feedback}/>}
+    {sub==="audiences"&&<AudienceDrawer inline audiences={props.audiences}setAudiences={props.setAudiences}me={props.me}/>}
+  </div>;
+}
+
 function ImageLibraryTab({me,toast}){
   const[items,setItems]=useState(null);
   const[q,setQ]=useState("");
@@ -3287,6 +3346,8 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
 
   const[sizeIdx,setSizeIdx]=useState(0);
   const[template,setTemplate]=useState("");
+  const[linkSizes,setLinkSizes]=useState(true); // sub-headline size scales with headline unless unlinked
+  const[autoFit,setAutoFit]=useState(true); // auto-place/scale products into free space (no overlap)
   const sz=COMPOSER_SIZES[sizeIdx];
 
   // background source
@@ -3328,6 +3389,9 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
 
   const[ct,setCt]=useState({text:(copy&&copy.cta)||"",font:"Rubik",size:1,kern:0,dx:0,dy:0,bold:true,color:"#FFFFFF"});
   const[ctaBg,setCtaBg]=useState(C.coral);
+  const[textShadow,setTextShadow]=useState("soft"); // none | soft | drop
+  const[textAlign,setTextAlign]=useState("");        // "" = follow placement column; else left/center/right
+  const[oldPrice,setOldPrice]=useState({text:"",color:"#FFFFFF",size:1}); // struck old price for price-drop
 
   const[items,setItems]=useState([]);
   const[loadingItems,setLoadingItems]=useState(true);
@@ -3364,6 +3428,8 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
   },[anchor]);
   const addProduct=()=>setProducts(ps=>{const n=ps.length+1;const a=[...ps,{pid:nextPid(),id:"",scale:0.5,x:0.5,y:0.62}];return a.map((p,i)=>({...p,...productZone(anchor,n,i)}));});
   const updProduct=(pid,f)=>setProducts(ps=>ps.map(p=>p.pid===pid?{...p,...f}:p));
+  // headline size change scales sub-headline proportionally when linked
+  const setHlSize=(newSize)=>{setHl(h=>{if(linkSizes&&h.size>0){const r=newSize/h.size;setSh(s=>({...s,size:Math.max(0.5,Math.min(2,+(s.size*r).toFixed(3)))}));setCt(t=>({...t,size:Math.max(0.5,Math.min(2,+(t.size*r).toFixed(3)))}));}return{...h,size:newSize};});};
   // Route the design's library pick once items load: asset → background scene; product mockup (or unknown) → product layer.
   const pickRouted=React.useRef(false);
   React.useEffect(()=>{
@@ -3375,6 +3441,23 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
     if(it&&it.kind==="asset"){setBgMode("library");setBgId(pick);}
     else{setProducts(ps=>{const a=[...ps];a[0]={...a[0],id:pick,...productZone(anchor,a.length,0)};return a;});} // product or unclassified → product slot, keep bg plain
   },[items,dsg.libraryPick]);
+  // auto-apply the brief's sub-brand style (fonts per role + palette + logo), once
+  const brandApplied=React.useRef(false);
+  React.useEffect(()=>{let on=true;api.get("/api/brand-styles").then(list=>{
+    if(!on||brandApplied.current||!list||!list.length)return;
+    const prod=((c&&c.product)||"").toLowerCase();
+    const matches=list.filter(s=>s.sub_brand&&prod.includes(s.sub_brand.toLowerCase()));
+    if(!matches.length)return;
+    brandApplied.current=true;
+    const s=matches.sort((a,b)=>b.sub_brand.length-a.sub_brand.length)[0];
+    if(s.headline_font)setHl(h=>({...h,font:s.headline_font}));
+    if(s.subhead_font)setSh(x=>({...x,font:s.subhead_font}));
+    if(s.cta_font)setCt(t=>({...t,font:s.cta_font}));
+    if(s.bg)setBgColor(s.bg);
+    if(s.text_color){setHl(h=>({...h,color:s.text_color}));setSh(x=>({...x,color:s.text_color}));}
+    if(s.cta_color)setCtaBg(s.cta_color);
+    if(s.logo_id)setLogoId(s.logo_id);
+  }).catch(()=>{});return()=>{on=false;};},[]);
   const rmProduct=(pid)=>setProducts(ps=>ps.filter(p=>p.pid!==pid));
 
   const wrapFit=(ctx,el,maxW,basePx,maxLines)=>{
@@ -3406,26 +3489,11 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
     else if(bgMode==="library"&&bgImg) drawBgImage(ctx,bgImg);
     else{ctx.fillStyle=bgColor;ctx.fillRect(0,0,sz.w,sz.h);}
 
-    // 2) products / mockups (each its own size + position) + contact shadow
-    for(const p of products){
-      const img=prodImgs[p.id];if(!img)continue;
-      const pw=sz.w*p.scale, ph=pw*(img.height/img.width);
-      const px=sz.w*p.x-pw/2, py=sz.h*p.y-ph/2;
-      if(shadow){
-        const cx=px+pw/2, cy=py+ph*0.99, rx=pw*0.42, ry=ph*0.05;
-        const g=ctx.createRadialGradient(cx,cy,0,cx,cy,rx);
-        g.addColorStop(0,"rgba(0,0,0,0.36)");g.addColorStop(1,"rgba(0,0,0,0)");
-        ctx.save();ctx.translate(cx,cy);ctx.scale(1,ry/rx);ctx.fillStyle=g;
-        ctx.beginPath();ctx.arc(0,0,rx,0,Math.PI*2);ctx.fill();ctx.restore();
-      }
-      ctx.drawImage(img,px,py,pw,ph);
-    }
-
-    // 3) image copy — headline + sub-headline
+    // ---- copy metrics first, so products can auto-fit around the copy ----
     const pad=sz.w*0.07, maxW=sz.w-pad*2;
     const [vPos,hPos]=anchor.split("-");
-    const hAlign=hPos==="left"?"left":hPos==="right"?"right":"center";
-    const anchorX=hPos==="left"?pad:hPos==="right"?sz.w-pad:sz.w/2;
+    const hAlign = textAlign || (hPos==="left"?"left":hPos==="right"?"right":"center");
+    const anchorX=hAlign==="left"?pad:hAlign==="right"?sz.w-pad:sz.w/2;
     ctx.textBaseline="top";
     // draws one line; strikes only ~...~ segments (or whole line if fullStrike)
     const drawCopyLine=(line,baseX,yy,align,px,color,fullStrike)=>{
@@ -3451,17 +3519,49 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
     const Hdx=(hl.dx||0), Hdy=(hl.dy||0);
     const Sdx=Hdx+(sh.dx||0), Sdy=Hdy+(sh.dy||0);
     const Cdx=Sdx+(ct.dx||0), Cdy=Sdy+(ct.dy||0);
+    const copyTop=topY+Hdy*sz.h, copyBot=topY+blockH+Cdy*sz.h;
 
+    // ---- 2) products / mockups: auto-fit into the free region (no overlap), or manual ----
+    const rendered=products.filter(p=>prodImgs[p.id]);
+    let regTop,regBot;
+    if(vPos==="bottom"){regTop=sz.h*0.05;regBot=copyTop-sz.h*0.03;}
+    else{regTop=copyBot+sz.h*0.03;regBot=sz.h*0.96;}
+    const regH=Math.max(sz.h*0.12, regBot-regTop), nP=rendered.length;
+    rendered.forEach((p,pi)=>{
+      const img=prodImgs[p.id], aspect=img.height/img.width;
+      let pw,ph,cx,cy;
+      if(autoFit){
+        ph=regH*0.92;pw=ph/aspect;
+        const gapW=sz.w*0.02, maxPw=(sz.w-pad*2-(nP-1)*gapW)/Math.max(1,nP);
+        if(pw>maxPw){pw=maxPw;ph=pw*aspect;}
+        cy=(regTop+regBot)/2;
+        const totalW=pw*nP+(nP-1)*gapW, startX=(sz.w-totalW)/2;
+        cx=startX+pw/2+pi*(pw+gapW);
+      }else{pw=sz.w*p.scale;ph=pw*aspect;cx=sz.w*p.x;cy=sz.h*p.y;}
+      const px=cx-pw/2, py=cy-ph/2;
+      if(shadow){
+        const scx=px+pw/2, scy=py+ph*0.99, rx=pw*0.42, ry=ph*0.05;
+        const g=ctx.createRadialGradient(scx,scy,0,scx,scy,rx);
+        g.addColorStop(0,"rgba(0,0,0,0.36)");g.addColorStop(1,"rgba(0,0,0,0)");
+        ctx.save();ctx.translate(scx,scy);ctx.scale(1,ry/rx);ctx.fillStyle=g;
+        ctx.beginPath();ctx.arc(0,0,rx,0,Math.PI*2);ctx.fill();ctx.restore();
+      }
+      ctx.drawImage(img,px,py,pw,ph);
+    });
+
+    // 3) image copy — headline + sub-headline
     ctx.fillStyle=hl.color||"#FFFFFF";ctx.textAlign=hAlign;
     ctx.font=(hl.bold?"800":"400")+" "+H.px+"px '"+hl.font+"'";try{ctx.letterSpacing=(hl.kern||0)+"px";}catch(e){}
-    ctx.shadowColor="rgba(0,0,0,0.25)";ctx.shadowBlur=6;ctx.shadowOffsetY=2;
+    if(textShadow==="drop"){ctx.shadowColor="rgba(0,0,0,0.38)";ctx.shadowBlur=8;ctx.shadowOffsetY=3;}
+    else if(textShadow==="soft"){ctx.shadowColor="rgba(0,0,0,0.30)";ctx.shadowBlur=16;ctx.shadowOffsetY=0;}
+    else{ctx.shadowColor="transparent";ctx.shadowBlur=0;ctx.shadowOffsetY=0;}
     let y=topY+Hdy*sz.h;const hx=anchorX+Hdx*sz.w;
-    for(const ln of H.lines){drawCopyLine(ln,hx,y,hAlign,H.px,hl.color||"#FFFFFF",!!hl.strike);y+=hLineH;}
+    for(const ln of H.lines){drawCopyLine(ln,hx,y,hAlign,H.px,hl.color||"#FFFFFF",false);y+=hLineH;}
     if(S.lines.length){
       ctx.fillStyle=sh.color||"#FFFFFF";
       ctx.font=(sh.bold?"700":"400")+" "+S.px+"px '"+sh.font+"'";try{ctx.letterSpacing=(sh.kern||0)+"px";}catch(e){}
       let sy=topY+hBlock+gap+Sdy*sz.h;const sx=anchorX+Sdx*sz.w;
-      for(const ln of S.lines){drawCopyLine(ln,sx,sy,hAlign,S.px,sh.color||"#FFFFFF",!!sh.strike);sy+=sLineH;}
+      for(const ln of S.lines){drawCopyLine(ln,sx,sy,hAlign,S.px,sh.color||"#FFFFFF",false);sy+=sLineH;}
     }
     ctx.shadowColor="transparent";ctx.shadowBlur=0;ctx.shadowOffsetY=0;try{ctx.letterSpacing="0px";}catch(e){}
     if(ct.text){
@@ -3471,6 +3571,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
       const cAnchorX=anchorX+Cdx*sz.w;
       let bx = hAlign==="left"? cAnchorX : hAlign==="right"? cAnchorX-bw : cAnchorX-bw/2;
       const by=topY+hBlock+sBlock+H.px*0.35+Cdy*sz.h;
+      if(oldPrice.text){const opx=Math.round(sz.w*0.045*(oldPrice.size||1));ctx.save();ctx.font="700 "+opx+"px '"+sh.font+"'";try{ctx.letterSpacing="0px";}catch(e){}drawCopyLine("~"+oldPrice.text+"~",cAnchorX,by-opx*1.35,hAlign,opx,oldPrice.color,false);ctx.restore();}
       ctx.fillStyle=ctaBg;
       if(ctx.roundRect){ctx.beginPath();ctx.roundRect(bx,by,bw,bh,bh/2);ctx.fill();}else ctx.fillRect(bx,by,bw,bh);
       ctx.fillStyle=ct.color||"#FFFFFF";ctx.textAlign="left";ctx.textBaseline="middle";
@@ -3509,7 +3610,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
         ctx.drawImage(limg,lx,ly,lw,lh);
       }
     }
-  },[sz,bgMode,bgColor,bgImg,genImg,products,prodImgs,shadow,hl,sh,anchor,ct,ctaBg,logoImg,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,huftReady,divider]);
+  },[sz,bgMode,bgColor,bgImg,genImg,products,prodImgs,shadow,hl,sh,anchor,ct,ctaBg,logoImg,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,huftReady,divider,autoFit,textShadow,textAlign,oldPrice]);
 
   React.useEffect(()=>{draw();},[draw]);
 
@@ -3551,9 +3652,9 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
 
   const fieldL={fontSize:11,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.4,marginBottom:5,display:"block"};
   const ctrl={width:"100%",border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 9px",fontSize:13,boxSizing:"border-box"};
-  const slider=(label,val,min,max,set,fmt)=><div><label style={fieldL}>{label}{fmt?" · "+fmt(val):""}</label><input type="range"min={min}max={max}value={val}onChange={e=>set(+e.target.value)}style={{width:"100%"}}/></div>;
+  const slider=(label,val,min,max,set,fmt)=>{const unit=fmt?fmt("").toString().replace(/[\s·\d.+-]/g,""):"";return<div><label style={fieldL}>{label}</label><div style={{display:"flex",alignItems:"center",gap:8}}><input type="range"min={min}max={max}value={val}onChange={e=>set(+e.target.value)}style={{flex:1}}/><input type="number"min={min}max={max}value={val}onChange={e=>{let v=e.target.value===""?min:+e.target.value;if(isNaN(v))return;if(v<min)v=min;if(v>max)v=max;set(v);}}style={{width:52,border:`1px solid ${C.line}`,borderRadius:6,padding:"3px 5px",fontSize:12,textAlign:"right"}}/>{unit&&<span style={{fontSize:11,color:C.sub}}>{unit}</span>}</div></div>;};
   // collapsible per-element section: everything for that element lives under its own header
-  const sect=(k,title,el,setEl,extra)=>{
+  const sect=(k,title,el,setEl,extra,sizeSet)=>{
     const isOpen=open[k];
     return<div style={{gridColumn:"1 / -1",border:`1px solid ${C.line}`,borderRadius:9,overflow:"hidden",background:"#fff"}}>
       <button onClick={()=>setOpen(o=>({...o,[k]:!o[k]}))}style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"10px 12px",background:isOpen?C.paper:"#fff",border:"none",cursor:"pointer",textAlign:"left"}}>
@@ -3567,8 +3668,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
         <div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Text</label><input value={el.text}onChange={e=>setEl({...el,text:e.target.value})}style={ctrl}/></div>
         <div><label style={fieldL}>Font</label><select value={el.font}onChange={e=>setEl({...el,font:e.target.value})}style={ctrl}>{COMPOSER_FONTS.map(f=><option key={f}value={f}>{f}</option>)}</select></div>
         <div><label style={fieldL}>Weight</label><button onClick={()=>setEl({...el,bold:!el.bold})}style={{...ctrl,cursor:"pointer",textAlign:"left",fontWeight:el.bold?800:400,background:el.bold?C.coral+"18":"#fff",borderColor:el.bold?C.coral:C.line,color:el.bold?C.coral:C.sub}}>{el.bold?"Bold ✓":"Regular"}</button></div>
-        {"strike"in el&&<div><label style={fieldL}>Strikethrough</label><button onClick={()=>setEl({...el,strike:!el.strike})}style={{...ctrl,cursor:"pointer",textAlign:"left",textDecoration:el.strike?"line-through":"none",background:el.strike?C.coral+"18":"#fff",borderColor:el.strike?C.coral:C.line,color:el.strike?C.coral:C.sub}}>{el.strike?"On ✓":"Off"}</button></div>}
-        {slider("Font size",Math.round(el.size*100),50,200,v=>setEl({...el,size:v/100}),v=>v+"%")}
+        {slider("Font size",Math.round(el.size*100),50,200,sizeSet?(v=>sizeSet(v/100)):(v=>setEl({...el,size:v/100})),v=>v+"%")}
         {slider("Kerning",el.kern,-5,30,v=>setEl({...el,kern:v}),v=>v+"px")}
         {slider("Move left–right ↔",Math.round(el.dx*100),-30,30,v=>setEl({...el,dx:v/100}),v=>v+"%")}
         {slider("Move up–down ↕",Math.round(el.dy*100),-30,30,v=>setEl({...el,dy:v/100}),v=>v+"%")}
@@ -3662,23 +3762,40 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
             {products.length>1&&<button onClick={()=>rmProduct(p.pid)}style={{border:"none",background:"none",color:"#B91C1C",fontSize:11,fontWeight:700,cursor:"pointer",padding:0}}>Remove</button>}
           </div>
           <div style={{gridColumn:"1 / -1"}}><select value={p.id}onChange={e=>updProduct(p.pid,{id:e.target.value})}style={ctrl}><option value="">— pick from library —</option>{productItems.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select></div>
-          {slider("Size",Math.round(p.scale*100),15,100,v=>updProduct(p.pid,{scale:v/100}),v=>v+"%")}
-          {slider("Horizontal",Math.round(p.x*100),0,100,v=>updProduct(p.pid,{x:v/100}),v=>v+"%")}
-          {slider("Vertical",Math.round(p.y*100),5,95,v=>updProduct(p.pid,{y:v/100}),v=>v+"%")}
+          {!autoFit&&slider("Size",Math.round(p.scale*100),15,100,v=>updProduct(p.pid,{scale:v/100}),v=>v+"%")}
+          {!autoFit&&slider("Horizontal",Math.round(p.x*100),0,100,v=>updProduct(p.pid,{x:v/100}),v=>v+"%")}
+          {!autoFit&&slider("Vertical",Math.round(p.y*100),5,95,v=>updProduct(p.pid,{y:v/100}),v=>v+"%")}
+          {autoFit&&<div style={{gridColumn:"1 / -1",fontSize:11,color:C.sub,fontStyle:"italic"}}>Auto-fit on — size & position are automatic. Turn off Auto-fit below for manual control.</div>}
         </div>)}
+        <label style={{gridColumn:"1 / -1",display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.ink,cursor:"pointer"}}><input type="checkbox"checked={autoFit}onChange={e=>setAutoFit(e.target.checked)}/>Auto-fit products into free space <span style={{fontSize:11,color:C.sub}}>(scales & places to avoid overlap — turn off for manual size/position)</span></label>
         <label style={{gridColumn:"1 / -1",display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.ink,cursor:"pointer"}}><input type="checkbox"checked={shadow}onChange={e=>setShadow(e.target.checked)}/>Contact shadow under products</label>
 
         {/* image copy */}
         <div style={{gridColumn:"1 / -1",borderTop:`1px solid ${C.line}`,paddingTop:11,fontSize:11.5,fontWeight:800,color:C.ink}}>Image copy</div>
-        {sect("hl","Headline",hl,setHl)}
+        {sect("hl","Headline",hl,setHl,
+          <label style={{gridColumn:"1 / -1",display:"flex",alignItems:"center",gap:8,fontSize:12,color:C.ink,cursor:"pointer"}}><input type="checkbox"checked={linkSizes}onChange={e=>setLinkSizes(e.target.checked)}/>Link sub-headline size to headline (scale together)</label>,
+          setHlSize)}
         {sect("sh","Sub-headline",sh,setSh)}
         {sect("cta","CTA (optional)",ct,setCt,
           <div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Button colour</label><input type="color"value={ctaBg}onChange={e=>setCtaBg(e.target.value)}style={{...ctrl,padding:2,height:34}}/></div>
         )}
+        {/* price drop: struck old price shown above the CTA */}
+        <div style={{gridColumn:"1 / -1",borderTop:`1px solid ${C.line}`,paddingTop:11,fontSize:11.5,fontWeight:800,color:C.ink}}>Price drop (optional)</div>
+        <div style={{gridColumn:"1 / -1",display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
+          <div style={{flex:"1 1 160px"}}><label style={fieldL}>Old price — shown struck, above the CTA</label><input value={oldPrice.text}onChange={e=>setOldPrice({...oldPrice,text:e.target.value})}placeholder="e.g. ₹3,250"style={ctrl}/></div>
+          <div><label style={fieldL}>Colour</label><input type="color"value={oldPrice.color}onChange={e=>setOldPrice({...oldPrice,color:e.target.value})}style={{...ctrl,padding:2,height:34,width:46}}/></div>
+        </div>
         <div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Placement (headline · sub-headline follows)</label>
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:5}}>
             {PLACEMENTS.map(p=><button key={p.k}onClick={()=>setAnchor(p.k)}style={{padding:"6px 0",fontSize:11,fontWeight:700,borderRadius:7,cursor:"pointer",border:`1px solid ${anchor===p.k?C.coral:C.line}`,background:anchor===p.k?C.coral+"18":"#fff",color:anchor===p.k?C.coral:C.sub}}>{p.label}</button>)}
           </div>
+        </div>
+        <div style={{gridColumn:"1 / -1",display:"flex",gap:14,flexWrap:"wrap",alignItems:"flex-end"}}>
+          <div><label style={fieldL}>Text align</label><div style={{display:"flex",border:`1px solid ${C.line}`,borderRadius:8,overflow:"hidden"}}>
+            {[["","Auto"],["left","Left"],["center","Center"],["right","Right"]].map(([k,lbl])=>
+              <button key={k}onClick={()=>setTextAlign(k)}style={{padding:"7px 11px",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",background:textAlign===k?C.coral:"#fff",color:textAlign===k?"#fff":C.sub}}>{lbl}</button>)}
+          </div></div>
+          <div><label style={fieldL}>Text shadow</label><select value={textShadow}onChange={e=>setTextShadow(e.target.value)}style={ctrl}><option value="soft">Soft glow (legibility)</option><option value="drop">Drop shadow</option><option value="none">None</option></select></div>
         </div>
         {/* divider rule */}
         <div style={{gridColumn:"1 / -1",borderTop:`1px solid ${C.line}`,paddingTop:11,fontSize:11.5,fontWeight:800,color:C.ink}}>Divider rule</div>
@@ -4211,7 +4328,7 @@ function ArchiveTab({campaigns,patch,onOpen,me,onDelete}){
 }
 
 
-function RulesDrawer({onClose,copyRules,promptRules,addRule,toggleRule,delRule,me,feedback}){
+function RulesDrawer({onClose,copyRules,promptRules,addRule,toggleRule,delRule,me,feedback,inline}){
   const[suggestions,setSuggestions]=useState(null);
   const[sugBusy,setSugBusy]=useState(false);
   const[dismissed,setDismissed]=useState([]);
@@ -4265,7 +4382,7 @@ function RulesDrawer({onClose,copyRules,promptRules,addRule,toggleRule,delRule,m
   const[seeding,setSeeding]=useState(false);
   const seedRules=async()=>{if(!window.confirm("This will replace ALL rules with the default HUFT rulebook. Continue?"))return;setSeeding(true);try{const r=await api.post("/api/rules/seed",{});window.location.reload();}catch(e){alert("Seed failed: "+e.message);}setSeeding(false);};
   const hasFeedback=(feedback||[]).length>0;
-  return<Drawer onClose={onClose}title={<><BookMarked size={18}color={C.coral}/>Rulebook</>}intro="Active rules inject into every generation. Build this up over time.">
+  return<Drawer inline={inline}onClose={onClose}title={<><BookMarked size={18}color={C.coral}/>Rulebook</>}intro="Active rules inject into every generation. Build this up over time.">
     <div style={{marginBottom:16,padding:"10px 14px",background:C.paper,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
       <div>
         <div style={{fontSize:13,fontWeight:700,color:C.ink}}>Auto-suggest from feedback</div>
@@ -4317,14 +4434,14 @@ function TeamDrawer({onClose,me}){
   </Drawer>;
 }
 
-function AudienceDrawer({onClose,audiences,setAudiences,me}){
+function AudienceDrawer({onClose,audiences,setAudiences,me,inline}){
   const blank={name:"",description:"",segment_code:"",pet_type:"both",lifecycle_stage:"",trigger_event:"",key_insight:"",size_estimate:"",channel_pref:"",notes:""};
   const[form,setForm]=useState(blank);const[editing,setEditing]=useState(null);const[busy,setBusy]=useState(false);const[err,setErr]=useState("");const[showForm,setShowForm]=useState(false);
   const f=(k,v)=>setForm(x=>({...x,[k]:v}));
   const save=async()=>{setBusy(true);setErr("");try{if(editing){await api.put("/api/audiences/"+editing,form);setAudiences(a=>a.map(x=>x.id===editing?{...x,...form}:x));setEditing(null);}else{const r=await api.post("/api/audiences",form);setAudiences(a=>[r,...a]);}setForm(blank);setShowForm(false);}catch(e){setErr(e.message);}setBusy(false);};
   const del=async(id)=>{try{await api.del("/api/audiences/"+id);setAudiences(a=>a.filter(x=>x.id!==id));}catch(e){setErr(e.message);}};
   const startEdit=(aud)=>{setForm({name:aud.name||"",description:aud.description||"",segment_code:aud.segment_code||"",pet_type:aud.pet_type||"both",lifecycle_stage:aud.lifecycle_stage||"",trigger_event:aud.trigger_event||"",key_insight:aud.key_insight||"",size_estimate:aud.size_estimate||"",channel_pref:aud.channel_pref||"",notes:aud.notes||""});setEditing(aud.id);setShowForm(true);};
-  return<Drawer onClose={onClose}title={<><Target size={18}color={C.coral}/>Audiences</>}intro="Define audience segments with insights. These feed directly into brief generation.">
+  return<Drawer inline={inline}onClose={onClose}title={<><Target size={18}color={C.coral}/>Audiences</>}intro="Define audience segments with insights. These feed directly into brief generation.">
     {!showForm&&<Btn onClick={()=>{setShowForm(true);setEditing(null);setForm(blank);}}style={{marginBottom:16}}><Plus size={14}/>New audience</Btn>}
     {showForm&&<div style={{background:C.paper,borderRadius:12,padding:14,marginBottom:16,border:`1px solid ${C.line}`}}>
       <div style={{fontWeight:700,marginBottom:12,fontSize:14}}>{editing?"Edit audience":"New audience"}</div>
@@ -4365,7 +4482,7 @@ function AudienceDrawer({onClose,audiences,setAudiences,me}){
   </Drawer>;
 }
 
-function Drawer({onClose,title,intro,children}){return<div onClick={onClose}style={{position:"fixed",inset:0,background:"rgba(15,18,30,.45)",display:"flex",justifyContent:"flex-end",zIndex:50}}><div onClick={e=>e.stopPropagation()}style={{width:480,maxWidth:"94vw",background:"#fff",height:"100%",overflowY:"auto",padding:22}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}><div style={{display:"flex",alignItems:"center",gap:8,fontWeight:800,fontSize:17}}>{title}</div><button onClick={onClose}style={{border:"none",background:"transparent",cursor:"pointer"}}><X size={20}color={C.sub}/></button></div><div style={{fontSize:13,color:C.sub,marginBottom:18}}>{intro}</div>{children}</div></div>;}
+function Drawer({onClose,title,intro,children,inline}){if(inline)return<div><div style={{display:"flex",alignItems:"center",gap:8,fontWeight:800,fontSize:18,marginBottom:6}}>{title}</div><div style={{fontSize:13,color:C.sub,marginBottom:18}}>{intro}</div>{children}</div>;return<div onClick={onClose}style={{position:"fixed",inset:0,background:"rgba(15,18,30,.45)",display:"flex",justifyContent:"flex-end",zIndex:50}}><div onClick={e=>e.stopPropagation()}style={{width:480,maxWidth:"94vw",background:"#fff",height:"100%",overflowY:"auto",padding:22}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}><div style={{display:"flex",alignItems:"center",gap:8,fontWeight:800,fontSize:17}}>{title}</div><button onClick={onClose}style={{border:"none",background:"transparent",cursor:"pointer"}}><X size={20}color={C.sub}/></button></div><div style={{fontSize:13,color:C.sub,marginBottom:18}}>{intro}</div>{children}</div></div>;}
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 </script>

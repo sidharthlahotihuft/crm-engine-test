@@ -904,6 +904,33 @@ app.delete("/api/image-library/:id", authMiddleware, roles("admin", "brand"), as
 });
 
 // Smart suggest for the design prompt: given a campaign's product/brief, return relevant images.
+// ===== Brand styles (per sub-brand: fonts per role + palette + logo) =====
+app.get("/api/brand-styles", authMiddleware, async (req, res) => {
+  try { res.json(await db("SELECT * FROM brand_styles ORDER BY sub_brand ASC")); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.put("/api/brand-styles/:subBrand", authMiddleware, async (req, res) => {
+  if (!["admin","brand","design"].includes(req.user.role)) return res.status(403).json({ error: "Not allowed" });
+  const sb = req.params.subBrand;
+  const { headline_font, subhead_font, cta_font, bg, text_color, cta_color, logo_id, notes } = req.body;
+  try {
+    const rows = await db(
+      `INSERT INTO brand_styles (sub_brand, headline_font, subhead_font, cta_font, bg, text_color, cta_color, logo_id, notes, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
+       ON CONFLICT (sub_brand) DO UPDATE SET
+         headline_font=$2, subhead_font=$3, cta_font=$4, bg=$5, text_color=$6, cta_color=$7, logo_id=$8, notes=$9, updated_at=NOW()
+       RETURNING *`,
+      [sb, headline_font||null, subhead_font||null, cta_font||null, bg||null, text_color||null, cta_color||null, logo_id||null, notes||null]
+    );
+    res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.delete("/api/brand-styles/:subBrand", authMiddleware, async (req, res) => {
+  if (!["admin","brand","design"].includes(req.user.role)) return res.status(403).json({ error: "Not allowed" });
+  try { await pool.query("DELETE FROM brand_styles WHERE sub_brand=$1", [req.params.subBrand]); res.json({ ok: true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get("/api/image-library-suggest/:campaignId", authMiddleware, async (req, res) => {
   try {
     const crows = await db("SELECT product, objective, audience_label, data FROM campaigns WHERE id=$1", [req.params.campaignId]);
@@ -911,7 +938,7 @@ app.get("/api/image-library-suggest/:campaignId", authMiddleware, async (req, re
     const c = crows[0];
     const product = (c.product || "").toLowerCase();
     // Pull candidate images: same product first, then broaden
-    const all = await db("SELECT id, file_name, product, category, tags, description, uploaded_at FROM image_library ORDER BY uploaded_at DESC LIMIT 300");
+    const all = await db("SELECT id, file_name, product, category, tags, description, kind, uploaded_at FROM image_library WHERE coalesce(kind,'') <> 'product' ORDER BY uploaded_at DESC LIMIT 300");
     const norm = (r) => ({ ...r, tags: typeof r.tags === "string" ? (() => { try { return JSON.parse(r.tags); } catch { return []; } })() : (r.tags || []) });
     const scored = all.map(norm).map(img => {
       let score = 0;
@@ -1044,7 +1071,14 @@ app.listen(PORT, async () => {
     // idempotent column adds (image library: packaging dimensions + product/asset kind)
     await pool.query("ALTER TABLE image_library ADD COLUMN IF NOT EXISTS dimensions_cm TEXT");
     await pool.query("ALTER TABLE image_library ADD COLUMN IF NOT EXISTS kind TEXT");
-    console.log("✓ image_library schema ensured (dimensions_cm, kind)");
+    await pool.query(`CREATE TABLE IF NOT EXISTS brand_styles (
+      sub_brand TEXT PRIMARY KEY,
+      headline_font TEXT, subhead_font TEXT, cta_font TEXT,
+      bg TEXT, text_color TEXT, cta_color TEXT,
+      logo_id TEXT, notes TEXT,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+    console.log("✓ image_library schema ensured (dimensions_cm, kind); brand_styles ready");
   } catch (e) {
     console.error("✗ Database connection failed:", e.message);
     console.error("  Check DATABASE_URL in your .env file");
