@@ -73,12 +73,13 @@ const CLAUDE_MODEL = process.env.CLAUDE_MODEL || "claude-sonnet-4-6";
 
 // Text-to-image via Gemini. Returns a data URL (data:image/png;base64,...).
 // aspectRatio is one of Gemini's supported ratios: 1:1, 4:5, 9:16, 16:9, 3:4, 4:3, etc.
-async function generateImageFromPrompt(prompt, aspectRatio = "1:1", productImage = null) {
+async function generateImageFromPrompt(prompt, aspectRatio = "1:1", productImages = null) {
   if (!GEMINI_KEY) throw new Error("Image generation needs GEMINI_API_KEY in the server env.");
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_IMAGE_MODEL}:generateContent?key=${GEMINI_KEY}`;
   const reqParts = [];
-  if (productImage) {
-    const m = /^data:([^;]+);base64,(.*)$/.exec(String(productImage));
+  const arr = Array.isArray(productImages) ? productImages : (productImages ? [productImages] : []);
+  for (const pi of arr) {
+    const m = /^data:([^;]+);base64,(.*)$/.exec(String(pi));
     if (m) reqParts.push({ inlineData: { mimeType: m[1], data: m[2] } });
   }
   reqParts.push({ text: prompt });
@@ -844,20 +845,21 @@ app.post("/api/image-library", authMiddleware, roles("admin", "brand", "design",
 // Generate a background/scene image from a text prompt (Composer "Generate image").
 // body: { prompt, negativePrompt?, aspectRatio? }  →  { image: dataURL }
 app.post("/api/generate-image", authMiddleware, roles("admin", "brand", "design", "business"), async (req, res) => {
-  const { prompt, negativePrompt, aspectRatio, reserveProductSpace, productCount, textZone, productZone } = req.body || {};
+  const { prompt, negativePrompt, aspectRatio, productImages, textZone, productZone } = req.body || {};
   if (!prompt || !String(prompt).trim()) return res.status(400).json({ error: "prompt required" });
-  const n = Math.max(1, Math.min(3, parseInt(productCount, 10) || 1));
+  const imgs = Array.isArray(productImages) ? productImages.filter(Boolean) : [];
+  const n = imgs.length;
   const tZone = (textZone && String(textZone).trim()) || "the upper or left part of the frame";
   const pZone = (productZone && String(productZone).trim()) || "the lower part of the frame";
-  const textSpace = `Composition for a marketing creative: the headline, sub-headline and a button will be overlaid on ${tZone} — keep THAT area clean, calm and low-detail (simple, uncluttered background there) so overlaid text stays highly legible. Do NOT render any text, words, numbers, logos, badges or watermarks in the image.`;
-  const productSpace = reserveProductSpace
-    ? `In ${pZone}, include a clean, realistic, well-lit surface — a table top, kitchen counter, wooden board, or the ground — on which ${n>1?`${n} products`:"a product"} can stand. Light that surface naturally with a soft contact-shadow area and perspective consistent with ${n>1?"objects":"an object"} of roughly that size sitting there, so a product composited onto it afterwards looks grounded and correctly proportioned — but leave the spot itself EMPTY. IMPORTANT: do NOT draw, render, invent or imply any product, package, pouch, box, bottle, can, label or packaging anywhere in the image — only the empty scene, surface and props.`
+  const textSpace = `Composition for a marketing creative: the headline, sub-headline and a button will be overlaid on ${tZone} — keep THAT area clean, calm and low-detail so overlaid text stays highly legible. Do NOT render any text, words, numbers, logos, badges or watermarks as part of the scene itself.`;
+  const integrate = n
+    ? `You are given ${n>1?`${n} product images`:"a product image"} as the FIRST input${n>1?"s":""}. Generate a single photograph that CLEARLY FEATURES ${n>1?"these exact products":"this exact product"} as the hero. ${n>1?"Each is a real retail package":"It is a real retail package"} (pouch / box / pack) — render the physical packaging itself standing in ${pZone}, not just its contents and not an empty bowl. REQUIRED: the ${n>1?"packs":"pack"} must be visibly present in the final image. Reproduce ${n>1?"each pack's":"the pack's"} design, layout, colours, sub-brand name and front artwork faithfully and UNCHANGED from the reference — do not redesign, relabel or distort. Integrate photorealistically: match the scene's lighting direction, colour temperature, shadows, reflections and perspective so it looks genuinely photographed in place, grounded with a soft natural contact shadow and correctly proportioned. Keep ${n>1?"the packs":"the pack"} crisp and unobstructed.`
     : "";
-  let full = [String(prompt), productSpace, textSpace].filter(Boolean).join("\n\n");
+  let full = [integrate, n?"SCENE / BACKGROUND:":"", String(prompt), textSpace].filter(Boolean).join("\n\n");
   if (negativePrompt) full += `\n\nAvoid: ${negativePrompt}`;
   try {
-    const image = await generateImageFromPrompt(full, aspectRatio || "1:1");
-    res.json({ image });
+    const image = await generateImageFromPrompt(full, aspectRatio || "1:1", imgs);
+    res.json({ image, productsReceived: n });
   } catch (e) {
     res.status(502).json({ error: e.message });
   }
