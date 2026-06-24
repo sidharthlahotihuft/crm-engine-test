@@ -103,7 +103,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.9.5 · FIX sent-back copy going missing — a sent-back asset was content-stage but still carried a selected index, so it fell between the Needs-attention / In-review / Approved groups and showed nowhere. Needs-attention now lists every content-stage asset (recovers stuck ones); category routing no longer hides uncategorised copy from writers. Plus v29.9.2 chat fix, v29.9.3 multi-select, v29.9.4 copy/design/preview improvements";
+const BUILD="v29.9.8 · clarity + fixes — every workflow tab now shows an action-needed count (Brief/Copy/Design/etc.); Copy rows show real status (Needs copy / Pick one of N / Sent back) instead of a misleading Copy approved; Approve no longer full-reloads the page (refreshes in place — fixes the logout) so approvals complete and Alerts populate; reference-image upload now downscales big photos so they actually show. Carries v29.9.7 identifiers + calendar";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -195,6 +195,33 @@ const computeMyTasks=(campaigns,me)=>{
   const rank=(c)=>{const d=dueForCampaign(c);return isOverdueD(d)?0:isDueTodayD(d)?1:2;};
   return [...t].sort((a,b)=>rank(a)-rank(b));
 };
+// ── Who's involved + what it's waiting on (for clearer row identifiers) ──
+const _first=(n)=>((n||"").trim().split(/\s+/)[0]||"");
+const slotHolders=(team,slot)=>(team||[]).filter(u=>Array.isArray(u.approval_slots)&&u.approval_slots.includes(slot)).map(u=>u.name);
+const SLOT_FALLBACK={copy:"brand lead",design:"design lead",asset:"brand lead",final:"Head of Marketing"};
+const waitingOn=(c,team)=>{
+  if(!c||isArchived(c))return null;
+  const named=(slot,fb)=>{const n=slotHolders(team,slot);return n.length?n.join(", "):fb;};
+  if(c.stage==="brand_review")return{gate:"copy",label:"Waiting for copy approval",by:named("copy",c.copy_approver||SLOT_FALLBACK.copy)};
+  const d=c.data&&c.data.design;
+  if(c.stage==="design"&&d&&d.pendingApproval)return{gate:"design",label:"Waiting for design approval",by:named("design",SLOT_FALLBACK.design)};
+  if(c.stage==="design"&&d&&d.assetReview)return{gate:"asset",label:"Waiting for full-asset approval",by:named("asset",SLOT_FALLBACK.asset)};
+  if(c.stage==="design"&&d&&d.finalReview)return{gate:"final",label:"Waiting for final sign-off",by:named("final",SLOT_FALLBACK.final)};
+  return null;
+};
+function WhoChips({c,me,team}){
+  if(!c)return null;
+  const raised=c.created_by_name;
+  const writer=c.copy_author;
+  const w=waitingOn(c,team);
+  const chip=(bg,fg,icon,txt)=><span style={{display:"inline-flex",alignItems:"center",gap:3,fontSize:10.5,fontWeight:700,color:fg,background:bg,padding:"2px 8px",borderRadius:999,whiteSpace:"nowrap"}}>{icon}{txt}</span>;
+  if(!raised&&!writer&&!w)return null;
+  return<div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginTop:4}}>
+    {raised&&chip("#F1F5F9","#475569",<Users size={10}/>,"Raised by "+raised)}
+    {writer&&chip("#EDE9FE","#6D28D9",<PenLine size={10}/>,"Writer: "+writer)}
+    {w&&chip("#FEF3C7","#92400E",<ClockIcon size={10}/>,w.label+(w.by?" · "+w.by:""))}
+  </div>;
+}
 // categories a brand_team writer owns, from the category-rules mapping
 const myCategories=(me,catRules)=>{
   if(!me||!Array.isArray(catRules))return [];
@@ -216,11 +243,13 @@ const scopeCampaigns=(campaigns,me)=>{
 // Cut near that limit, snapping to a line break or word boundary — never at the greeting line.
 const waPreviewSplit=(raw)=>{
   const body=(raw||"").trim();
-  const LIMIT=240, MIN=140;
-  if(body.length<=LIMIT)return{hook:body,rest:""};
-  let cut=body.lastIndexOf("\n",LIMIT);
-  if(cut<MIN)cut=body.lastIndexOf(" ",LIMIT);
-  if(cut<MIN)cut=LIMIT;
+  if(!body)return{hook:"",rest:""};
+  // Hook = the first line if it's short, otherwise the first ~7-8 words. "… read more" follows.
+  const nl=body.indexOf("\n");
+  const w8=body.match(/^(\s*\S+){7,8}/); // up to 8 words
+  let cut=w8?w8[0].length:body.length;
+  if(nl>=0&&nl<cut)cut=nl; // first line shorter than 8 words → cut at the line
+  if(cut>=body.length)return{hook:body,rest:""};
   return{hook:body.slice(0,cut).trim(),rest:body.slice(cut).trim()};
 };
 const groupByDate=(items)=>{
@@ -956,6 +985,9 @@ function App(){
   const[catRules,setCatRules]=useState([]);
   const loadCatRules=React.useCallback(()=>{if(!me)return;api.get("/api/category-rules").then(r=>setCatRules(Array.isArray(r)?r:[])).catch(()=>{});},[me]);
   useEffect(()=>{loadCatRules();},[loadCatRules]);
+  // Team list (best-effort — admins get it; used to name pending approvers e.g. "Waiting on Ilena")
+  const[team,setTeam]=useState([]);
+  useEffect(()=>{if(!me)return;api.get("/api/users").then(u=>setTeam(Array.isArray(u)?u:[])).catch(()=>setTeam([]));},[me]);
   const markNotifRead=(id)=>{setNotifs(ns=>ns.map(n=>n.id===id?{...n,read:true}:n));api.post("/api/notifications/"+id+"/read",{}).catch(()=>{});};
   const markAllNotifsRead=()=>{setNotifs(ns=>ns.map(n=>({...n,read:true})));api.post("/api/notifications/read-all",{}).catch(()=>{});};
   const[showMonthlyPrompt,setShowMonthlyPrompt]=useState(true);
@@ -1149,17 +1181,25 @@ function App(){
   const pending={brief:scoped.filter(c=>c.stage==="brief"&&!isArchived(c)).length,content:scoped.filter(c=>c.stage==="content"&&!isArchived(c)).length,brand_review:scoped.filter(c=>c.stage==="brand_review"&&!isArchived(c)).length,design:scoped.filter(c=>c.stage==="design"&&c.channel!=="Push notification"&&!isArchived(c)).length};
 
   // Tabs visible per role
+  // Action-needed counts per tab (what actually needs someone's attention there)
+  const _live=scoped.filter(c=>!isArchived(c));
+  const cnt={
+    brief:_live.filter(c=>c.stage==="brief"&&!(c.data&&c.data.brief)).length,
+    copy:_live.filter(c=>c.stage==="content").length,
+    design:_live.filter(c=>c.stage==="design"&&c.channel!=="Push notification"&&!(c.data?.design?.finalFile)).length,
+    done:_live.filter(c=>c.stage==="done").length,
+  };
   const allTabs=[
     {k:"dashboard",label:"Dashboard",icon:<LayoutDashboard size={16}/>},
     {k:"mytasks",label:"My Tasks",icon:<ClockIcon size={16}/>,count:computeMyTasks(scoped,me).length||undefined},
     {k:"approvals",label:"Approvals",icon:<CheckCircle2 size={16}/>,count:computeApprovals(scoped,me).length||undefined},
-    {k:"brief",label:"Brief",icon:<FileText size={16}/>},
-    {k:"content",label:"Copy",icon:<MessageSquare size={16}/>,count:pending.brand_review||undefined},
-    {k:"design",label:"Design",icon:<Palette size={16}/>},
+    {k:"brief",label:"Brief",icon:<FileText size={16}/>,count:cnt.brief||undefined},
+    {k:"content",label:"Copy",icon:<MessageSquare size={16}/>,count:cnt.copy||undefined},
+    {k:"design",label:"Design",icon:<Palette size={16}/>,count:cnt.design||undefined},
     {k:"library",label:"Brand Assets",icon:<ImageIcon size={16}/>},
-    {k:"done",label:"Finalized Assets",icon:<CheckCircle2 size={16}/>,count:scoped.filter(c=>c.stage==="done"&&!isArchived(c)).length},
+    {k:"done",label:"Finalized Assets",icon:<CheckCircle2 size={16}/>,count:cnt.done||undefined},
     {k:"analytics",label:"Analytics",icon:<BarChart3 size={16}/>},
-    {k:"archive",label:"Archive",icon:<ArchiveIcon size={16}/>,count:scoped.filter(c=>isArchived(c)).length},
+    {k:"archive",label:"Archive",icon:<ArchiveIcon size={16}/>,count:scoped.filter(c=>isArchived(c)).length||undefined},
   ];
   const _vis=visibleTabKeys(me);
   const TABS=allTabs.filter(t=>_vis.has(t.k));
@@ -1183,7 +1223,7 @@ function App(){
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"12px 10px",display:"flex",flexDirection:"column",gap:3}}>
         {TABS.map(t=>{
-          const count=pending[t.k]||0;const on=tab===t.k;
+          const count=t.count||0;const on=tab===t.k;
           return<button key={t.k}onClick={()=>setTab(t.k)}style={{display:"flex",alignItems:"center",gap:11,padding:"10px 12px",borderRadius:9,border:"none",cursor:"pointer",fontSize:13.5,fontWeight:600,width:"100%",textAlign:"left",background:on?C.coral:"transparent",color:on?"#fff":"rgba(255,255,255,.62)",transition:"all .15s"}}>
             <span style={{display:"flex",alignItems:"center"}}>{t.icon}</span>
             <span style={{flex:1}}>{t.label}</span>
@@ -1208,12 +1248,12 @@ function App(){
     {/* ===== MAIN ===== */}
     <div style={{flex:1,minWidth:0,height:"100vh",overflowY:"auto"}}>
     <div style={{maxWidth:1120,margin:"0 auto",padding:"28px 28px"}}>
-      {tab==="dashboard"&&<Dashboard campaigns={scoped}onNew={newCampaign}onOpen={open}me={me}setTab={setTab}/>}
-      {tab==="approvals"&&<ApprovalsTab campaigns={scoped}onOpen={open}me={me}/>}
-      {tab==="mytasks"&&<MyTasksTab campaigns={scoped}onOpen={open}me={me}/>}
+      {tab==="dashboard"&&<Dashboard campaigns={scoped}onNew={newCampaign}onOpen={open}me={me}setTab={setTab}reload={loadAll}/>}
+      {tab==="approvals"&&<ApprovalsTab campaigns={scoped}onOpen={open}me={me}team={team}reload={loadAll}/>}
+      {tab==="mytasks"&&<MyTasksTab campaigns={scoped}onOpen={open}me={me}team={team}/>}
       {tab==="brief"&&<BriefTab active={active}patch={patch}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={scoped}onOpen={open}audiences={audiences}onDelete={delCampaign}onNew={newCampaign}onBulkImport={bulkImportBriefs}onBulkGenerate={bulkGenerate}toast={toast}/>}
-      {(tab==="content"||tab==="brand_review")&&<ContentTab active={active}patch={patch}copyRules={copyRules}addRule={addRule}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={scoped}onOpen={open}toast={toast}onDelete={delCampaign}onSplit={splitCopyAssets}catRules={catRules}/>}
-      {tab==="design"&&<DesignTab active={active}patch={patch}promptRules={promptRules}addRule={addRule}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={scoped}onOpen={open}onDelete={delCampaign}onDuplicate={duplicateCampaign}/>}
+      {(tab==="content"||tab==="brand_review")&&<ContentTab active={active}patch={patch}copyRules={copyRules}addRule={addRule}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={scoped}onOpen={open}toast={toast}onDelete={delCampaign}onSplit={splitCopyAssets}catRules={catRules}team={team}reload={loadAll}/>}
+      {tab==="design"&&<DesignTab active={active}patch={patch}promptRules={promptRules}addRule={addRule}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={scoped}onOpen={open}onDelete={delCampaign}onDuplicate={duplicateCampaign}team={team}/>}
       {tab==="library"&&<BrandAssetsTab me={me}toast={toast}copyRules={copyRules}promptRules={promptRules}addRule={addRule}toggleRule={toggleRule}delRule={delRule}feedback={feedback}audiences={audiences}setAudiences={setAudiences}/>}
       {tab==="done"&&<DoneTab campaigns={scoped}patch={patch}onOpen={open}me={me}setTab={setTab}onDelete={delCampaign}onDuplicate={duplicateCampaign}/>}
       {tab==="analytics"&&<AnalyticsTab campaigns={scoped}patch={patch}onOpen={open}me={me}/>}
@@ -1372,6 +1412,7 @@ function CalendarView({campaigns,onOpen,filterStage}){
   const now=new Date();
   const[month,setMonth]=useState(now.getMonth());
   const[year,setYear]=useState(now.getFullYear());
+  const[selDay,setSelDay]=useState(null);
 
   const MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   const DAYS=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
@@ -1393,8 +1434,8 @@ function CalendarView({campaigns,onOpen,filterStage}){
 
   const stageCol={brief:C.coral,content:C.purple,design:C.teal,done:C.green};
 
-  const prev=()=>{if(month===0){setMonth(11);setYear(y=>y-1);}else setMonth(m=>m-1);};
-  const next=()=>{if(month===11){setMonth(0);setYear(y=>y+1);}else setMonth(m=>m+1);};
+  const prev=()=>{setSelDay(null);if(month===0){setMonth(11);setYear(y=>y-1);}else setMonth(m=>m-1);};
+  const next=()=>{setSelDay(null);if(month===11){setMonth(0);setYear(y=>y+1);}else setMonth(m=>m+1);};
 
   const cells=[];
   for(let i=0;i<firstDay;i++)cells.push(null);
@@ -1422,14 +1463,16 @@ function CalendarView({campaigns,onOpen,filterStage}){
       {cells.map((d,i)=>{
         const items=d?byDate[d]||[]:[];
         const today=d&&isToday(d);
-        return<div key={i}style={{
+        const isSel=d&&selDay===d;
+        return<div key={i}onClick={d?()=>setSelDay(s=>s===d?null:d):undefined}style={{
           minHeight:72,border:`1px solid ${C.line}`,borderRadius:8,padding:4,
-          background:today?"#FFF7F5":d?"#fff":"#f9f9f9",
-          borderColor:today?C.coral:C.line,
+          background:isSel?"#FFF1E8":today?"#FFF7F5":d?"#fff":"#f9f9f9",
+          borderColor:isSel?C.coral:today?C.coral:C.line,borderWidth:isSel?2:1,
+          cursor:d?"pointer":"default",
         }}>
-          {d&&<div style={{fontSize:11,fontWeight:today?800:500,color:today?C.coral:C.sub,marginBottom:3}}>{d}</div>}
+          {d&&<div style={{fontSize:11,fontWeight:today||isSel?800:500,color:isSel?C.coral:today?C.coral:C.sub,marginBottom:3}}>{d}</div>}
           {items.slice(0,3).map((c,ci)=><div key={ci}
-            onClick={()=>onOpen(c.id)}
+            onClick={(e)=>{e.stopPropagation();onOpen(c.id);}}
             style={{
               fontSize:9.5,fontWeight:600,padding:"2px 4px",borderRadius:4,marginBottom:1,
               background:(stageCol[c.stage]||C.sub)+"18",color:stageCol[c.stage]||C.sub,
@@ -1441,6 +1484,22 @@ function CalendarView({campaigns,onOpen,filterStage}){
         </div>;
       })}
     </div>
+    {/* Selected-day detail */}
+    {selDay&&<div style={{marginTop:14,border:`1px solid ${C.line}`,borderRadius:12,overflow:"hidden"}}>
+      <div style={{background:C.paper,padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{selDay} {MONTHS[month]} {year} · {(byDate[selDay]||[]).length} asset{(byDate[selDay]||[]).length===1?"":"s"}</span>
+        <button onClick={()=>setSelDay(null)}style={{fontSize:12,fontWeight:700,color:C.sub,background:"none",border:"none",cursor:"pointer"}}>Clear</button>
+      </div>
+      {(byDate[selDay]||[]).length===0
+        ?<div style={{padding:"16px",fontSize:13,color:C.sub}}>No assets created on this date.</div>
+        :(byDate[selDay]||[]).map(c=><div key={c.id}onClick={()=>onOpen(c.id)}style={{display:"flex",alignItems:"center",gap:10,padding:"11px 16px",borderTop:`1px solid ${C.line}`,cursor:"pointer",background:"#fff"}}>
+          <span style={{width:9,height:9,borderRadius:2,background:stageCol[c.stage]||C.sub,flexShrink:0}}/>
+          <span style={{fontWeight:700,fontSize:13.5,color:C.ink}}>{c.product||parseName(c.name).product||"Asset"}</span>
+          <span style={{fontSize:11.5,color:C.sub}}>· {normCrmType(c.crm_type)} · {c.channel||"WhatsApp"}</span>
+          <span style={{marginLeft:"auto",fontSize:10.5,fontWeight:700,color:stageCol[c.stage]||C.sub,background:(stageCol[c.stage]||C.sub)+"18",padding:"2px 8px",borderRadius:999}}>{c.stage}</span>
+          <ChevronRight size={15}color={C.sub}/>
+        </div>)}
+    </div>}
     <div style={{marginTop:10,fontSize:12,color:C.sub,display:"flex",gap:12,flexWrap:"wrap"}}>
       {Object.entries({brief:"Brief",content:"Copy",design:"Design",done:"Ready"}).map(([k,v])=>(
         <span key={k}style={{display:"flex",alignItems:"center",gap:4}}>
@@ -1453,7 +1512,7 @@ function CalendarView({campaigns,onOpen,filterStage}){
   </div>;
 }
 
-function ApprovalsTab({campaigns,onOpen,me}){
+function ApprovalsTab({campaigns,onOpen,me,team,reload}){
   const[approving,setApproving]=useState("");
   const approvals=computeApprovals(campaigns,me);
   const mySlots=isSuper(me)?["copy","design","asset","final"]:((me&&me.approval_slots)||[]);
@@ -1461,7 +1520,8 @@ function ApprovalsTab({campaigns,onOpen,me}){
     try{
       const ep=action==="copy"?"brand-approve":action==="design"?"design-approve":action==="asset"?"asset-approve":"final-approve";
       await api.post("/api/campaigns/"+c.id+"/"+ep,{});
-      window.location.reload();
+      if(reload)await reload();
+      setApproving("");
     }catch(e){setApproving("");alert(e.message||"Approval failed");}
   };
   const slotLabel={copy:"Copy",design:"Design",asset:"Full asset",final:"Final sign-off"};
@@ -1480,6 +1540,7 @@ function ApprovalsTab({campaigns,onOpen,me}){
               {categoryOf(c)&&<span style={{fontSize:10.5,color:C.sub,background:C.paper,border:`1px solid ${C.line}`,padding:"1px 7px",borderRadius:999}}>{categoryOf(c)}</span>}
             </div>
             <div style={{fontSize:11.5,color:s.col,fontWeight:700,marginTop:2}}>{s.t}{c.copy_author?" · writer "+c.copy_author:""}</div>
+            <WhoChips c={c}me={me}team={team}/>
           </div>
           {u&&<span style={{fontSize:10.5,fontWeight:800,color:u.col,background:u.bg,padding:"2px 8px",borderRadius:999,flexShrink:0}}>{u.t}</span>}
           {approving===c.id+action?<span style={{fontSize:12,color:C.sub}}>Working…</span>:<span style={{display:"flex",gap:7,flexShrink:0}}>
@@ -1490,7 +1551,7 @@ function ApprovalsTab({campaigns,onOpen,me}){
       </Card>}
   </div>;
 }
-function MyTasksTab({campaigns,onOpen,me}){
+function MyTasksTab({campaigns,onOpen,me,team}){
   const tasks=computeMyTasks(campaigns,me);
   const stageTab=(c)=>c.stage==="brief"?"brief":c.stage==="content"||c.stage==="brand_review"?"content":c.stage==="design"?"design":"done";
   const overdue=tasks.filter(c=>isOverdueD(dueForCampaign(c)));
@@ -1509,6 +1570,7 @@ function MyTasksTab({campaigns,onOpen,me}){
               {categoryOf(c)&&<span style={{fontSize:10.5,color:C.sub,background:C.paper,border:`1px solid ${C.line}`,padding:"1px 7px",borderRadius:999}}>{categoryOf(c)}</span>}
             </div>
             {dueForCampaign(c)&&<div style={{fontSize:11.5,color:C.sub,marginTop:2}}>Due {fmtDate(dueForCampaign(c))}</div>}
+            <WhoChips c={c}me={me}team={team}/>
           </div>
           {u&&<span style={{fontSize:10.5,fontWeight:800,color:u.col,background:u.bg,padding:"2px 8px",borderRadius:999,flexShrink:0}}>{u.t}</span>}
           <span style={{fontSize:10.5,fontWeight:700,color:s.col,background:s.col+"18",padding:"2px 8px",borderRadius:999,flexShrink:0}}>{s.t}</span>
@@ -1517,14 +1579,15 @@ function MyTasksTab({campaigns,onOpen,me}){
       </Card>}
   </div>;
 }
-function Dashboard({campaigns,onNew,onOpen,me,setTab}){
+function Dashboard({campaigns,onNew,onOpen,me,setTab,reload}){
   const[view,setView]=useState("list");
   const[approving,setApproving]=useState("");
   const approveGate=async(c,action)=>{setApproving(c.id+action);
     try{
       const ep=action==="copy"?"brand-approve":action==="design"?"design-approve":action==="asset"?"asset-approve":"final-approve";
       await api.post("/api/campaigns/"+c.id+"/"+ep,{});
-      window.location.reload();
+      if(reload)await reload();
+      setApproving("");
     }catch(e){setApproving("");alert(e.message||"Approval failed");}
   };
   const counts={brief:0,content:0,design:0,done:0};campaigns.forEach(c=>{if(isArchived(c))return;counts[c.stage]=(counts[c.stage]||0)+1;});
@@ -3001,7 +3064,7 @@ function ImageFull({id}){
   return<img src={src}alt=""style={{width:"100%",borderRadius:10}}/>;
 }
 
-function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,saveFeedback,campaigns,onOpen,toast,onDelete,onSplit,catRules}){
+function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,saveFeedback,campaigns,onOpen,toast,onDelete,onSplit,catRules,team,reload}){
   // Copy page shows: assets still in copy stage, PLUS any non-archived asset whose copy
   // was already approved (those have moved on to Design/Done but should remain visible here).
   const _myCats=myCategories(me,catRules);
@@ -3044,7 +3107,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
           await api.put(`/api/campaigns/${c.id}`,{stage:"done",design_approver:me.name,went_live_at:new Date().toISOString()});
         }
         if(toast)toast("Brand approved ✓ — released to "+(isPushChannel(c.channel)?"Done":"Design"),"success");
-        window.location.reload();
+        if(reload)await reload();setBusy(false);
       }catch(e){setErr(e.message||"Approve failed");setBusy(false);}
     };
     const brandReject=async()=>{
@@ -3052,7 +3115,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       try{
         await api.post(`/api/campaigns/${c.id}/brand-reject`,{reason:brandReason.trim()});
         if(toast)toast("Sent back to the copy team","success");
-        window.location.reload();
+        if(reload)await reload();setBusy(false);
       }catch(e){setErr(e.message||"Reject failed");setBusy(false);}
     };
 
@@ -3168,15 +3231,23 @@ Put the hook + payoff as the first lines of the body; RTBs and CTA follow below.
             <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{c.product||"—"}</span>
             <span style={{fontSize:11,fontWeight:700,color:C.coral}}>{normCrmType(c.crm_type)}</span>
             <span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel||"WhatsApp"}</span>
-            {c.stage==="brand_review"
-              ?<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#9333EA",background:"#F3E8FF",padding:"3px 9px",borderRadius:999}}><Eye size={11}/>In brand review</span>
-              :<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#5B21B6",background:"#EDE9FE",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>Copy approved</span>}
+            {(()=>{
+              if(c.stage==="brand_review")return<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#9333EA",background:"#F3E8FF",padding:"3px 9px",borderRadius:999}}><Eye size={11}/>In brand review</span>;
+              if(c.stage==="content"){
+                const opts=c.data?.copyOptions,selIdx=c.data?.selectedCopyIdx;
+                if(!opts||!opts.length)return<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#B45309",background:"#FEF3C7",padding:"3px 9px",borderRadius:999}}>Needs copy</span>;
+                if(selIdx==null)return<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#B45309",background:"#FEF3C7",padding:"3px 9px",borderRadius:999}}>Pick one of {opts.length}</span>;
+                return<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#B45309",background:"#FEF3C7",padding:"3px 9px",borderRadius:999}}>Sent back — review &amp; resend</span>;
+              }
+              return<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#5B21B6",background:"#EDE9FE",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>Copy approved</span>;
+            })()}
             {c.stage!=="content"&&c.stage!=="brand_review"&&<StageBadge stage={c.stage}/>}
             {isOpen&&o?.direction&&<span style={{fontSize:11,color:C.sub,fontStyle:"italic"}}>{o.direction}</span>}
             {c.created_at&&<span style={{marginLeft:"auto",fontSize:11,color:C.sub,background:"#F3F4F6",padding:"2px 7px",borderRadius:5}}>{fmtDate(c.created_at)}</span>}
           </div>
           <div style={{flexShrink:0}} onClick={e=>e.stopPropagation()}><RowActions c={c}patch={patch}me={me}onDelete={onDelete}/></div>
         </div>
+        <div style={{padding:"0 18px 8px 39px",marginTop:-4}}><WhoChips c={c}me={me}team={team}/></div>
         {/* Expanded body */}
         {isOpen&&<div style={{padding:"0 18px 14px"}}>
           {o&&<div style={{background:"#fff",border:`1px solid ${C.line}`,borderRadius:10,padding:"10px 13px",marginBottom:10}}>
@@ -3440,6 +3511,7 @@ function ApprovedCopyCard({copy,channel,product,image}){
 function WhatsAppMockup({o,image,product,onClose}){
   const[expanded,setExpanded]=useState(false);
   const body=stripForbidden(o&&o.body||"");
+  const header=stripForbidden(o&&o.header||"");
   const{hook,rest}=waPreviewSplit(body);
   const cta=stripForbidden(o&&o.cta||"");
   const now=new Date().toLocaleTimeString("en-IN",{hour:"numeric",minute:"2-digit"});
@@ -3455,9 +3527,17 @@ function WhatsAppMockup({o,image,product,onClose}){
       {/* Chat area */}
       <div style={{background:"#0b141a",backgroundImage:"radial-gradient(rgba(255,255,255,.025) 1px, transparent 1px)",backgroundSize:"14px 14px",padding:"16px 12px 22px",minHeight:360,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
         <div style={{background:"#202c33",borderRadius:"10px 10px 10px 4px",overflow:"hidden",maxWidth:280,boxShadow:"0 1px 1px rgba(0,0,0,.3)"}}>
-          {image
-            ?<img src={image}alt=""style={{width:"100%",display:"block"}}/>
-            :<div style={{width:"100%",aspectRatio:"1/1",background:"linear-gradient(135deg,#2a3942,#202c33)",display:"flex",alignItems:"center",justifyContent:"center",color:"#5b6b73",fontSize:12,gap:6,flexDirection:"column"}}><ImageIcon size={26}/><span>Image / creative here</span></div>}
+          <div style={{position:"relative"}}>
+            {image
+              ?<img src={image}alt=""style={{width:"100%",display:"block"}}/>
+              :<div style={{width:"100%",aspectRatio:"1/1",background:"linear-gradient(135deg,#2a3942,#202c33)"}}/>}
+            {/* Image copy (overlay text) — what sits ON the creative */}
+            {header
+              ?<div style={{position:"absolute",inset:0,padding:"14px 14px",display:"flex",flexDirection:"column",justifyContent:"flex-start",background:"linear-gradient(180deg,rgba(0,0,0,.45),rgba(0,0,0,0) 55%)"}}>
+                  <div style={{color:"#fff",fontWeight:800,fontSize:17,lineHeight:1.22,whiteSpace:"pre-line",textShadow:"0 1px 6px rgba(0,0,0,.55)"}}>{header}</div>
+                </div>
+              :(!image&&<div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",color:"#5b6b73",fontSize:12,gap:6,flexDirection:"column"}}><ImageIcon size={26}/><span>Image / creative here</span></div>)}
+          </div>
           <div style={{padding:"8px 10px 6px"}}>
             <div style={{color:"#e9edef",fontSize:13.5,lineHeight:1.5,whiteSpace:"pre-line"}}>
               <span style={{fontWeight:700}}>{hook}</span>
@@ -3665,12 +3745,37 @@ function SmartLibraryPicker({d,setD,copy,brief,product,campaignId}){
 function RefImagePicker({d,setD,campaignId,product}){
   const[sugg,setSugg]=useState(null);
   const[adding,setAdding]=useState("");
+  const[note,setNote]=useState("");
   const refs=d.refImages||[];
   React.useEffect(()=>{let on=true;(async()=>{
     try{const res=await api.get("/api/image-library-suggest/"+campaignId);if(on)setSugg((res||[]).filter(i=>i.kind!=="product"));}
     catch(e){if(on)setSugg([]);}
   })();return()=>{on=false;};},[campaignId]);
-  const addUpload=(files)=>{[...files].forEach(f=>{if(f.size>4*1024*1024)return;const r=new FileReader();r.onload=()=>setD({refImages:[...(d.refImages||[]),r.result]});r.readAsDataURL(f);});};
+  // Downscale any image to a max edge so big phone photos still upload + show (and stay light to store).
+  const downscale=(file)=>new Promise((resolve,reject)=>{
+    const r=new FileReader();
+    r.onerror=reject;
+    r.onload=()=>{const img=new Image();img.onload=()=>{
+      const MAX=1280;let{width:w,height:h}=img;
+      if(w>MAX||h>MAX){const s=MAX/Math.max(w,h);w=Math.round(w*s);h=Math.round(h*s);}
+      const cv=document.createElement("canvas");cv.width=w;cv.height=h;
+      cv.getContext("2d").drawImage(img,0,0,w,h);
+      resolve(cv.toDataURL("image/jpeg",0.85));
+    };img.onerror=reject;img.src=r.result;};
+    r.readAsDataURL(file);
+  });
+  const addUpload=async(files)=>{
+    setNote("");
+    const arr=[...files];if(!arr.length)return;
+    setNote("Processing "+arr.length+" image"+(arr.length>1?"s":"")+"…");
+    const out=[];
+    for(const f of arr){
+      if(!/^image\//.test(f.type)){continue;}
+      try{out.push(await downscale(f));}catch(e){}
+    }
+    if(out.length)setD({refImages:[...(d.refImages||[]),...out]});
+    setNote(out.length?"":"Couldn't read those files — try PNG or JPG.");
+  };
   const addFromLib=async(id)=>{setAdding(id);try{const lib=await api.get("/api/image-library/"+id);if(lib&&lib.file_data)setD({refImages:[...(d.refImages||[]),lib.file_data]});}catch(e){}setAdding("");};
   const rm=(i)=>setD({refImages:(d.refImages||[]).filter((_,j)=>j!==i)});
   return<div style={{marginBottom:12,border:`1px solid ${C.line}`,borderRadius:10,padding:12,background:"#FCFCFD"}}>
@@ -3685,6 +3790,7 @@ function RefImagePicker({d,setD,campaignId,product}){
         <input type="file"accept="image/*"multiple style={{display:"none"}}onChange={e=>{addUpload(e.target.files);e.target.value="";}}/>
       </label>
     </div>
+    {note&&<div style={{fontSize:11,color:C.sub,marginTop:6}}>{note}</div>}
     {refs.length>0&&<div style={{fontSize:11,color:C.sub,marginTop:6}}>Sent with “Generate image” to steer the output.</div>}
     <div style={{marginTop:10}}>
       <div style={{fontSize:11,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.4,marginBottom:6,display:"flex",alignItems:"center",gap:5}}><Wand2 size={11}/>Suggested from library{product?" · matched to "+product:""}</div>
@@ -4776,7 +4882,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   </div>,document.body);
 }
 
-function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedback,campaigns,onOpen,onDelete,onDuplicate}){
+function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedback,campaigns,onOpen,onDelete,onDuplicate,team}){
   const allDesign=(campaigns||[]).filter(c=>c.stage==="design"&&c.channel!=="Push notification"&&!isArchived(c));
   const[openId,setOpenId]=useState(null);
   const[imageModes,setImageModes]=useState({});
@@ -4887,6 +4993,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
           {isOpen?<ChevronDown size={16}color={C.sub}/>:<ChevronRight size={16}color={C.sub}/>}
         </div>
       </div>
+      <div style={{padding:"0 18px 8px 18px",marginTop:-6}}><WhoChips c={c}me={me}team={team}/></div>
 
       {/* Expanded */}
       {isOpen&&<div style={{padding:"0 18px 18px",background:"#F8F9FA"}}>
