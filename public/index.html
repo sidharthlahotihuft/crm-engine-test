@@ -62,7 +62,7 @@ async function callClaude(system,prompt,expectJson){
 // Role-based default tab
 const ROLE_TAB={admin:"dashboard",business:"dashboard",content:"content",design:"design",brand:"dashboard"};
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v28.0 · roles: Business/Content get Library + Product-mockup modes only (no AI); Design/Admin/Brand keep full generation. New clean mockup-background presets, exact packshot on top";
+const BUILD="v28.3 · editor Elements panel now also adds an uploaded Image element (logo / sticker / badge) placed and sized anywhere on the canvas, alongside extra text & CTAs";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -587,6 +587,7 @@ const ChevronRight=p=><Svg{...p}><path d="M9 6l6 6-6 6"/></Svg>;
 const ChevronDown=p=><Svg{...p}><path d="M6 9l6 6 6-6"/></Svg>;
 const Circle=p=><Svg{...p}><circle cx="12"cy="12"r="9"/></Svg>;
 const Users=p=><Svg{...p}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9"cy="7"r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.9M16 3.1A4 4 0 0 1 16 11"/></Svg>;
+const Inbox=p=><Svg{...p}><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></Svg>;
 const Eye=p=><Svg{...p}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12"cy="12"r="3"/></Svg>;
 const Copy=p=><Svg{...p}><rect x="9"y="9"width="13"height="13"rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></Svg>;
 const Download=p=><Svg{...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></Svg>;
@@ -791,6 +792,12 @@ function App(){
   const[audiences,setAudiences]=useState([]);
   const[activeId,setActiveId]=useState(null);
   const[drawer,setDrawer]=useState(null);
+  const[reqOpenCount,setReqOpenCount]=useState(0);
+  const refreshReqCount=React.useCallback(()=>{
+    if(!me||!["admin","design","brand"].includes(me.role))return;
+    api.get("/api/creative-requests/stats").then(r=>setReqOpenCount(r&&r.open||0)).catch(()=>{});
+  },[me]);
+  useEffect(()=>{refreshReqCount();const t=setInterval(refreshReqCount,60000);return()=>clearInterval(t);},[refreshReqCount]);
   const[showMonthlyPrompt,setShowMonthlyPrompt]=useState(true);
 
   // Auto-login from stored token
@@ -1021,6 +1028,7 @@ function App(){
         })}
       </div>
       <div style={{padding:"10px 10px 12px",borderTop:"1px solid rgba(255,255,255,.08)",display:"flex",flexDirection:"column",gap:3}}>
+        {["admin","design","brand"].includes(me.role)&&<button onClick={()=>{setDrawer("requests");refreshReqCount();}}style={sideBtn}><Inbox size={15}/><span style={{flex:1}}>Requests</span>{reqOpenCount>0&&<span style={{background:C.coral,color:"#fff",fontSize:10,fontWeight:800,padding:"1px 7px",borderRadius:999}}>{reqOpenCount}</span>}</button>}
         {me.role==="admin"&&<button onClick={()=>setDrawer("team")}style={sideBtn}><Users size={15}/>Team</button>}
         <div style={{marginTop:8,padding:"10px 12px",borderRadius:10,background:"rgba(255,255,255,.06)",display:"flex",alignItems:"center",gap:8}}>
           <div style={{flex:1,minWidth:0}}>
@@ -1046,6 +1054,7 @@ function App(){
     {showMonthlyPrompt&&<MonthlyPrompt me={me}campaigns={campaigns}onClose={()=>setShowMonthlyPrompt(false)}/>}
     <div style={{position:"fixed",bottom:24,right:24,zIndex:9999,display:"flex",flexDirection:"column",gap:8,pointerEvents:"none"}}>{toasts.map(t=><div key={t.id}style={{background:t.type==="success"?"#15192B":"#B91C1C",color:"#fff",padding:"12px 18px",borderRadius:10,fontSize:13.5,fontWeight:600,display:"flex",alignItems:"center",gap:8,boxShadow:"0 4px 16px rgba(0,0,0,.25)",minWidth:260}}>{t.type==="success"?<CheckCircle2 size={16}/>:<X size={16}/>}{t.msg}</div>)}</div>
     {drawer==="rules"&&<RulesDrawer onClose={()=>setDrawer(null)}copyRules={copyRules}promptRules={promptRules}addRule={addRule}toggleRule={toggleRule}delRule={delRule}me={me}feedback={feedback}/>}
+    {drawer==="requests"&&<RequestsDrawer onClose={()=>setDrawer(null)}me={me}onOpen={open}onChange={refreshReqCount}/>}
     {drawer==="team"&&<TeamDrawer onClose={()=>setDrawer(null)}me={me}/>}
     {drawer==="audiences"&&<AudienceDrawer onClose={()=>setDrawer(null)}audiences={audiences}setAudiences={setAudiences}me={me}/>}
   </div>;
@@ -2524,14 +2533,14 @@ function ImageLibraryTab({me,toast}){
       <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8}}>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           <div style={{display:"flex",border:`1px solid ${C.line}`,borderRadius:8,overflow:"hidden"}}>
-            {[["product","Product mockup"],["asset","Asset"],["logo","Logo / lockup"]].map(([k,lbl])=>
+            {[["product","Product packshot"],["asset","Lifestyle / scene"],["mockup","Mockup background"],["logo","Logo / lockup"]].map(([k,lbl])=>
               <button key={k}onClick={()=>setUploadKind(k)}style={{padding:"7px 11px",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",background:uploadKind===k?C.coral:"#fff",color:uploadKind===k?"#fff":C.sub}}>{lbl}</button>)}
           </div>
           <Btn onClick={()=>fileRef.current&&fileRef.current.click()}><UploadIcon size={16}/>Upload images</Btn>
           <input ref={fileRef}type="file"accept="image/*"multiple style={{display:"none"}}onChange={e=>{if(e.target.files&&e.target.files.length)handleFiles(e.target.files);e.target.value="";}}/>
         </div>
         {uploadKind==="product"&&<input value={uploadDims}onChange={e=>setUploadDims(e.target.value)}placeholder="Packaging size (cm) — optional, e.g. 22.4 x 16.3 x 3.1 cm"style={{width:300,border:`1px solid ${C.line}`,borderRadius:8,padding:"6px 9px",fontSize:12}}/>}
-        <span style={{fontSize:10.5,color:C.sub}}>“{uploadKind==="product"?"Product mockup":"Asset"}” applies to the next upload</span>
+        <span style={{fontSize:10.5,color:C.sub}}>“{({product:"Product packshot",asset:"Lifestyle / scene",mockup:"Mockup background",logo:"Logo / lockup"})[uploadKind]||"Asset"}” applies to the next upload · select multiple files to bulk-upload</span>
       </div>
     </div>
 
@@ -2561,9 +2570,10 @@ function ImageLibraryTab({me,toast}){
             <ImageThumb id={img.id}alt={img.description}/>
           </div>
           <div style={{padding:"9px 11px"}}>
-            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4,flexWrap:"wrap"}}>
               {img.product&&<span style={{fontSize:11,fontWeight:700,color:C.coral}}>{img.product}</span>}
               {img.category&&<span style={{fontSize:10,fontWeight:600,color:C.teal,background:"#E6FFFA",padding:"1px 6px",borderRadius:999}}>{img.category}</span>}
+              {img.last_used_at&&(Date.now()-new Date(img.last_used_at).getTime())<45*86400000&&<span title={"Used recently — back in pickers on "+new Date(new Date(img.last_used_at).getTime()+45*86400000).toLocaleDateString()}style={{fontSize:9.5,fontWeight:700,color:"#92400E",background:"#FEF3C7",padding:"1px 6px",borderRadius:999}}>Resting 45d</span>}
             </div>
             {img.description&&<div style={{fontSize:11.5,color:C.sub,lineHeight:1.4,marginBottom:6,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{img.description}</div>}
             <div style={{display:"flex",flexWrap:"wrap",gap:3,marginBottom:6}}>
@@ -3390,6 +3400,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   const[linkSizes,setLinkSizes]=useState(true); // sub-headline size scales with headline unless unlinked
   const[autoFit,setAutoFit]=useState(true); // auto-place/scale products into free space (no overlap)
   const[mockupPreset,setMockupPreset]=useState("studio-cream"); // clean preset background for product mockups
+  const[reqNote,setReqNote]=useState("");const[reqBusy,setReqBusy]=useState(false);const[reqSent,setReqSent]=useState(false);
   const sz=COMPOSER_SIZES[sizeIdx];
 
   // background source
@@ -3406,6 +3417,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   // products / mockups — MULTI (library only). A post can feature several products (per the brief).
   const[products,setProducts]=useState([{pid:nextPid(),id:"",scale:0.55,x:0.5,y:0.62}]);
   const[prodImgs,setProdImgs]=useState({});   // id -> Image
+  const[elImgs,setElImgs]=useState({});       // element id -> Image (uploaded image elements)
   const[shadow,setShadow]=useState(true);
 
   // logo
@@ -3434,6 +3446,15 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   const[textShadow,setTextShadow]=useState("none"); // none | soft | drop
   const[copyScale,setCopyScale]=useState(1); // master scale for the whole image-copy block
   const[autoAvoid,setAutoAvoid]=useState(true); // keep copy out of the busy/subject part of the image
+  const[elements,setElements]=useState([]); // extra free elements: additional text blocks & CTAs
+  const nextEl=()=>"el"+Date.now()+Math.floor(Math.random()*1000);
+  const addElement=(type)=>setElements(es=>[...es,type==="cta"
+    ? {id:nextEl(),type:"cta",text:"Shop now",x:0.5,y:0.82,size:1,color:"#FFFFFF",bg:C.coral,font:"Rubik",bold:true}
+    : {id:nextEl(),type:"text",text:"New text",x:0.5,y:0.5,size:1,color:"#FFFFFF",font:"Rubik",bold:true,align:"center"}]);
+  const updEl=(id,patch)=>setElements(es=>es.map(e=>e.id===id?{...e,...patch}:e));
+  const rmEl=(id)=>setElements(es=>es.filter(e=>e.id!==id));
+  const elImgRef=React.useRef(null);
+  const addImageElement=(file)=>{if(!file)return;const r=new FileReader();r.onload=()=>setElements(es=>[...es,{id:nextEl(),type:"image",src:r.result,x:0.5,y:0.5,size:1}]);r.readAsDataURL(file);};
   const[textAlign,setTextAlign]=useState("");        // "" = follow placement column; else left/center/right
   const[oldPrice,setOldPrice]=useState({text:"",color:"#FFFFFF",size:1}); // struck old price for price-drop
 
@@ -3441,10 +3462,11 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   const[loadingItems,setLoadingItems]=useState(true);
   const[saving,setSaving]=useState(false);
   // kind-aware lists: classified images go to the right picker; unclassified show in both
+  const isResting=(i)=>i.last_used_at&&(Date.now()-new Date(i.last_used_at).getTime())<45*86400000; // rest a used image for 45 days
   const productItems=items.filter(i=>i.kind==="product"||!i.kind);
-  const assetItems=items.filter(i=>i.kind==="asset"||!i.kind);
+  const assetItems=items.filter(i=>(i.kind==="asset"||!i.kind)&&(!isResting(i)||i.id===bgId));
   const logoItems=items.filter(i=>i.kind==="logo");
-  const mockupItems=items.filter(i=>i.kind==="mockup");
+  const mockupItems=items.filter(i=>i.kind==="mockup"&&(!isResting(i)||i.id===bgId));
   // Auto-pick the brief's product into the first empty slot once the library loads
   const autoPickedRef=React.useRef(false);
   React.useEffect(()=>{
@@ -3459,7 +3481,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   const[finalSaving,setFinalSaving]=useState(false);
 
   // ===== Undo / redo history (snapshots editable state; excludes loaded image bitmaps) =====
-  const snapshot=React.useCallback(()=>({sizeIdx,template,linkSizes,autoFit,bgMode,bgColor,bgId,genPrompt,genNeg,products,shadow,logoId,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,hl,sh,anchor,divider,ct,ctaBg,textShadow,textAlign,oldPrice,copyScale}),[sizeIdx,template,linkSizes,autoFit,bgMode,bgColor,bgId,genPrompt,genNeg,products,shadow,logoId,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,hl,sh,anchor,divider,ct,ctaBg,textShadow,textAlign,oldPrice,copyScale]);
+  const snapshot=React.useCallback(()=>({sizeIdx,template,linkSizes,autoFit,bgMode,bgColor,bgId,genPrompt,genNeg,products,shadow,logoId,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,hl,sh,anchor,divider,ct,ctaBg,textShadow,textAlign,oldPrice,copyScale,elements}),[sizeIdx,template,linkSizes,autoFit,bgMode,bgColor,bgId,genPrompt,genNeg,products,shadow,logoId,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,hl,sh,anchor,divider,ct,ctaBg,textShadow,textAlign,oldPrice,copyScale,elements]);
   const histRef=React.useRef({past:[],future:[]});
   const lastSnapRef=React.useRef(null);
   const debRef=React.useRef(null);
@@ -3470,7 +3492,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
     setProducts(s.products);setShadow(s.shadow);setLogoId(s.logoId);setLogoScale(s.logoScale);setLogoCorner(s.logoCorner);
     setHuftMode(s.huftMode);setHuftLockup(s.huftLockup);setHuftCorner(s.huftCorner);setHuftScale(s.huftScale);
     setHl(s.hl);setSh(s.sh);setAnchor(s.anchor);setDivider(s.divider);setCt(s.ct);setCtaBg(s.ctaBg);
-    setTextShadow(s.textShadow);setTextAlign(s.textAlign);setOldPrice(s.oldPrice);if(s.copyScale!==undefined)setCopyScale(s.copyScale);
+    setTextShadow(s.textShadow);setTextAlign(s.textAlign);setOldPrice(s.oldPrice);if(s.copyScale!==undefined)setCopyScale(s.copyScale);if(s.elements!==undefined)setElements(s.elements);
     lastSnapRef.current=s; // so the recorder sees no diff and won't log this restore
   };
   React.useEffect(()=>{
@@ -3514,6 +3536,9 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   React.useEffect(()=>{let on=true;const need=products.map(p=>p.id).filter(id=>id&&!prodImgs[id]);
     need.forEach(id=>api.get("/api/image-library/"+id).then(r=>loadImage(r.file_data)).then(im=>{if(on)setProdImgs(m=>({...m,[id]:im}));}).catch(()=>{}));
     return()=>{on=false;};},[products,prodImgs]);
+  React.useEffect(()=>{let on=true;
+    elements.filter(e=>e.type==="image"&&e.src&&!elImgs[e.id]).forEach(e=>loadImage(e.src).then(im=>{if(on)setElImgs(m=>({...m,[e.id]:im}));}).catch(()=>{}));
+    return()=>{on=false;};},[elements,elImgs]);
 
   // Free-zone placement: keep products clear of the text band based on the headline anchor.
   const productZone=(anc,n,i)=>{
@@ -3814,7 +3839,37 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
         ctx.drawImage(limg,lx,ly,lw,lh);
       }
     }
-  },[sz,bgMode,bgColor,bgImg,genImg,mockupPreset,products,prodImgs,shadow,hl,sh,anchor,ct,ctaBg,logoImg,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,huftReady,divider,autoFit,textShadow,textAlign,oldPrice,copyScale,autoAvoid,genUsedProduct,editorOpen]);
+    // 6) extra user-added elements (additional text blocks / CTA pills) — top layer
+    elements.forEach(el=>{
+      const ex=el.x*sz.w, ey=el.y*sz.h;
+      if(el.type==="image"){
+        const im=elImgs[el.id];
+        if(im){const dw=sz.w*0.28*(el.size||1), dh=dw*(im.height/im.width||1);
+          ctx.drawImage(im,ex-dw/2,ey-dh/2,dw,dh);}
+      }else if(el.type==="cta"){
+        const fpx=sz.w*0.034*(el.size||1);
+        ctx.font=`${el.bold?"800":"600"} ${fpx}px '${el.font||"Rubik"}'`;
+        ctx.textAlign="center";ctx.textBaseline="middle";
+        const tw=ctx.measureText(el.text||"").width;
+        const padX=fpx*0.85, padY=fpx*0.55, bw=tw+padX*2, bh=fpx+padY*2, r=bh/2;
+        const bx=ex-bw/2, by=ey-bh/2;
+        ctx.save();ctx.fillStyle=el.bg||C.coral;
+        ctx.beginPath();ctx.moveTo(bx+r,by);
+        ctx.arcTo(bx+bw,by,bx+bw,by+bh,r);ctx.arcTo(bx+bw,by+bh,bx,by+bh,r);
+        ctx.arcTo(bx,by+bh,bx,by,r);ctx.arcTo(bx,by,bx+bw,by,r);ctx.closePath();ctx.fill();
+        ctx.fillStyle=el.color||"#FFFFFF";ctx.fillText(el.text||"",ex,ey+1);ctx.restore();
+      }else{
+        const fpx=sz.w*0.045*(el.size||1);
+        ctx.save();ctx.font=`${el.bold?"800":"400"} ${fpx}px '${el.font||"Rubik"}'`;
+        ctx.fillStyle=el.color||"#FFFFFF";ctx.textAlign=el.align||"center";ctx.textBaseline="middle";
+        if(textShadow){ctx.shadowColor="rgba(0,0,0,.45)";ctx.shadowBlur=fpx*0.18;ctx.shadowOffsetY=fpx*0.05;}
+        const lines=String(el.text||"").split("\n"), lh=fpx*1.18, total=lines.length*lh;
+        lines.forEach((ln,i)=>ctx.fillText(ln,ex,ey-total/2+lh/2+i*lh));
+        ctx.restore();
+      }
+    });
+    ctx.textAlign="left";ctx.textBaseline="top";
+  },[sz,bgMode,bgColor,bgImg,genImg,mockupPreset,products,prodImgs,shadow,hl,sh,anchor,ct,ctaBg,logoImg,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,huftReady,divider,autoFit,textShadow,textAlign,oldPrice,copyScale,autoAvoid,genUsedProduct,editorOpen,elements,elImgs]);
 
   React.useEffect(()=>{if(!canGenerate&&bgMode==="generate")setBgMode("mockup");},[canGenerate,bgMode]);
   React.useEffect(()=>{draw();},[draw]);
@@ -3844,6 +3899,22 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
     }catch(e){setGenErr(e.message||"Generation failed");}
     setGenBusy(false);
   };
+  const sendToDesign=async()=>{
+    setReqBusy(true);
+    try{
+      await api.post("/api/creative-requests",{
+        campaign_id:c.id,
+        title:((c.product||c.name||"Creative")+" — needs a generated image").slice(0,200),
+        details:`Channel: ${c.channel||"—"} · Objective: ${c.objective||"—"}`,
+        comment:reqNote.trim(),
+        size:(sz.label||"")+" "+sz.w+"×"+sz.h,
+        payload:{headline:hl.text,sub:sh.text,cta:ct.text,size:{w:sz.w,h:sz.h,ar:sz.ar},products:products.map(p=>p.id).filter(Boolean),bgMode}
+      });
+      setReqSent(true);setReqNote("");
+      if(toast)toast("Sent to the design team ✓","success");
+    }catch(e){if(toast)toast("Could not send the request — try again","error");}
+    setReqBusy(false);
+  };
   const exportPng=()=>{const cv=ref.current;if(!cv)return;cv.toBlob(b=>{const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download=(c.product||"creative").replace(/\s+/g,"_")+"_"+sz.w+"x"+sz.h+".png";a.click();URL.revokeObjectURL(u);},"image/png");};
   const saveToLib=async()=>{const cv=ref.current;if(!cv)return;setSaving(true);try{const dataUrl=cv.toDataURL("image/png");await api.post("/api/image-library",{file_name:(c.product||"creative")+"_composed.png",file_data:dataUrl,file_type:"image/png",kind:"asset"});if(toast)toast("Saved to Image library ✓","success");}catch(e){if(toast)toast(e.status===403?"You don't have permission to save":"Save failed","error");}setSaving(false);};
   // Make the composed canvas the FINAL design file, so the design can be marked done in-app (no Canva export needed).
@@ -3866,7 +3937,10 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
     }
   };
   const useAsFinal=()=>{const cv=ref.current;if(!cv||!patch)return;setFinalSaving(true);
-    try{const dataUrl=cv.toDataURL("image/png");patch(c.id,{data:{...(c.data||{}),design:{...(d||{}),finalFile:{name:(c.product||"creative")+"_composed.png",type:"image/png",dataUrl},finalSource:"composer"}}});if(toast)toast("Set as final design ✓ — scroll down to Mark as done","success");}
+    try{const dataUrl=cv.toDataURL("image/png");patch(c.id,{data:{...(c.data||{}),design:{...(d||{}),finalFile:{name:(c.product||"creative")+"_composed.png",type:"image/png",dataUrl},finalSource:"composer"}}});
+      // rest the lifestyle/mockup image used here so it doesn't get reused for 45 days
+      if((bgMode==="library"||bgMode==="mockup")&&bgId){api.post("/api/image-library/mark-used",{ids:[bgId]}).then(()=>reloadLib&&reloadLib()).catch(()=>{});}
+      if(toast)toast("Set as final design ✓ — scroll down to Mark as done","success");}
     catch(e){if(toast)toast("Couldn't set final design","error");}
     setFinalSaving(false);};
 
@@ -3956,6 +4030,13 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
           <option value="library">Image from library</option>
           {canGenerate&&<option value="generate">Generated image (AI)</option>}
         </select></div>
+
+        {restricted&&<div style={{gridColumn:"1 / -1",padding:"10px 12px",background:"#FFF7F2",border:`1px solid ${C.coral}44`,borderRadius:8,display:"grid",gap:7}}>
+          <div style={{fontSize:11.5,fontWeight:800,color:C.ink}}>Can't find the right image?</div>
+          <div style={{fontSize:10.5,color:C.sub,marginTop:-3}}>Send this brief to the design team — they'll generate a scene and finish it here.</div>
+          <textarea value={reqNote}onChange={e=>{setReqNote(e.target.value);setReqSent(false);}}rows={2}placeholder="What do you need? e.g. 'lifestyle scene — dog in a warm kitchen, soft morning light'"style={{...ctrl,resize:"vertical"}}/>
+          <Btn small disabled={reqBusy}onClick={sendToDesign}style={{width:"100%",justifyContent:"center"}}>{reqBusy?"Sending…":reqSent?"Sent ✓ — send another?":"Send to design team"}</Btn>
+        </div>}
 
         {bgMode==="plain"&&<div style={{gridColumn:"1 / -1"}}>
           <label style={fieldL}>Brand colour combinations</label>
@@ -4140,6 +4221,38 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
         <div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Logo image</label><select value={logoId}onChange={e=>setLogoId(e.target.value)}style={ctrl}><option value="">— none —</option>{logoItems.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select>{logoItems.length===0&&<div style={{fontSize:11,color:C.sub,marginTop:4}}>No sub-brand lockups yet — upload them in Image library as “Logo / lockup”. (HUFT master logo is built-in above.)</div>}</div>
         {logoId&&slider("Logo size",Math.round(logoScale*100),8,45,v=>setLogoScale(v/100),v=>v+"%")}
         {logoId&&<div><label style={fieldL}>Logo corner</label><select value={logoCorner}onChange={e=>setLogoCorner(e.target.value)}style={ctrl}><option value="top-left">Top left</option><option value="top-right">Top right</option><option value="bottom-left">Bottom left</option><option value="bottom-right">Bottom right</option></select></div>}
+
+        <div style={{gridColumn:"1 / -1",borderTop:`1px solid ${C.line}`,paddingTop:11}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+            <span style={{fontSize:11.5,fontWeight:800,color:C.ink}}>Extra elements</span>
+            <div style={{display:"flex",gap:6}}>
+              <button onClick={()=>addElement("text")}style={{padding:"4px 9px",fontSize:11.5,fontWeight:700,border:`1px solid ${C.line}`,borderRadius:7,background:"#fff",color:C.ink,cursor:"pointer"}}>+ Text</button>
+              <button onClick={()=>addElement("cta")}style={{padding:"4px 9px",fontSize:11.5,fontWeight:700,border:`1px solid ${C.line}`,borderRadius:7,background:"#fff",color:C.ink,cursor:"pointer"}}>+ CTA</button>
+              <button onClick={()=>elImgRef.current&&elImgRef.current.click()}style={{padding:"4px 9px",fontSize:11.5,fontWeight:700,border:"none",borderRadius:7,background:C.coral,color:"#fff",cursor:"pointer"}}>+ Image</button>
+              <input ref={elImgRef}type="file"accept="image/*"style={{display:"none"}}onChange={e=>{if(e.target.files&&e.target.files[0])addImageElement(e.target.files[0]);e.target.value="";}}/>
+            </div>
+          </div>
+          {elements.length===0&&<div style={{fontSize:11,color:C.sub}}>Add a second CTA, a price flash, a line of copy, or upload your own image (logo, sticker, badge). Each can be placed anywhere on the canvas.</div>}
+          {elements.map(el=><div key={el.id}style={{border:`1px solid ${C.line}`,borderRadius:9,padding:10,marginBottom:9,background:C.paper}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:7}}>
+              <span style={{fontSize:10,fontWeight:800,color:el.type==="cta"?C.coral:el.type==="image"?C.purple:C.teal,background:(el.type==="cta"?C.coral:el.type==="image"?C.purple:C.teal)+"18",padding:"2px 7px",borderRadius:999,textTransform:"uppercase"}}>{el.type==="cta"?"CTA":el.type==="image"?"Image":"Text"}</span>
+              {el.type==="image"&&el.src&&<img src={el.src}alt=""style={{height:24,maxWidth:60,objectFit:"contain",borderRadius:3}}/>}
+              <span style={{flex:1}}/>
+              <button onClick={()=>rmEl(el.id)}style={{border:"none",background:"transparent",cursor:"pointer",color:"#B91C1C",fontSize:11.5,fontWeight:700}}>Remove</button>
+            </div>
+            {el.type!=="image"&&<><textarea value={el.text}onChange={e=>updEl(el.id,{text:e.target.value})}rows={el.type==="cta"?1:2}placeholder={el.type==="cta"?"Button text":"Type your text (Enter = new line)"}style={{...ctrl,resize:"vertical",marginBottom:8}}/>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:2}}>
+              <div><label style={fieldL}>Font</label><select value={el.font}onChange={e=>updEl(el.id,{font:e.target.value})}style={ctrl}>{COMPOSER_FONTS.map(f=><option key={f}value={f}>{f}</option>)}</select></div>
+              <div><label style={fieldL}>Text colour</label><input type="color"value={el.color}onChange={e=>updEl(el.id,{color:e.target.value})}style={{width:"100%",height:34,border:`1px solid ${C.line}`,borderRadius:8,padding:2,boxSizing:"border-box"}}/></div>
+              {el.type==="cta"&&<div><label style={fieldL}>Button colour</label><input type="color"value={el.bg}onChange={e=>updEl(el.id,{bg:e.target.value})}style={{width:"100%",height:34,border:`1px solid ${C.line}`,borderRadius:8,padding:2,boxSizing:"border-box"}}/></div>}
+              {el.type==="text"&&<div><label style={fieldL}>Align</label><select value={el.align}onChange={e=>updEl(el.id,{align:e.target.value})}style={ctrl}><option value="center">Center</option><option value="left">Left</option><option value="right">Right</option></select></div>}
+            </div></>}
+            {slider("Size",Math.round((el.size||1)*100),40,260,v=>updEl(el.id,{size:v/100}),v=>v+"%")}
+            {slider("Horizontal",Math.round(el.x*100),0,100,v=>updEl(el.id,{x:v/100}),v=>v+"%")}
+            {slider("Vertical",Math.round(el.y*100),0,100,v=>updEl(el.id,{y:v/100}),v=>v+"%")}
+            {el.type!=="image"&&<label style={{display:"flex",alignItems:"center",gap:7,fontSize:12.5,fontWeight:600,color:C.ink,cursor:"pointer",marginTop:6}}><input type="checkbox"checked={!!el.bold}onChange={e=>updEl(el.id,{bold:e.target.checked})}/>Bold</label>}
+          </div>)}
+        </div>
         </div>
       </div>
     </div>
@@ -4724,14 +4837,59 @@ function RulesDrawer({onClose,copyRules,promptRules,addRule,toggleRule,delRule,m
   </Drawer>;
 }
 
+function RequestsDrawer({onClose,me,onOpen,onChange}){
+  const[rows,setRows]=useState(null);
+  const[filter,setFilter]=useState("open");
+  const[busy,setBusy]=useState("");
+  const load=React.useCallback(()=>{api.get("/api/creative-requests").then(setRows).catch(()=>setRows([]));},[]);
+  useEffect(()=>{load();},[load]);
+  const act=async(id,body)=>{setBusy(id);try{await api.put("/api/creative-requests/"+id,body);load();if(onChange)onChange();}catch(e){}setBusy("");};
+  const roleColor={admin:C.coral,business:C.teal,content:C.purple,design:C.green,brand:"#C026D3"};
+  const statusColor={open:C.coral,in_progress:"#2563EB",done:C.green,declined:C.sub};
+  const fmt=(t)=>{try{return new Date(t).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});}catch(e){return"";}};
+  const btnGhost={padding:"5px 11px",fontSize:12,fontWeight:700,borderRadius:7,cursor:"pointer",border:`1px solid ${C.line}`,background:"#fff",color:C.ink};
+  const btnPrimary={padding:"5px 11px",fontSize:12,fontWeight:700,borderRadius:7,cursor:"pointer",border:"none",background:C.coral,color:"#fff"};
+  const list=(rows||[]).filter(r=>filter==="all"?true:filter==="open"?(r.status==="open"||r.status==="in_progress"):r.status===filter);
+  const tabs=[["open","Active"],["done","Done"],["declined","Declined"],["all","All"]];
+  return<Drawer onClose={onClose}title={<><Inbox size={18}color={C.coral}/>Design requests</>}intro="Briefs the business & content teams sent over for a generated creative.">
+    <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
+      {tabs.map(([k,l])=><button key={k}onClick={()=>setFilter(k)}style={{padding:"5px 11px",fontSize:12,fontWeight:700,borderRadius:999,cursor:"pointer",border:`1px solid ${filter===k?C.coral:C.line}`,background:filter===k?C.coral+"18":"#fff",color:filter===k?C.coral:C.sub}}>{l}</button>)}
+    </div>
+    {rows==null?<Spin label="Loading…"/>:list.length===0?<div style={{color:C.sub,fontSize:13,padding:"24px 0",textAlign:"center"}}>No requests here.</div>:list.map(r=>{
+      const p=r.payload||{};
+      return<div key={r.id}style={{border:`1px solid ${C.line}`,borderRadius:10,padding:13,marginBottom:11}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+          <span style={{background:(statusColor[r.status]||C.sub)+"20",color:statusColor[r.status]||C.sub,fontSize:10,fontWeight:800,padding:"2px 8px",borderRadius:999,textTransform:"uppercase",letterSpacing:.4}}>{(r.status||"open").replace("_"," ")}</span>
+          <span style={{fontSize:13.5,fontWeight:700,color:C.ink,flex:1,minWidth:0}}>{r.title}</span>
+          <span style={{fontSize:11,color:C.sub,whiteSpace:"nowrap"}}>{fmt(r.created_at)}</span>
+        </div>
+        <div style={{fontSize:12,color:C.sub,marginBottom:r.comment?6:8}}>From <b style={{color:roleColor[r.requester_role]||C.ink}}>{r.requester_name}</b> ({r.requester_role}){r.size?" · "+r.size:""}{r.assignee_name?" · ⏳ "+r.assignee_name:""}</div>
+        {r.comment&&<div style={{fontSize:12.5,color:C.ink,background:C.paper,borderRadius:8,padding:"8px 10px",marginBottom:8}}>“{r.comment}”</div>}
+        {(p.headline||p.sub||p.cta)&&<div style={{fontSize:11.5,color:C.sub,marginBottom:8,lineHeight:1.55}}>
+          {p.headline&&<div><b style={{color:C.ink}}>H:</b> {p.headline}</div>}
+          {p.sub&&<div><b style={{color:C.ink}}>S:</b> {p.sub}</div>}
+          {p.cta&&<div><b style={{color:C.ink}}>CTA:</b> {p.cta}</div>}
+        </div>}
+        <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+          {r.campaign_id&&<button onClick={()=>{onOpen&&onOpen(r.campaign_id,"design");onClose();}}style={btnPrimary}>Open in composer →</button>}
+          {r.status==="open"&&<button disabled={busy===r.id}onClick={()=>act(r.id,{claim:true})}style={btnGhost}>Claim</button>}
+          {(r.status==="open"||r.status==="in_progress")&&<button disabled={busy===r.id}onClick={()=>act(r.id,{status:"done"})}style={btnGhost}>Mark done</button>}
+          {(r.status==="open"||r.status==="in_progress")&&<button disabled={busy===r.id}onClick={()=>act(r.id,{status:"declined"})}style={{...btnGhost,color:"#B91C1C"}}>Decline</button>}
+          {(r.status==="done"||r.status==="declined")&&<button disabled={busy===r.id}onClick={()=>act(r.id,{status:"open"})}style={btnGhost}>Reopen</button>}
+        </div>
+      </div>;
+    })}
+  </Drawer>;
+}
+
 function TeamDrawer({onClose,me}){
   const[users,setUsers]=useState(null);const[form,setForm]=useState({name:"",email:"",password:"",role:"content"});const[err,setErr]=useState("");const[busy,setBusy]=useState(false);
   useEffect(()=>{api.get("/api/users").then(setUsers).catch(()=>setUsers([]));},[]);
   const add=async()=>{setErr("");setBusy(true);try{await api.post("/api/users",form);setUsers(await api.get("/api/users"));setForm({name:"",email:"",password:"",role:"content"});}catch(e){setErr(e.message);}setBusy(false);};
   const remove=async(id)=>{try{await api.del("/api/users/"+id);setUsers(await api.get("/api/users"));}catch(e){setErr(e.message);}};
   const changeRole=async(id,role)=>{try{await api.put("/api/users/"+id,{role});setUsers(await api.get("/api/users"));}catch(e){setErr(e.message);}};
-  const ROLES=["admin","business","content","design"];
-  const roleColor={admin:C.coral,business:C.teal,content:C.purple,design:C.green};
+  const ROLES=["admin","brand","business","content","design"];
+  const roleColor={admin:C.coral,brand:"#C026D3",business:C.teal,content:C.purple,design:C.green};
   return<Drawer onClose={onClose}title={<><Users size={18}color={C.teal}/>Team</>}intro="Manage access. Each role lands on a different tab by default.">
     <div style={{marginBottom:18,background:C.paper,borderRadius:10,padding:12,fontSize:12.5}}>
       <div style={{fontWeight:700,marginBottom:6}}>Role → Default tab</div>

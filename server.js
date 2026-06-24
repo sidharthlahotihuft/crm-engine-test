@@ -43,6 +43,7 @@ const db = async (sql, params = []) => {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const uid = () => Math.random().toString(36).slice(2, 11);
+const safeJson = (s) => { try { return JSON.parse(s); } catch (e) { return null; } };
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -321,7 +322,7 @@ app.get("/api/users", authMiddleware, roles("admin"), async (req, res) => {
 app.post("/api/users", authMiddleware, roles("admin"), async (req, res) => {
   const { name, email, password, role } = req.body;
   if (!name || !email || !password) return res.status(400).json({ error: "name, email, password required" });
-  const validRoles = ["admin","business","content","design"];
+  const validRoles = ["admin","brand","business","content","design"];
   const userRole = validRoles.includes(role) ? role : "content";
   try {
     const hash = await bcrypt.hash(password, 10);
@@ -339,7 +340,7 @@ app.post("/api/users", authMiddleware, roles("admin"), async (req, res) => {
 
 app.put("/api/users/:id", authMiddleware, roles("admin"), async (req, res) => {
   const { name, role, password } = req.body;
-  const validRoles = ["admin","business","content","design"];
+  const validRoles = ["admin","brand","business","content","design"];
   try {
     if (password) await db("UPDATE users SET password=$1 WHERE id=$2", [await bcrypt.hash(password, 10), req.params.id]);
     if (name)                      await db("UPDATE users SET name=$1     WHERE id=$2", [name, req.params.id]);
@@ -836,7 +837,7 @@ app.post("/api/image-library", authMiddleware, roles("admin", "brand", "design",
        RETURNING id, file_name, file_type, product, category, tags, description, notes, dimensions_cm, kind, uploaded_by, uploaded_at`,
       [file_name || null, file_data, mime, analysis.product, analysis.category,
        JSON.stringify(analysis.tags), analysis.description, notes || null,
-       dimensions_cm || null, (["product","asset","logo"].includes(kind) ? kind : null), req.user.id]
+       dimensions_cm || null, (["product","asset","logo","mockup"].includes(kind) ? kind : null), req.user.id]
     );
     res.json(rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -870,8 +871,8 @@ app.post("/api/generate-image", authMiddleware, roles("admin", "brand", "design"
 app.get("/api/image-library", authMiddleware, async (req, res) => {
   const q = (req.query.q || "").trim().toLowerCase();
   const cols = req.query.withData === "1"
-    ? "id, file_name, file_data, file_type, product, category, tags, description, notes, dimensions_cm, kind, uploaded_at"
-    : "id, file_name, file_type, product, category, tags, description, notes, dimensions_cm, kind, uploaded_at";
+    ? "id, file_name, file_data, file_type, product, category, tags, description, notes, dimensions_cm, kind, uploaded_at, last_used_at"
+    : "id, file_name, file_type, product, category, tags, description, notes, dimensions_cm, kind, uploaded_at, last_used_at";
   try {
     let rows;
     if (q) {
@@ -888,6 +889,16 @@ app.get("/api/image-library", authMiddleware, async (req, res) => {
       rows = await db(`SELECT ${cols} FROM image_library ORDER BY uploaded_at DESC LIMIT 200`);
     }
     res.json(rows.map(r => ({ ...r, tags: typeof r.tags === "string" ? (() => { try { return JSON.parse(r.tags); } catch { return []; } })() : (r.tags || []) })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Stamp images as just-used so they rest (hidden from pickers) for a cooldown window
+app.post("/api/image-library/mark-used", authMiddleware, async (req, res) => {
+  const ids = Array.isArray(req.body && req.body.ids) ? req.body.ids.filter(Boolean) : [];
+  if (!ids.length) return res.json({ ok: true, updated: 0 });
+  try {
+    const rows = await db(`UPDATE image_library SET last_used_at=NOW() WHERE id::text = ANY($1::text[]) RETURNING id`, [ids]);
+    res.json({ ok: true, updated: rows.length });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -947,6 +958,61 @@ app.delete("/api/brand-styles/:subBrand", authMiddleware, async (req, res) => {
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ---- Creative requests: business/content escalate "needs a generation" to the design team ----
+app.post("/api/creative-requests", authMiddleware, async (req, res) => {
+  const { campaign_id, title, details, comment, size, payload } = req.body || {};
+  try {
+    const id = uid();
+    const rows = await db(
+      `INSERT INTO creative_requests (id,campaign_id,title,details,comment,size,payload,requested_by,requester_name,requester_role,status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'open') RETURNING *`,
+      [id, campaign_id || null, (title || "Creative help").slice(0, 200), details || null,
+       comment || null, size || null, payload ? JSON.stringify(payload) : null,
+       req.user.id, req.user.name, req.user.role]
+    );
+    // in-app notification: drop a note into the campaign's design thread (best-effort)
+    if (campaign_id) {
+      try {
+        await db(
+          `INSERT INTO comments (campaign_id, context, body, author_id, author_name, author_role)
+           VALUES ($1,'design',$2,$3,$4,$5)`,
+          [campaign_id, `🎨 Design generation requested by ${req.user.name}${comment ? ' — "' + comment.trim() + '"' : ""}`,
+           req.user.id, req.user.name, req.user.role]
+        );
+      } catch (e) { /* notification is best-effort; never fail the request */ }
+    }
+    res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get("/api/creative-requests/stats", authMiddleware, roles("admin","design","brand"), async (req, res) => {
+  try { const rows = await db("SELECT COUNT(*)::int AS open FROM creative_requests WHERE status='open'");
+    res.json({ open: rows[0] ? rows[0].open : 0 }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get("/api/creative-requests", authMiddleware, roles("admin","design","brand"), async (req, res) => {
+  try {
+    const status = req.query.status;
+    const rows = status
+      ? await db("SELECT * FROM creative_requests WHERE status=$1 ORDER BY created_at DESC", [status])
+      : await db("SELECT * FROM creative_requests ORDER BY (status='open') DESC, created_at DESC");
+    res.json(rows.map(r => ({ ...r, payload: typeof r.payload === "string" ? safeJson(r.payload) : r.payload })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put("/api/creative-requests/:id", authMiddleware, roles("admin","design","brand"), async (req, res) => {
+  const { status, claim } = req.body || {};
+  const valid = ["open", "in_progress", "done", "declined"];
+  const sets = ["updated_at=NOW()"], vals = []; let i = 1;
+  if (claim) { sets.push(`assignee_id=$${i++}`); vals.push(req.user.id); sets.push(`assignee_name=$${i++}`); vals.push(req.user.name); if (!status) sets.push("status='in_progress'"); }
+  if (status && valid.includes(status)) { sets.push(`status=$${i++}`); vals.push(status); }
+  vals.push(req.params.id);
+  try { const rows = await db(`UPDATE creative_requests SET ${sets.join(",")} WHERE id=$${i} RETURNING *`, vals);
+    res.json(rows[0] || { ok: true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get("/api/image-library-suggest/:campaignId", authMiddleware, async (req, res) => {
   try {
     const crows = await db("SELECT product, objective, audience_label, data FROM campaigns WHERE id=$1", [req.params.campaignId]);
@@ -954,7 +1020,7 @@ app.get("/api/image-library-suggest/:campaignId", authMiddleware, async (req, re
     const c = crows[0];
     const product = (c.product || "").toLowerCase();
     // Pull candidate images: same product first, then broaden
-    const all = await db("SELECT id, file_name, product, category, tags, description, kind, uploaded_at FROM image_library WHERE coalesce(kind,'') <> 'product' ORDER BY uploaded_at DESC LIMIT 300");
+    const all = await db("SELECT id, file_name, product, category, tags, description, kind, uploaded_at FROM image_library WHERE coalesce(kind,'') <> 'product' AND (last_used_at IS NULL OR last_used_at < NOW() - INTERVAL '45 days') ORDER BY uploaded_at DESC LIMIT 300");
     const norm = (r) => ({ ...r, tags: typeof r.tags === "string" ? (() => { try { return JSON.parse(r.tags); } catch { return []; } })() : (r.tags || []) });
     const scored = all.map(norm).map(img => {
       let score = 0;
@@ -1087,6 +1153,7 @@ app.listen(PORT, async () => {
     // idempotent column adds (image library: packaging dimensions + product/asset kind)
     await pool.query("ALTER TABLE image_library ADD COLUMN IF NOT EXISTS dimensions_cm TEXT");
     await pool.query("ALTER TABLE image_library ADD COLUMN IF NOT EXISTS kind TEXT");
+    await pool.query("ALTER TABLE image_library ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMPTZ");
     await pool.query(`CREATE TABLE IF NOT EXISTS brand_styles (
       sub_brand TEXT PRIMARY KEY,
       headline_font TEXT, subhead_font TEXT, cta_font TEXT,
@@ -1094,7 +1161,24 @@ app.listen(PORT, async () => {
       logo_id TEXT, notes TEXT,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`);
-    console.log("✓ image_library schema ensured (dimensions_cm, kind); brand_styles ready");
+    await pool.query(`CREATE TABLE IF NOT EXISTS creative_requests (
+      id TEXT PRIMARY KEY,
+      campaign_id TEXT,
+      title TEXT,
+      details TEXT,
+      comment TEXT,
+      size TEXT,
+      payload JSONB,
+      requested_by TEXT,
+      requester_name TEXT,
+      requester_role TEXT,
+      status TEXT NOT NULL DEFAULT 'open',
+      assignee_id TEXT,
+      assignee_name TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+    console.log("✓ image_library schema ensured (dimensions_cm, kind); brand_styles + creative_requests ready");
   } catch (e) {
     console.error("✗ Database connection failed:", e.message);
     console.error("  Check DATABASE_URL in your .env file");
