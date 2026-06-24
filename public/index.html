@@ -103,7 +103,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.9.3 · Brief list multi-select — tick checkbox on each asset row + Select all on the awaiting-brief group; sticky bulk bar (Archive / Delete / Clear) acts on every selected asset with a single confirm. Includes v29.9.2 chat-reset fix";
+const BUILD="v29.9.5 · FIX sent-back copy going missing — a sent-back asset was content-stage but still carried a selected index, so it fell between the Needs-attention / In-review / Approved groups and showed nowhere. Needs-attention now lists every content-stage asset (recovers stuck ones); category routing no longer hides uncategorised copy from writers. Plus v29.9.2 chat fix, v29.9.3 multi-select, v29.9.4 copy/design/preview improvements";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -135,8 +135,9 @@ const COPY_BEST_PRACTICES="BEST-PRACTICE RULES (keep copy engaging + on the brie
 "- ONE objective, ONE clear CTA. Never stack multiple offers or asks.\n"+
 "- Lead with the value the reader cares about — start with the benefit, not setup/context.\n"+
 "- Tie every line back to the brief's objective; cut anything that doesn't serve it.\n"+
-"- Conversational, human, written to ONE person (use the name). Plain language, no jargon.\n"+
-"- Strong opening line that sparks curiosity; use action verbs (discover, switch, try, get).\n"+
+"- Conversational, human, written to ONE person. Plain language, no jargon.\n"+
+"- VARY THE OPENING across the options — do NOT start every option with a name-greeting (\"Hi [name],\"). Most options should open straight on a hook: a benefit, a question, a bold statement, a vivid image, or tension. At most ONE option in a set may open with a name-greeting, and only if it genuinely earns it. Never make the greeting the default.\n"+
+"- Strong opening line that sparks curiosity; use action verbs (discover, switch, try, get). Each option in a set should hook differently from the others — no two openings should feel interchangeable.\n"+
 "- Short and scannable. No fluff, no filler, no repetition.\n"+
 "- NO ALL-CAPS words and NO spammy phrasing (free!!!, buy now!!!). Emojis sparingly (max ~3), only where they add warmth.\n"+
 "- Make the offer/switch concrete and the next step obvious.\n"+
@@ -210,6 +211,17 @@ const scopeCampaigns=(campaigns,me)=>{
   const subs=userSubBrands(me);
   if(!subs.length)return campaigns||[]; // no scoping → see everything
   return (campaigns||[]).filter(c=>campInSubBrands(c,subs));
+};
+// WhatsApp "Read more" preview: WhatsApp shows ~3 lines / ~240 chars before truncating.
+// Cut near that limit, snapping to a line break or word boundary — never at the greeting line.
+const waPreviewSplit=(raw)=>{
+  const body=(raw||"").trim();
+  const LIMIT=240, MIN=140;
+  if(body.length<=LIMIT)return{hook:body,rest:""};
+  let cut=body.lastIndexOf("\n",LIMIT);
+  if(cut<MIN)cut=body.lastIndexOf(" ",LIMIT);
+  if(cut<MIN)cut=LIMIT;
+  return{hook:body.slice(0,cut).trim(),rest:body.slice(cut).trim()};
 };
 const groupByDate=(items)=>{
   const groups={};
@@ -2994,8 +3006,8 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
   // was already approved (those have moved on to Design/Done but should remain visible here).
   const _myCats=myCategories(me,catRules);
   const allCopyRaw=(campaigns||[]).filter(c=>!isArchived(c)&&(c.stage==="content"||(c.data?.copyOptions&&c.data?.selectedCopyIdx!=null)));
-  // Hard route: a brand_team writer with assigned categories only sees their categories.
-  const allCopy=(isBrandTeam(me)&&_myCats.length>0)?allCopyRaw.filter(c=>_myCats.includes(categoryOf(c))):allCopyRaw;
+  // Hard route: a brand_team writer with assigned categories sees their categories — plus anything not yet categorised (so nothing is ever fully hidden).
+  const allCopy=(isBrandTeam(me)&&_myCats.length>0)?allCopyRaw.filter(c=>{const cat=categoryOf(c);return !cat||_myCats.includes(cat);}):allCopyRaw;
   const[openId,setOpenId]=useState(null);
   const[busyMap,setBusyMap]=useState({});
   const[errMap,setErrMap]=useState({});
@@ -3288,7 +3300,7 @@ Put the hook + payoff as the first lines of the body; RTBs and CTA follow below.
       ?<Card><Empty icon={<MessageSquare size={26}color={C.sub}/>}title="No copy pending"sub="Assets move here after brief is done."/></Card>
       :<div>
         {(()=>{
-          const needsCopy=allCopy.filter(c=>c.stage==="content"&&c.data?.selectedCopyIdx==null);
+          const needsCopy=allCopy.filter(c=>c.stage==="content");
           const inReview=allCopy.filter(c=>c.stage==="brand_review");
           // "approved" = brand-approved and moved on (design/done), but still listed here
           const approved=allCopy.filter(c=>c.stage!=="content"&&c.stage!=="brand_review"&&c.data?.selectedCopyIdx!=null&&c.data?.copyOptions);
@@ -3397,13 +3409,38 @@ function ManualCopyForm({initial,channel,onSave,onCancel}){
   </div>;
 }
 
+function ApprovedCopyCard({copy,channel,product,image}){
+  const[showMock,setShowMock]=useState(false);
+  const isWA=/whatsapp/i.test(channel||"");
+  if(!copy)return null;
+  return<div style={{background:"#F5F3FF",border:"1px solid #DDD6FE",borderLeft:"3px solid "+C.purple,borderRadius:10,padding:"10px 14px",marginBottom:12}}>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,gap:8,flexWrap:"wrap"}}>
+      <span style={{fontSize:10,fontWeight:700,color:"#5B21B6",textTransform:"uppercase",letterSpacing:.6,display:"flex",alignItems:"center",gap:4}}><CheckCircle2 size={11}/>Approved copy</span>
+      <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+        {copy.direction&&<span style={{fontSize:10.5,color:"#7C3AED",background:"#EDE9FE",padding:"2px 7px",borderRadius:5,fontWeight:600}}>{copy.direction}</span>}
+        {isWA&&<button onClick={()=>setShowMock(true)}style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,fontWeight:700,color:"#0b141a",background:"#00a884",border:"none",borderRadius:7,padding:"4px 9px",cursor:"pointer"}}><MessageSquare size={12}/>Preview as WhatsApp</button>}
+        <CopyBtn text={()=>copyTextFromOption(copy)}/>
+      </div>
+    </div>
+    {/* Image copy — on-image overlay text */}
+    {copy.header&&<div style={{marginBottom:8}}>
+      <div style={{fontSize:9,fontWeight:800,color:"#7C3AED",textTransform:"uppercase",letterSpacing:.6,marginBottom:3}}>Image copy (overlay text)</div>
+      <div style={{fontWeight:700,fontSize:13.5,lineHeight:1.4,color:"#1E1B4B",whiteSpace:"pre-line"}}>{copy.header}</div>
+    </div>}
+    {/* Body copy — the message caption */}
+    {copy.body&&<div>
+      <div style={{fontSize:9,fontWeight:800,color:"#0F766E",textTransform:"uppercase",letterSpacing:.6,marginBottom:3}}>Caption (message body)</div>
+      <div style={{fontSize:12,color:"#4C1D95",lineHeight:1.5,whiteSpace:"pre-line"}}>{copy.body}</div>
+    </div>}
+    {copy.cta&&<div style={{marginTop:8,fontSize:11,fontWeight:700,color:"#5B21B6"}}>{copy.cta} →</div>}
+    {showMock&&<WhatsAppMockup o={copy}image={image}product={product}onClose={()=>setShowMock(false)}/>}
+  </div>;
+}
+
 function WhatsAppMockup({o,image,product,onClose}){
   const[expanded,setExpanded]=useState(false);
   const body=stripForbidden(o&&o.body||"");
-  const nl=body.indexOf("\n");
-  const cut=(nl>0&&nl<140)?nl:(body.length>140?140:body.length);
-  const hook=body.slice(0,cut).trim();
-  const rest=body.slice(cut).trim();
+  const{hook,rest}=waPreviewSplit(body);
   const cta=stripForbidden(o&&o.cta||"");
   const now=new Date().toLocaleTimeString("en-IN",{hour:"numeric",minute:"2-digit"});
   return<div onClick={onClose}style={{position:"fixed",inset:0,background:"rgba(10,15,25,.6)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
@@ -3503,7 +3540,7 @@ function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,
           </div>
           <div style={{background:"#E7F6E9",padding:"10px 14px"}}>
             <div style={{fontSize:9.5,fontWeight:700,color:"#166534",textTransform:"uppercase",letterSpacing:.5,marginBottom:5}}>Caption (message body)</div>
-            {(()=>{const body=o.body||"";const cut=body.indexOf("\n")>0&&body.indexOf("\n")<140?body.indexOf("\n"):(body.length>140?140:body.length);const hook=body.slice(0,cut);const rest=body.slice(cut);return<><div style={{whiteSpace:"pre-line",color:"#1f3326",fontSize:13,lineHeight:1.55,fontWeight:600}}>{hook}{rest&&<span style={{color:"#16A34A",fontWeight:700}}> … read more</span>}</div>{rest&&<div style={{whiteSpace:"pre-line",color:"#1f3326",fontSize:13,lineHeight:1.55,marginTop:2,opacity:.85}}>{rest}</div>}</>;})()}
+            {(()=>{const{hook,rest}=waPreviewSplit(o.body||"");return<><div style={{whiteSpace:"pre-line",color:"#1f3326",fontSize:13,lineHeight:1.55,fontWeight:600}}>{hook}{rest&&<span style={{color:"#16A34A",fontWeight:700}}> … read more</span>}</div>{rest&&<div style={{whiteSpace:"pre-line",color:"#1f3326",fontSize:13,lineHeight:1.55,marginTop:2,opacity:.85}}>{rest}</div>}</>;})()}
             <div style={{marginTop:10,display:"inline-block",background:C.navy,color:"#fff",fontSize:11.5,fontWeight:700,padding:"5px 12px",borderRadius:7}}>{o.cta}</div>
           </div>
         </div>}
@@ -3520,7 +3557,7 @@ function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,
           </div>
           <Field label="What should change? (one-time)"value={refineText}onChange={setRefineText}placeholder="e.g. warmer tone, more urgency, shorter"/>
           <div style={{display:"flex",gap:7}}>
-            {busy?<Spin label="Refining…"/>:<Btn small onClick={()=>{onRefine(idx);setEditMode(null);setRefineFor(null);setRefineText("");}}disabled={!refineText.trim()}><RefreshCw size={13}/>Apply steer</Btn>}
+            {busy?<Spin label="Refining…"/>:<Btn small onClick={async()=>{await onRefine(idx);setEditMode(null);setRefineFor(null);setRefineText("");}}disabled={!refineText.trim()}><RefreshCw size={13}/>Apply steer</Btn>}
             <Btn small variant="ghost"onClick={()=>{setEditMode(null);setRefineFor(null);setRefineText("");}}>Cancel</Btn>
           </div>
         </div>
@@ -3622,6 +3659,47 @@ function SmartLibraryPicker({d,setD,copy,brief,product,campaignId}){
         </div>;
       })}
     </div>}
+  </div>;
+}
+
+function RefImagePicker({d,setD,campaignId,product}){
+  const[sugg,setSugg]=useState(null);
+  const[adding,setAdding]=useState("");
+  const refs=d.refImages||[];
+  React.useEffect(()=>{let on=true;(async()=>{
+    try{const res=await api.get("/api/image-library-suggest/"+campaignId);if(on)setSugg((res||[]).filter(i=>i.kind!=="product"));}
+    catch(e){if(on)setSugg([]);}
+  })();return()=>{on=false;};},[campaignId]);
+  const addUpload=(files)=>{[...files].forEach(f=>{if(f.size>4*1024*1024)return;const r=new FileReader();r.onload=()=>setD({refImages:[...(d.refImages||[]),r.result]});r.readAsDataURL(f);});};
+  const addFromLib=async(id)=>{setAdding(id);try{const lib=await api.get("/api/image-library/"+id);if(lib&&lib.file_data)setD({refImages:[...(d.refImages||[]),lib.file_data]});}catch(e){}setAdding("");};
+  const rm=(i)=>setD({refImages:(d.refImages||[]).filter((_,j)=>j!==i)});
+  return<div style={{marginBottom:12,border:`1px solid ${C.line}`,borderRadius:10,padding:12,background:"#FCFCFD"}}>
+    <div style={{fontSize:12,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>Reference images <span style={{textTransform:"none",fontWeight:500}}>(optional — steer the look, props &amp; packaging)</span></div>
+    <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+      {refs.map((src,i)=><div key={i}style={{position:"relative"}}>
+        <img src={src}alt="ref"style={{width:58,height:58,objectFit:"cover",borderRadius:8,border:`1px solid ${C.line}`}}/>
+        <button onClick={()=>rm(i)}title="Remove"style={{position:"absolute",top:-6,right:-6,width:18,height:18,borderRadius:999,background:"#B91C1C",color:"#fff",border:"none",cursor:"pointer",fontSize:12,lineHeight:1,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+      </div>)}
+      <label style={{width:58,height:58,borderRadius:8,border:`1.5px dashed ${C.line}`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",cursor:"pointer",color:C.sub,background:"#fff",gap:1}}>
+        <Plus size={15}/><span style={{fontSize:8.5,fontWeight:700}}>Upload</span>
+        <input type="file"accept="image/*"multiple style={{display:"none"}}onChange={e=>{addUpload(e.target.files);e.target.value="";}}/>
+      </label>
+    </div>
+    {refs.length>0&&<div style={{fontSize:11,color:C.sub,marginTop:6}}>Sent with “Generate image” to steer the output.</div>}
+    <div style={{marginTop:10}}>
+      <div style={{fontSize:11,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.4,marginBottom:6,display:"flex",alignItems:"center",gap:5}}><Wand2 size={11}/>Suggested from library{product?" · matched to "+product:""}</div>
+      {sugg===null?<Spin label="Finding matches…"/>
+        :sugg.length===0?<div style={{fontSize:11.5,color:C.sub,fontStyle:"italic"}}>No library matches yet. Upload tagged images in the Brand Assets tab and they'll show here.</div>
+        :<div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4}}>
+          {sugg.slice(0,12).map(l=><div key={l.id}style={{flexShrink:0,width:72,cursor:adding===l.id?"wait":"pointer",opacity:adding===l.id?.5:1}}onClick={()=>adding||addFromLib(l.id)}title={(l.product||l.file_name||"")+(l.description?" — "+l.description:"")}>
+            <div style={{width:72,height:72,borderRadius:8,overflow:"hidden",border:`1px solid ${C.line}`,background:"#F3F4F6",display:"flex",alignItems:"center",justifyContent:"center",position:"relative"}}>
+              <ImageThumb id={l.id}alt={l.description}/>
+              <div style={{position:"absolute",bottom:3,right:3,width:18,height:18,borderRadius:999,background:C.teal,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center"}}><Plus size={12}/></div>
+            </div>
+            {l.product&&<div style={{fontSize:9.5,color:C.sub,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{l.product}</div>}
+          </div>)}
+        </div>}
+    </div>
   </div>;
 }
 
@@ -4761,7 +4839,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
         const isWA=/whatsapp/i.test(c.channel||"");
         const ar=isWA?"1:1":(p.aspectRatio||"1:1");
         const full=[p.prompt,(typeof HUFT_VISUAL_GUIDELINES!=="undefined"?HUFT_VISUAL_GUIDELINES:"")].filter(Boolean).join("\n\n");
-        const r=await api.post("/api/generate-image",{prompt:full,negativePrompt:p.negativePrompt||"",aspectRatio:ar});
+        const r=await api.post("/api/generate-image",{prompt:full,negativePrompt:p.negativePrompt||"",aspectRatio:ar,productImages:(d.refImages||[])});
         setD({imageSource:"prompt",approvedPromptIdx:idx,generatedImage:r.image});
         patch(c.id,{design_approver:me.name});
       }catch(e){
@@ -4813,18 +4891,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
       {/* Expanded */}
       {isOpen&&<div style={{padding:"0 18px 18px",background:"#F8F9FA"}}>
         {/* Selected copy context */}
-        <div style={{background:"#F5F3FF",border:"1px solid #DDD6FE",borderLeft:"3px solid "+C.purple,borderRadius:10,padding:"10px 14px",marginBottom:12}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
-            <span style={{fontSize:10,fontWeight:700,color:"#5B21B6",textTransform:"uppercase",letterSpacing:.6,display:"flex",alignItems:"center",gap:4}}><CheckCircle2 size={11}/>Approved copy</span>
-            <div style={{display:"flex",alignItems:"center",gap:6}}>
-              <span style={{fontSize:10.5,color:"#7C3AED",background:"#EDE9FE",padding:"2px 7px",borderRadius:5,fontWeight:600}}>{copy.direction}</span>
-              <CopyBtn text={()=>copyTextFromOption(copy)}/>
-            </div>
-          </div>
-          <div style={{fontWeight:700,fontSize:13.5,lineHeight:1.4,color:"#1E1B4B",marginBottom:4,whiteSpace:"pre-line"}}>{copy.header}</div>
-          <div style={{fontSize:12,color:"#4C1D95",lineHeight:1.5,whiteSpace:"pre-line"}}>{copy.body}</div>
-          <div style={{marginTop:6,fontSize:11,fontWeight:700,color:"#5B21B6"}}>{copy.cta} →</div>
-        </div>
+        <ApprovedCopyCard copy={copy}channel={c.channel}product={c.product}image={d.generatedImage||null}/>
 
         {copyChangedAfterPrompts&&<div style={{display:"flex",alignItems:"center",gap:8,background:"#FEF3C7",border:"1px solid #FDE68A",borderRadius:8,padding:"8px 12px",marginBottom:12,fontSize:12.5,color:"#92400E",fontWeight:600}}><span>⚠️ Copy was updated after prompts were generated — regenerate prompts to match.</span></div>}
         {/* Image source picker */}
@@ -4850,6 +4917,9 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
 
         {/* Art direction notes */}
         {imageMode==="prompt"&&<ArtNotes d={d}setD={setD}busy={busy}genNotes={genNotes}/>}
+
+        {/* Reference images — upload or pull from library to steer generation */}
+        {imageMode==="prompt"&&<RefImagePicker d={d}setD={setD}campaignId={c.id}product={c.product}/>}
 
         {/* Image prompts */}
         {imageMode==="prompt"&&<div style={{marginBottom:12}}>
@@ -5007,15 +5077,7 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate}){
       {/* Expanded detail */}
       {isOpen&&<div style={{padding:"0 18px 16px"}}>
         {brief&&<div style={{fontSize:12.5,color:C.ink,marginBottom:8,lineHeight:1.5,fontWeight:600}}>{brief.idea}</div>}
-        {copy&&<div style={{marginBottom:8,background:"#fff",borderRadius:8,padding:"10px 13px",borderLeft:"3px solid "+C.purple,border:`1px solid ${C.line}`}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
-            <div style={{fontSize:10,fontWeight:700,color:C.purple,textTransform:"uppercase",letterSpacing:.5}}>Approved copy</div>
-            <CopyBtn text={()=>copyTextFromOption(copy)}/>
-          </div>
-          <div style={{fontWeight:700,fontSize:13,color:"#1E1B4B",marginBottom:3,whiteSpace:"pre-line"}}>{copy.header}</div>
-          <div style={{fontSize:12,color:"#4C1D95",lineHeight:1.5,whiteSpace:"pre-line"}}>{copy.body}</div>
-          <div style={{marginTop:5,fontSize:11,fontWeight:700,color:C.purple}}>{copy.cta} →</div>
-        </div>}
+        {copy&&<ApprovedCopyCard copy={copy}channel={c.channel}product={c.product}image={c.data?.design?.generatedImage||c.data?.design?.finalFile||null}/>}
         {approvedPrompt&&<div style={{marginBottom:8,background:"#fff",borderRadius:8,padding:"10px 13px",borderLeft:"3px solid "+C.teal,border:`1px solid ${C.line}`}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
             <div style={{fontSize:10,fontWeight:700,color:C.teal,textTransform:"uppercase",letterSpacing:.5}}>Image prompt — {approvedPrompt.label}</div>
