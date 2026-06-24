@@ -60,9 +60,50 @@ async function callClaude(system,prompt,expectJson){
   return JSON.parse(s>=0?clean.slice(s):clean);
 }
 // Role-based default tab
-const ROLE_TAB={admin:"dashboard",business:"dashboard",content:"content",design:"design",brand:"dashboard"};
+// ── ROLES (v29) — 8 roles. Old keys are aliased so existing logins keep working. ──
+const ROLE_ALIAS={admin:"super_admin",brand:"brand_lead",content:"brand_team",design:"design_team",business:"business"};
+const normRole=(r)=>ROLE_ALIAS[r]||r||"brand_team";
+const ROLE_META={
+  super_admin:{label:"Super-Admin",color:"#E8632A",tab:"dashboard"},
+  cxo:{label:"CXO",color:"#0EA5E9",tab:"dashboard"},
+  head_marketing:{label:"Head of Marketing",color:"#0284C7",tab:"dashboard"},
+  brand_lead:{label:"Brand Lead",color:"#C026D3",tab:"dashboard"},
+  brand_team:{label:"Brand Team · Copy",color:"#9333EA",tab:"content"},
+  design_lead:{label:"Design Lead",color:"#0F766E",tab:"design"},
+  design_team:{label:"Design Team",color:"#16A34A",tab:"design"},
+  business:{label:"Business Team",color:"#0D9488",tab:"dashboard"},
+};
+const ROLE_TAB=Object.fromEntries(Object.entries(ROLE_META).map(([k,v])=>[k,v.tab]));
+const roleLabel=(r)=>(ROLE_META[normRole(r)]||{}).label||r||"—";
+const roleHue=(r)=>(ROLE_META[normRole(r)]||{}).color||"#6B7280";
+const ROLE_KEYS=Object.keys(ROLE_META);
+// capability helpers (pass the `me` user)
+const _r=(me)=>normRole(me&&me.role);
+const isSuper=(me)=>_r(me)==="super_admin";
+const isLead=(me)=>["brand_lead","design_lead"].includes(_r(me));
+const seesAll=(me)=>["super_admin","brand_lead","design_lead"].includes(_r(me)); // leads = everything minus settings
+const isExec=(me)=>["cxo","head_marketing"].includes(_r(me));                    // dashboard + final assets only
+const isBusiness=(me)=>_r(me)==="business";
+const isBrandTeam=(me)=>_r(me)==="brand_team";
+const isDesignTeam=(me)=>_r(me)==="design_team";
+const canManageTeam=(me)=>isSuper(me);                                            // settings = super only
+const canCreateBrief=(me)=>["super_admin","brand_lead","design_lead","business"].includes(_r(me));
+const canBrandApprove=(me)=>["super_admin","brand_lead"].includes(_r(me));        // copy + full-asset approval (Ilena)
+const canDesignApprove=(me)=>["super_admin","design_lead"].includes(_r(me));      // design approval (Anmol)
+// Which tabs each role sees
+const TAB_VIS={
+  super_admin:["dashboard","brief","content","design","library","done","analytics","archive"],
+  brand_lead:["dashboard","brief","content","design","library","done","analytics","archive"],
+  design_lead:["dashboard","brief","content","design","library","done","analytics","archive"],
+  cxo:["dashboard","done"],
+  head_marketing:["dashboard","done"],
+  brand_team:["dashboard","content","library","done","analytics"],
+  design_team:["dashboard","design","library","done","analytics"],
+  business:["dashboard","brief","done","analytics","archive"],
+};
+const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v28.9 · submitted work stays in its tab marked Pending approval — copy out for approval shows in Copy tab (Pending brand approval); a design Used-as-final now stays in the Design tab with a purple Pending approval badge instead of vanishing";
+const BUILD="v29.0 · role redesign — 8 roles (Super-Admin, CXO, Head of Marketing, Brand Lead, Brand Team, Design Lead, Design Team, Business). Old roles auto-migrate (admin→Super-Admin etc), nobody locked out. Per-role tab visibility + labels; brief creation gated to leads/super/business; capability-based permissions throughout";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -628,7 +669,7 @@ function ChannelIcon({channel,size=16}){
   return<span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:size+18,height:size+18,borderRadius:10,background:cfg.bg,color:cfg.fg,flexShrink:0}}>{cfg.ic}</span>;
 }
 function RowActions({c,patch,me,onEdit,onDelete,onDuplicate}){
-  const canEdit=me.role==="admin"||me.role==="business"||me.role==="brand";
+  const canEdit=seesAll(me)||isBusiness(me);
   const canDup=["admin","business","design","brand"].includes(me.role);
   return<div style={{display:"flex",gap:5,alignItems:"center",flexShrink:0}}>
     {onEdit&&<button onClick={e=>{e.stopPropagation();onEdit();}}style={{display:"flex",alignItems:"center",gap:3,fontSize:11.5,padding:"4px 8px",borderRadius:6,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.sub,fontWeight:600}}><PenLine size={11}/>Edit</button>}
@@ -806,7 +847,7 @@ function App(){
       api.get("/api/auth/me")
         .then(user=>{
           setMe(user);
-          setTab(ROLE_TAB[user.role]||"dashboard");
+          setTab(ROLE_TAB[normRole(user.role)]||"dashboard");
           // Load all data on refresh
           Promise.all([
             api.get("/api/campaigns"),
@@ -832,7 +873,7 @@ function App(){
     setCampaigns(normalizeCampaigns(cs));setRules(rs);setFeedback(fb);setAudiences(auds);
   };
 
-  const onAuth=(user)=>{setMe(user);setTab(ROLE_TAB[user.role]||"dashboard");loadAll();};
+  const onAuth=(user)=>{setMe(user);setTab(ROLE_TAB[normRole(user.role)]||"dashboard");loadAll();};
   const safeData=(cs)=>cs.map(c=>({...c,data:c.data?(typeof c.data==="string"?JSON.parse(c.data):c.data):{}}));
 
   const logout=()=>{TOKEN=null;localStorage.removeItem("huft_token");setMe(null);setCampaigns([]);setRules([]);setFeedback([]);setAudiences([]);};
@@ -998,7 +1039,8 @@ function App(){
     {k:"analytics",label:"Analytics",icon:<BarChart3 size={16}/>},
     {k:"archive",label:"Archive",icon:<ArchiveIcon size={16}/>,count:(campaigns||[]).filter(c=>isArchived(c)).length},
   ];
-  const TABS=(me.role==="admin"||me.role==="brand")?allTabs:allTabs.filter(t=>t.k==="dashboard"||t.k===ROLE_TAB[me.role]||t.k==="done"||t.k==="analytics"||(t.k==="archive"&&me.role==="business"));
+  const _vis=visibleTabKeys(me);
+  const TABS=allTabs.filter(t=>_vis.has(t.k));
 
   const RoleBadge=()=>{
     const cols={admin:C.coral,business:C.teal,content:C.purple,design:C.green,brand:"#9333EA"};
@@ -1029,7 +1071,7 @@ function App(){
       </div>
       <div style={{padding:"10px 10px 12px",borderTop:"1px solid rgba(255,255,255,.08)",display:"flex",flexDirection:"column",gap:3}}>
         {["admin","design","brand"].includes(me.role)&&<button onClick={()=>{setDrawer("requests");refreshReqCount();}}style={sideBtn}><Inbox size={15}/><span style={{flex:1}}>Requests</span>{reqOpenCount>0&&<span style={{background:C.coral,color:"#fff",fontSize:10,fontWeight:800,padding:"1px 7px",borderRadius:999}}>{reqOpenCount}</span>}</button>}
-        {me.role==="admin"&&<button onClick={()=>setDrawer("team")}style={sideBtn}><Users size={15}/>Team</button>}
+        {canManageTeam(me)&&<button onClick={()=>setDrawer("team")}style={sideBtn}><Users size={15}/>Team</button>}
         <div style={{marginTop:8,padding:"10px 12px",borderRadius:10,background:"rgba(255,255,255,.06)",display:"flex",alignItems:"center",gap:8}}>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:13,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{me.name}</div>
@@ -1067,7 +1109,7 @@ function MonthlyPrompt({me,campaigns,onClose}){
   if(!isLastWeek&&!isFirstWeek)return null;
 
   // Last week — prompt content/design to close out campaigns
-  if(isLastWeek&&(me.role==="content"||me.role==="design"||me.role==="admin")){
+  if(isLastWeek&&(isBrandTeam(me)||isDesignTeam(me)||seesAll(me))){
     const inProgress=campaigns.filter(c=>c.stage!=="done").length;
     if(!inProgress)return null;
     return<div style={{position:"fixed",inset:0,background:"rgba(15,18,30,.5)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}}>
@@ -1088,7 +1130,7 @@ function MonthlyPrompt({me,campaigns,onClose}){
   }
 
   // First week — prompt business team to upload reports
-  if(isFirstWeek&&(me.role==="business"||me.role==="admin")){
+  if(isFirstWeek&&(isBusiness(me)||seesAll(me))){
     const doneWithoutReport=campaigns.filter(c=>c.stage==="done"&&!c.has_report).length;
     if(!doneWithoutReport)return null;
     return<div style={{position:"fixed",inset:0,background:"rgba(15,18,30,.5)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}}>
@@ -1330,14 +1372,14 @@ function Dashboard({campaigns,onNew,onOpen,me,setTab}){
           <button onClick={()=>setView("list")}style={{padding:"6px 14px",border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:view==="list"?C.navy:"#fff",color:view==="list"?"#fff":C.sub,display:"flex",alignItems:"center",gap:5}}><LayoutDashboard size={13}/>List</button>
           <button onClick={()=>setView("calendar")}style={{padding:"6px 14px",border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:view==="calendar"?C.navy:"#fff",color:view==="calendar"?"#fff":C.sub,display:"flex",alignItems:"center",gap:5}}><CalendarIcon size={13}/>Calendar</button>
         </div>
-        {(me.role==="admin"||me.role==="business"||me.role==="brand")&&<Btn onClick={onNew}><Plus size={16}/>New asset</Btn>}
+        {canCreateBrief(me)&&<Btn onClick={onNew}><Plus size={16}/>New asset</Btn>}
       </div>
     </div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:18}}>
       {stat.map(s=><Card key={s.k}style={{padding:16}}><div style={{fontSize:30,fontWeight:800,color:s.color}}>{counts[s.k]||0}</div><div style={{fontSize:13,color:C.sub,fontWeight:600}}>{s.label}</div></Card>)}
     </div>
     {/* ===== Role-based spotlight ===== */}
-    {(me.role==="admin"||me.role==="brand")&&(()=>{
+    {seesAll(me)&&(()=>{
       const q=campaigns.filter(c=>c.stage==="brand_review"&&!isArchived(c));
       return<Card style={{padding:0,overflow:"hidden",marginBottom:18,border:`1.5px solid ${C.coral}`}}>
         <div onClick={()=>setTab&&setTab("content")}style={{display:"flex",alignItems:"center",gap:12,padding:"15px 18px",cursor:"pointer",background:C.coralSoft}}>
@@ -1353,7 +1395,7 @@ function Dashboard({campaigns,onNew,onOpen,me,setTab}){
         </div>)}
       </Card>;
     })()}
-    {me.role==="business"&&(()=>{
+    {isBusiness(me)&&(()=>{
       const ready=campaigns.filter(c=>c.stage==="done"&&!isArchived(c));
       return<Card style={{padding:0,overflow:"hidden",marginBottom:18,border:`1.5px solid ${C.green}`}}>
         <div onClick={()=>setTab&&setTab("done")}style={{display:"flex",alignItems:"center",gap:12,padding:"15px 18px",cursor:"pointer",background:C.greenSoft}}>
@@ -1816,7 +1858,7 @@ const AlertCircle=p=><Svg{...p}><circle cx="12"cy="12"r="10"/><path d="M12 8v4M1
 /* ===== Brief Tab ======================================================== */
 function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,onOpen,onDelete,onNew,onBulkImport,onBulkGenerate,toast}){
   const[view,setView]=useState("list");
-  const canCreate=me.role==="admin"||me.role==="business"||me.role==="brand";
+  const canCreate=canCreateBrief(me);
   const[importing,setImporting]=useState(false); // false | "open" | "working" | "done"
   const[importRows,setImportRows]=useState([]);
   const[importProg,setImportProg]=useState({done:0,total:0});
@@ -2301,19 +2343,19 @@ function CommentThread({campaignId,context,me,compact}){
   if(items===null)return<div style={{fontSize:12,color:C.sub,padding:"8px 0"}}>Loading comments…</div>;
   const roots=items.filter(c=>!c.parent_id);
   const repliesOf=(id)=>items.filter(c=>c.parent_id===id);
-  const roleColor={admin:C.coral,business:C.teal,content:C.purple,design:C.green,brand:"#9333EA"};
+  const roleColor=new Proxy({},{get:(_,k)=>roleHue(String(k))});
   const Bubble=({c})=><div style={{marginBottom:8}}>
     <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:2}}>
       <span style={{fontWeight:700,fontSize:12.5}}>{c.author_name||"User"}</span>
-      <span style={{background:(roleColor[c.author_role]||C.sub)+"22",color:roleColor[c.author_role]||C.sub,fontSize:9.5,fontWeight:700,padding:"1px 6px",borderRadius:999,textTransform:"capitalize"}}>{c.author_role}</span>
+      <span style={{background:(roleColor[c.author_role]||C.sub)+"22",color:roleColor[c.author_role]||C.sub,fontSize:9.5,fontWeight:700,padding:"1px 6px",borderRadius:999}}>{roleLabel(c.author_role)}</span>
       <span style={{fontSize:10.5,color:C.sub}}>{fmtTime?fmtTime(c.created_at):new Date(c.created_at).toLocaleString()}</span>
       {c.resolved&&<span style={{fontSize:10,color:C.green,fontWeight:700,display:"flex",alignItems:"center",gap:3}}><CheckCircle2 size={11}/>resolved</span>}
     </div>
     <div style={{fontSize:13,color:C.ink,lineHeight:1.5,whiteSpace:"pre-line"}}>{c.body}</div>
     <div style={{display:"flex",gap:10,marginTop:3}}>
       <button onClick={()=>setReplyTo(replyTo===c.id?null:c.id)}style={{border:"none",background:"none",color:C.sub,fontSize:11,cursor:"pointer",padding:0,fontWeight:600}}>{replyTo===c.id?"Cancel":"Reply"}</button>
-      {(me.role==="brand"||me.role==="admin")&&<button onClick={()=>toggleResolve(c)}style={{border:"none",background:"none",color:C.sub,fontSize:11,cursor:"pointer",padding:0,fontWeight:600}}>{c.resolved?"Reopen":"Resolve"}</button>}
-      {(c.author_name===me.name||me.role==="admin")&&<button onClick={()=>del(c)}style={{border:"none",background:"none",color:"#DC2626",fontSize:11,cursor:"pointer",padding:0,fontWeight:600}}>Delete</button>}
+      {canBrandApprove(me)&&<button onClick={()=>toggleResolve(c)}style={{border:"none",background:"none",color:C.sub,fontSize:11,cursor:"pointer",padding:0,fontWeight:600}}>{c.resolved?"Reopen":"Resolve"}</button>}
+      {(c.author_name===me.name||isSuper(me))&&<button onClick={()=>del(c)}style={{border:"none",background:"none",color:"#DC2626",fontSize:11,cursor:"pointer",padding:0,fontWeight:600}}>Delete</button>}
     </div>
   </div>;
   return<div style={{borderTop:`1px solid ${C.line}`,paddingTop:10,marginTop:10}}>
@@ -2394,7 +2436,7 @@ function BrandReviewTab({campaigns,patch,me,toast,onOpen,setTab}){
           <div style={{background:"#F8FAFC",padding:"9px 13px"}}><div style={{fontSize:9.5,fontWeight:700,color:"#475569",textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Body copy</div><div style={{whiteSpace:"pre-line",color:"#1f2937",fontSize:12.5,lineHeight:1.5}}>{o.body}</div>{o.cta&&<div style={{marginTop:8,display:"inline-block",background:C.navy,color:"#fff",fontSize:11,fontWeight:700,padding:"4px 11px",borderRadius:7}}>{o.cta}</div>}</div>
         </div>:<div style={{fontSize:13,color:C.sub,marginBottom:12}}>No selected copy found.</div>}
 
-        {!reviewedRow&&(me.role==="brand"||me.role==="admin")&&<div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:6}}>
+        {!reviewedRow&&canBrandApprove(me)&&<div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:6}}>
           {busy?<Spin label="Working…"/>:<>
             <Btn onClick={()=>approve(c)}><CheckCircle2 size={15}/>Approve &amp; release</Btn>
             <Btn variant="ghost"onClick={()=>setRejectFor(rejectFor===c.id?null:c.id)}><X size={15}/>Send back</Btn>
@@ -2583,7 +2625,7 @@ function ImageLibraryTab({me,toast}){
             <div style={{display:"flex",flexWrap:"wrap",gap:3,marginBottom:6}}>
               {(img.tags||[]).slice(0,4).map((t,i)=><span key={i}style={{fontSize:9.5,color:C.sub,background:"#F3F4F6",padding:"1px 6px",borderRadius:999}}>{t}</span>)}
             </div>
-            {(me.role==="admin"||me.role==="brand")&&<button onClick={()=>del(img.id)}style={{border:"none",background:"none",color:"#DC2626",fontSize:10.5,cursor:"pointer",padding:0,fontWeight:600}}>Delete</button>}
+            {seesAll(me)&&<button onClick={()=>del(img.id)}style={{border:"none",background:"none",color:"#DC2626",fontSize:10.5,cursor:"pointer",padding:0,fontWeight:600}}>Delete</button>}
           </div>
         </div>)}
       </div>}
@@ -2647,7 +2689,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
     const[multiPick,setMultiPick]=useState([]);
     const[brandRejecting,setBrandRejecting]=useState(false);
     const[brandReason,setBrandReason]=useState("");
-    const canBrandReview=(me.role==="brand"||me.role==="admin");
+    const canBrandReview=canBrandApprove(me);
 
     // Ilena/admin approves the copy → server releases it to design (or done for push)
     const brandApprove=async()=>{
@@ -2938,7 +2980,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
               {groupByDate(needsCopy).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.purple}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}/>)}</Card></div>)}
             </div>}
             {inReview.length>0&&<div style={{marginBottom:16}}>
-              <div style={{fontSize:11,fontWeight:700,color:"#9333EA",textTransform:"uppercase",letterSpacing:.5,marginBottom:8,display:"flex",alignItems:"center",gap:5}}><Eye size={12}/>Pending brand approval · {inReview.length}{(me.role==="brand"||me.role==="admin")?"":" (awaiting Ilena)"}</div>
+              <div style={{fontSize:11,fontWeight:700,color:"#9333EA",textTransform:"uppercase",letterSpacing:.5,marginBottom:8,display:"flex",alignItems:"center",gap:5}}><Eye size={12}/>Pending brand approval · {inReview.length}{canBrandApprove(me)?"":" (awaiting Ilena)"}</div>
               {groupByDate(inReview).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={"#9333EA"}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}/>)}</Card></div>)}
             </div>}
             {approved.length>0&&<div>
@@ -4447,7 +4489,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
         <FeedbackBar stage="design"by={me.name}onSave={saveFeedback}/>
         {/* Art direction comments — design context, available to everyone */}
         <CommentThread campaignId={c.id}context="design"me={me}/>
-        {c.stage==="done"&&(me.role==="business"||me.role==="admin")&&<ReportUploader campaign={c}me={me}onUploaded={()=>patch(c.id,{has_report:true})}/>}
+        {c.stage==="done"&&(isBusiness(me)||isSuper(me))&&<ReportUploader campaign={c}me={me}onUploaded={()=>patch(c.id,{has_report:true})}/>}
       </div>}
     </div>;
   };
@@ -4524,7 +4566,7 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate}){
     const libPick=design.libraryPick?(design.libraryPickMeta||{label:"Library image",desc:""}):null;
     const finalFile=design.finalFile;
     const tone=ROW_TONE.done;
-    const canManage=me.role==="admin"||me.role==="business";
+    const canManage=isSuper(me)||isBusiness(me);
     return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`4px solid ${tone.bar}`,background:tone.bg}}>
       {/* Collapsed header — click to expand */}
       <div onClick={()=>setOpenId(isOpen?null:c.id)}style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer"}}>
@@ -4739,7 +4781,7 @@ function ArchiveTab({campaigns,patch,onOpen,me,onDelete}){
   const[fStage,setFStage]=useState("all");
   const[fCrm,setFCrm]=useState("all");
   const archived=(campaigns||[]).filter(c=>isArchived(c)).sort((a,b)=>new Date(b.updated_at||b.created_at)-new Date(a.updated_at||a.created_at));
-  const canManage=me.role==="admin"||me.role==="business";
+  const canManage=isSuper(me)||isBusiness(me);
   const restore=(c)=>{if(window.confirm("Restore this asset back into the active pipeline?"))patch(c.id,{data:{archived:false}});};
   const ql=q.trim().toLowerCase();
   const filtered=archived.filter(c=>{
@@ -4847,7 +4889,7 @@ function RulesDrawer({onClose,copyRules,promptRules,addRule,toggleRule,delRule,m
       :rules.map(r=><div key={r.id}style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderTop:`1px solid ${C.line}`}}>
         <button onClick={()=>toggleRule(r.id)}style={{border:"none",background:"transparent",cursor:"pointer",color:r.active?color:C.sub}}>{r.active?<CheckCircle2 size={18}/>:<Circle size={18}/>}</button>
         <div style={{flex:1,fontSize:13,lineHeight:1.45,opacity:r.active?1:.45,textDecoration:r.active?"none":"line-through"}}>{r.text}</div>
-        {me.role==="admin"&&<button onClick={()=>delRule(r.id)}style={{border:"none",background:"transparent",cursor:"pointer",color:C.sub}}><Trash2 size={15}/></button>}
+        {canBrandApprove(me)&&<button onClick={()=>delRule(r.id)}style={{border:"none",background:"transparent",cursor:"pointer",color:C.sub}}><Trash2 size={15}/></button>}
       </div>)}
     </div>;
   };
@@ -4863,8 +4905,8 @@ function RulesDrawer({onClose,copyRules,promptRules,addRule,toggleRule,delRule,m
       </div>
       {sugBusy?<Spin label="Analysing…"/>:<Btn small onClick={suggestFromFeedback}disabled={!hasFeedback}><Sparkles size={13}/>Suggest rules</Btn>}
     </div>
-    {me.role==="admin"&&(copyRules.length+promptRules.length)<5&&<div style={{marginBottom:14,padding:"10px 14px",background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}><div><div style={{fontSize:13,fontWeight:700,color:"#B91C1C"}}>Rulebook is empty</div><div style={{fontSize:12,color:"#7F1D1D",marginTop:2}}>Load the default HUFT brand rules to get started.</div></div>{seeding?<Spin label="Seeding…"/>:<Btn small onClick={seedRules}style={{background:"#B91C1C",color:"#fff"}}>Load defaults</Btn>}</div>}
-    {me.role==="admin"&&(copyRules.length+promptRules.length)>=5&&<div style={{marginBottom:14,textAlign:"right"}}><button onClick={seedRules}style={{fontSize:11.5,color:C.sub,background:"none",border:"none",cursor:"pointer",textDecoration:"underline"}}>↺ Reset to default rules</button></div>}
+    {canBrandApprove(me)&&(copyRules.length+promptRules.length)<5&&<div style={{marginBottom:14,padding:"10px 14px",background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}><div><div style={{fontSize:13,fontWeight:700,color:"#B91C1C"}}>Rulebook is empty</div><div style={{fontSize:12,color:"#7F1D1D",marginTop:2}}>Load the default HUFT brand rules to get started.</div></div>{seeding?<Spin label="Seeding…"/>:<Btn small onClick={seedRules}style={{background:"#B91C1C",color:"#fff"}}>Load defaults</Btn>}</div>}
+    {canBrandApprove(me)&&(copyRules.length+promptRules.length)>=5&&<div style={{marginBottom:14,textAlign:"right"}}><button onClick={seedRules}style={{fontSize:11.5,color:C.sub,background:"none",border:"none",cursor:"pointer",textDecoration:"underline"}}>↺ Reset to default rules</button></div>}
     <Section title="CRM Copy rules"color={C.coral}rules={copyRules}type="copy"placeholder='e.g. Never say "cheap"; lead with value'/>
     <Section title="Design Prompt rules"color={C.teal}rules={promptRules}type="prompt"placeholder="e.g. Always real Indian-breed pets"/>
   </Drawer>;
@@ -4877,7 +4919,7 @@ function RequestsDrawer({onClose,me,onOpen,onChange}){
   const load=React.useCallback(()=>{api.get("/api/creative-requests").then(setRows).catch(()=>setRows([]));},[]);
   useEffect(()=>{load();},[load]);
   const act=async(id,body)=>{setBusy(id);try{await api.put("/api/creative-requests/"+id,body);load();if(onChange)onChange();}catch(e){}setBusy("");};
-  const roleColor={admin:C.coral,business:C.teal,content:C.purple,design:C.green,brand:"#C026D3"};
+  const roleColor=new Proxy({},{get:(_,k)=>roleHue(String(k))});
   const statusColor={open:C.coral,in_progress:"#2563EB",done:C.green,declined:C.sub};
   const fmt=(t)=>{try{return new Date(t).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});}catch(e){return"";}};
   const btnGhost={padding:"5px 11px",fontSize:12,fontWeight:700,borderRadius:7,cursor:"pointer",border:`1px solid ${C.line}`,background:"#fff",color:C.ink};
@@ -4896,7 +4938,7 @@ function RequestsDrawer({onClose,me,onOpen,onChange}){
           <span style={{fontSize:13.5,fontWeight:700,color:C.ink,flex:1,minWidth:0}}>{r.title}</span>
           <span style={{fontSize:11,color:C.sub,whiteSpace:"nowrap"}}>{fmt(r.created_at)}</span>
         </div>
-        <div style={{fontSize:12,color:C.sub,marginBottom:r.comment?6:8}}>From <b style={{color:roleColor[r.requester_role]||C.ink}}>{r.requester_name}</b> ({r.requester_role}){r.size?" · "+r.size:""}{r.assignee_name?" · ⏳ "+r.assignee_name:""}</div>
+        <div style={{fontSize:12,color:C.sub,marginBottom:r.comment?6:8}}>From <b style={{color:roleColor[r.requester_role]||C.ink}}>{r.requester_name}</b> ({roleLabel(r.requester_role)}){r.size?" · "+r.size:""}{r.assignee_name?" · ⏳ "+r.assignee_name:""}</div>
         {r.comment&&<div style={{fontSize:12.5,color:C.ink,background:C.paper,borderRadius:8,padding:"8px 10px",marginBottom:8}}>“{r.comment}”</div>}
         {(p.headline||p.sub||p.cta)&&<div style={{fontSize:11.5,color:C.sub,marginBottom:8,lineHeight:1.55}}>
           {p.headline&&<div><b style={{color:C.ink}}>H:</b> {p.headline}</div>}
@@ -4925,21 +4967,21 @@ function TeamDrawer({onClose,me}){
   const SLOTS=[["copy","Copy approval","After copy is written"],["design","Design approval","After the design is created"],["asset","Full-asset approval","Copy + design, after design lead"],["final","Final sign-off","Last gate before Finalized"]];
   const slotLabel=(k)=>(SLOTS.find(s=>s[0]===k)||[,k])[1];
   const toggleFormSlot=(k)=>setForm(f=>({...f,approval_slots:(f.approval_slots||[]).includes(k)?f.approval_slots.filter(x=>x!==k):[...(f.approval_slots||[]),k]}));
-  const ROLES=["admin","brand","business","content","design"];
-  const roleColor={admin:C.coral,brand:"#C026D3",business:C.teal,content:C.purple,design:C.green};
+  const ROLES=ROLE_KEYS;
+  const roleColor=new Proxy({},{get:(_,k)=>roleHue(String(k))});
   return<Drawer onClose={onClose}title={<><Users size={18}color={C.teal}/>Team</>}intro="Manage access. Each role lands on a different tab by default.">
     <div style={{marginBottom:18,background:C.paper,borderRadius:10,padding:12,fontSize:12.5}}>
-      <div style={{fontWeight:700,marginBottom:6}}>Role → Default tab</div>
-      {[["admin","Dashboard"],["business","Dashboard"],["content","Copy"],["design","Design"]].map(([r,t])=><div key={r}style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}><span style={{background:roleColor[r]+"20",color:roleColor[r],fontSize:10.5,fontWeight:700,padding:"1px 7px",borderRadius:999}}>{r}</span><span style={{color:C.sub}}>→ {t}</span></div>)}
+      <div style={{fontWeight:700,marginBottom:6}}>Roles &amp; what they see</div>
+      {[["super_admin","Everything + settings"],["cxo","Dashboard + Final Assets (can comment)"],["head_marketing","Dashboard + Final Assets (can comment)"],["brand_lead","Everything minus settings · approves copy + full asset"],["brand_team","Copy tab only · writes copy"],["design_lead","Everything minus settings · approves design"],["design_team","Design tab only · builds design"],["business","Dashboard, Brief, Final Assets · creates briefs"]].map(([r,t])=><div key={r}style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}><span style={{background:roleHue(r)+"20",color:roleHue(r),fontSize:10.5,fontWeight:700,padding:"1px 7px",borderRadius:999,whiteSpace:"nowrap"}}>{roleLabel(r)}</span><span style={{color:C.sub}}>→ {t}</span></div>)}
     </div>
-    {me.role==="admin"&&<div style={{marginBottom:16,padding:14,border:`1px solid ${C.line}`,borderRadius:10}}>
+    {canManageTeam(me)&&<div style={{marginBottom:16,padding:14,border:`1px solid ${C.line}`,borderRadius:10}}>
       <div style={{fontWeight:700,marginBottom:10,fontSize:13.5}}>Add new user</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
         <input value={form.name}onChange={e=>setForm(f=>({...f,name:e.target.value}))}placeholder="Full name"style={{border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 10px",fontSize:13,boxSizing:"border-box"}}/>
         <input value={form.email}onChange={e=>setForm(f=>({...f,email:e.target.value}))}placeholder="Email"style={{border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 10px",fontSize:13,boxSizing:"border-box"}}/>
         <input type="password"value={form.password}onChange={e=>setForm(f=>({...f,password:e.target.value}))}placeholder="Temp password"style={{border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 10px",fontSize:13,boxSizing:"border-box"}}/>
         <select value={form.role}onChange={e=>setForm(f=>({...f,role:e.target.value}))}style={{border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 10px",fontSize:13}}>
-          {ROLES.map(r=><option key={r}value={r}>{r}</option>)}
+          {ROLES.map(r=><option key={r}value={r}>{roleLabel(r)}</option>)}
         </select>
       </div>
       <div style={{marginBottom:10}}>
@@ -4955,12 +4997,12 @@ function TeamDrawer({onClose,me}){
       <div style={{display:"flex",alignItems:"center",gap:10}}>
       <span style={{width:32,height:32,borderRadius:999,background:C.coralSoft,color:C.coral,display:"inline-flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:13,flexShrink:0}}>{u.name?u.name[0].toUpperCase():"?"}</span>
       <div style={{flex:1,minWidth:0}}><div style={{fontSize:13.5,fontWeight:600}}>{u.name}</div><div style={{fontSize:11.5,color:C.sub}}>{u.email}</div></div>
-      {me.role==="admin"&&u.id!==me.id?<select value={u.role}onChange={e=>changeRole(u.id,e.target.value)}style={{border:`1px solid ${C.line}`,borderRadius:7,padding:"4px 8px",fontSize:12,color:roleColor[u.role]||C.sub,fontWeight:600}}>
-        {ROLES.map(r=><option key={r}value={r}>{r}</option>)}
-      </select>:<span style={{background:(roleColor[u.role]||C.sub)+"20",color:roleColor[u.role]||C.sub,fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:999}}>{u.role}</span>}
-      {me.role==="admin"&&u.id!==me.id&&<button onClick={()=>remove(u.id)}style={{border:"none",background:"transparent",cursor:"pointer",color:C.sub}}><Trash2 size={15}/></button>}
+      {canManageTeam(me)&&u.id!==me.id?<select value={u.role}onChange={e=>changeRole(u.id,e.target.value)}style={{border:`1px solid ${C.line}`,borderRadius:7,padding:"4px 8px",fontSize:12,color:roleColor[u.role]||C.sub,fontWeight:600}}>
+        {ROLES.map(r=><option key={r}value={r}>{roleLabel(r)}</option>)}
+      </select>:<span style={{background:(roleColor[u.role]||C.sub)+"20",color:roleColor[u.role]||C.sub,fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:999}}>{roleLabel(u.role)}</span>}
+      {canManageTeam(me)&&u.id!==me.id&&<button onClick={()=>remove(u.id)}style={{border:"none",background:"transparent",cursor:"pointer",color:C.sub}}><Trash2 size={15}/></button>}
       </div>
-      {me.role==="admin"&&<div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginTop:7,paddingLeft:42}}>
+      {canManageTeam(me)&&<div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginTop:7,paddingLeft:42}}>
         <span style={{fontSize:10.5,color:C.sub,fontWeight:600}}>Approvals:</span>
         {SLOTS.map(([k,label])=>{const on=(u.approval_slots||[]).includes(k);return<button key={k}onClick={()=>setUserSlots(u.id,on?(u.approval_slots||[]).filter(x=>x!==k):[...(u.approval_slots||[]),k])}style={{fontSize:10.5,fontWeight:700,padding:"2px 9px",borderRadius:999,cursor:"pointer",border:`1px solid ${on?"#C026D3":C.line}`,background:on?"#C026D318":"#fff",color:on?"#C026D3":C.sub}}>{on?"✓ ":""}{label}</button>;})}
         {(!u.approval_slots||u.approval_slots.length===0)&&<span style={{fontSize:10.5,color:C.sub,fontStyle:"italic"}}>none</span>}
@@ -5008,7 +5050,7 @@ function AudienceDrawer({onClose,audiences,setAudiences,me,inline}){
         </div>
         <div style={{display:"flex",gap:6}}>
           <button onClick={()=>startEdit(a)}style={{border:`1px solid ${C.line}`,borderRadius:7,padding:"4px 8px",cursor:"pointer",background:"#fff",color:C.sub}}><PenLine size={13}/></button>
-          {(me.role==="admin"||me.role==="business")&&<button onClick={()=>del(a.id)}style={{border:`1px solid ${C.line}`,borderRadius:7,padding:"4px 8px",cursor:"pointer",background:"#fff",color:C.sub}}><Trash2 size={13}/></button>}
+          {(isSuper(me)||isBusiness(me))&&<button onClick={()=>del(a.id)}style={{border:`1px solid ${C.line}`,borderRadius:7,padding:"4px 8px",cursor:"pointer",background:"#fff",color:C.sub}}><Trash2 size={13}/></button>}
         </div>
       </div>
       {a.trigger_event&&<div style={{fontSize:12.5,color:C.sub,marginBottom:4}}><b style={{color:C.ink}}>Trigger:</b> {a.trigger_event}</div>}

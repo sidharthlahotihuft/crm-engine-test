@@ -44,7 +44,7 @@ const db = async (sql, params = []) => {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const uid = () => Math.random().toString(36).slice(2, 11);
 const safeJson = (s) => { try { return JSON.parse(s); } catch (e) { return null; } };
-const SERVER_BUILD = "server-v28.7 · approval_slots + sub_brands on users; insert-first uploads; creative_requests; 45-day cooldown; brand full asset access";
+const SERVER_BUILD = "server-v29.0 · 8-role model with old→new aliasing + idempotent role migration; role-equivalent guards; approval_slots + sub_brands; insert-first uploads";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -57,8 +57,26 @@ const authMiddleware = async (req, res, next) => {
   }
 };
 
+// v29 role aliasing: old keys ↔ new keys, plus capability groups, so existing roles() guards keep working.
+const ROLE_ALIAS = { admin: "super_admin", brand: "brand_lead", content: "brand_team", design: "design_team", business: "business" };
+const normRole = (r) => ROLE_ALIAS[r] || r || "brand_team";
+// When a guard names an OLD key, also let the matching NEW role(s) through (and vice-versa).
+const ROLE_EQUIV = {
+  admin: ["admin", "super_admin"], super_admin: ["admin", "super_admin"],
+  brand: ["brand", "brand_lead"], brand_lead: ["brand", "brand_lead"],
+  content: ["content", "brand_team"], brand_team: ["content", "brand_team"],
+  design: ["design", "design_team", "design_lead"], design_team: ["design", "design_team"], design_lead: ["design", "design_lead"],
+  business: ["business"],
+  cxo: ["cxo"], head_marketing: ["head_marketing"],
+};
 const roles = (...allowed) => (req, res, next) => {
-  if (!allowed.includes(req.user.role)) return res.status(403).json({ error: "Forbidden" });
+  const expanded = new Set();
+  allowed.forEach(a => (ROLE_EQUIV[a] || [a]).forEach(x => expanded.add(x)));
+  // a Brand Lead also satisfies any "brand" guard; Design Lead satisfies "design"; super_admin satisfies "admin"
+  if (allowed.includes("design")) { expanded.add("design_lead"); }
+  if (allowed.includes("brand")) { expanded.add("brand_lead"); }
+  const ur = req.user.role;
+  if (!expanded.has(ur) && !expanded.has(normRole(ur))) return res.status(403).json({ error: "Forbidden" });
   next();
 };
 
@@ -323,8 +341,8 @@ app.get("/api/users", authMiddleware, roles("admin"), async (req, res) => {
 app.post("/api/users", authMiddleware, roles("admin"), async (req, res) => {
   const { name, email, password, role, approval_slots, sub_brands } = req.body;
   if (!name || !email || !password) return res.status(400).json({ error: "name, email, password required" });
-  const validRoles = ["admin","brand","business","content","design"];
-  const userRole = validRoles.includes(role) ? role : "content";
+  const validRoles = ["super_admin","cxo","head_marketing","brand_lead","brand_team","design_lead","design_team","business","admin","brand","content","design"];
+  const userRole = validRoles.includes(role) ? role : "brand_team";
   const VALID_SLOTS = ["copy","design","asset","final"];
   const slots = Array.isArray(approval_slots) ? approval_slots.filter(s => VALID_SLOTS.includes(s)) : [];
   const brands = Array.isArray(sub_brands) ? sub_brands.filter(Boolean).map(String) : [];
@@ -344,7 +362,7 @@ app.post("/api/users", authMiddleware, roles("admin"), async (req, res) => {
 
 app.put("/api/users/:id", authMiddleware, roles("admin"), async (req, res) => {
   const { name, role, password, approval_slots, sub_brands } = req.body;
-  const validRoles = ["admin","brand","business","content","design"];
+  const validRoles = ["super_admin","cxo","head_marketing","brand_lead","brand_team","design_lead","design_team","business","admin","brand","content","design"];
   const VALID_SLOTS = ["copy","design","asset","final"];
   try {
     if (password) await db("UPDATE users SET password=$1 WHERE id=$2", [await bcrypt.hash(password, 10), req.params.id]);
@@ -945,7 +963,7 @@ app.get("/api/brand-styles", authMiddleware, async (req, res) => {
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.put("/api/brand-styles/:subBrand", authMiddleware, async (req, res) => {
-  if (!["admin","brand","design"].includes(req.user.role)) return res.status(403).json({ error: "Not allowed" });
+  if (!["super_admin","brand_lead","design_lead","admin","brand","design"].includes(normRole(req.user.role)) && !["super_admin","brand_lead","design_lead","admin","brand","design"].includes(req.user.role)) return res.status(403).json({ error: "Not allowed" });
   const sb = req.params.subBrand;
   const { headline_font, subhead_font, cta_font, bg, text_color, cta_color, logo_id, notes } = req.body;
   try {
@@ -961,7 +979,7 @@ app.put("/api/brand-styles/:subBrand", authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.delete("/api/brand-styles/:subBrand", authMiddleware, async (req, res) => {
-  if (!["admin","brand","design"].includes(req.user.role)) return res.status(403).json({ error: "Not allowed" });
+  if (!["super_admin","brand_lead","design_lead","admin","brand","design"].includes(normRole(req.user.role)) && !["super_admin","brand_lead","design_lead","admin","brand","design"].includes(req.user.role)) return res.status(403).json({ error: "Not allowed" });
   try { await pool.query("DELETE FROM brand_styles WHERE sub_brand=$1", [req.params.subBrand]); res.json({ ok: true }); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1166,6 +1184,11 @@ app.listen(PORT, async () => {
     await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS approval_slots TEXT[] DEFAULT '{}'");
     // Sub-brands a user is scoped to (empty = all). Used to split what each brand person sees.
     await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS sub_brands TEXT[] DEFAULT '{}'");
+    // v29 role rename — idempotent (no rows match once migrated). business stays business.
+    await pool.query("UPDATE users SET role='super_admin' WHERE role='admin'");
+    await pool.query("UPDATE users SET role='brand_lead'  WHERE role='brand'");
+    await pool.query("UPDATE users SET role='brand_team'  WHERE role='content'");
+    await pool.query("UPDATE users SET role='design_team' WHERE role='design'");
     await pool.query(`CREATE TABLE IF NOT EXISTS brand_styles (
       sub_brand TEXT PRIMARY KEY,
       headline_font TEXT, subhead_font TEXT, cta_font TEXT,
