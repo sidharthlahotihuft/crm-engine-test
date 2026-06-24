@@ -62,7 +62,7 @@ async function callClaude(system,prompt,expectJson){
 // Role-based default tab
 const ROLE_TAB={admin:"dashboard",business:"dashboard",content:"content",design:"design",brand:"dashboard"};
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v26.1 · full-screen composer (portaled above sidebar; canvas centred, tools L/R, zoom, download) + duplicate-to-asset + inline price-drop (Service) + gated finish block";
+const BUILD="v26.4 · alignment guides toggle (center + thirds overlay, export-safe) + undo/redo + tighter leading + rail fixes";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -589,6 +589,7 @@ const Send=p=><Svg{...p}><path d="M22 2L11 13"/><path d="M22 2L15 22l-4-9-9-4 20
 const RotateCcw=p=><Svg{...p}><path d="M1 4v6h6"/><path d="M3.5 15A9 9 0 1 0 6 6.3L1 10"/></Svg>;
 const LogOut=p=><Svg{...p}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></Svg>;
 const Target=p=><Svg{...p}><circle cx="12"cy="12"r="10"/><circle cx="12"cy="12"r="6"/><circle cx="12"cy="12"r="2"/></Svg>;
+const Crosshair=p=><Svg{...p}><circle cx="12"cy="12"r="9"/><line x1="12"y1="2"x2="12"y2="6"/><line x1="12"y1="18"x2="12"y2="22"/><line x1="2"y1="12"x2="6"y2="12"/><line x1="18"y1="12"x2="22"y2="12"/></Svg>;
 const CalendarIcon=p=><Svg{...p}><rect x="3"y="4"width="18"height="18"rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></Svg>;
 const UploadIcon=p=><Svg{...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5M12 3v12"/></Svg>;
 const SearchIcon=p=><Svg{...p}><circle cx="11"cy="11"r="8"/><path d="M21 21l-4.35-4.35"/></Svg>;
@@ -3363,6 +3364,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
   const[template,setTemplate]=useState("");
   const[editorOpen,setEditorOpen]=useState(false);
   const[zoom,setZoom]=useState(1);
+  const[guides,setGuides]=useState(false);
   const[linkSizes,setLinkSizes]=useState(true); // sub-headline size scales with headline unless unlinked
   const[autoFit,setAutoFit]=useState(true); // auto-place/scale products into free space (no overlap)
   const sz=COMPOSER_SIZES[sizeIdx];
@@ -3418,6 +3420,53 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
   const assetItems=items.filter(i=>i.kind==="asset"||!i.kind);
   const logoItems=items.filter(i=>i.kind==="logo");
   const[finalSaving,setFinalSaving]=useState(false);
+
+  // ===== Undo / redo history (snapshots editable state; excludes loaded image bitmaps) =====
+  const snapshot=React.useCallback(()=>({sizeIdx,template,linkSizes,autoFit,bgMode,bgColor,bgId,genPrompt,genNeg,products,shadow,logoId,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,hl,sh,anchor,divider,ct,ctaBg,textShadow,textAlign,oldPrice}),[sizeIdx,template,linkSizes,autoFit,bgMode,bgColor,bgId,genPrompt,genNeg,products,shadow,logoId,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,hl,sh,anchor,divider,ct,ctaBg,textShadow,textAlign,oldPrice]);
+  const histRef=React.useRef({past:[],future:[]});
+  const lastSnapRef=React.useRef(null);
+  const debRef=React.useRef(null);
+  const[,setHistTick]=useState(0);
+  const restoreSnap=(s)=>{
+    setSizeIdx(s.sizeIdx);setTemplate(s.template);setLinkSizes(s.linkSizes);setAutoFit(s.autoFit);
+    setBgMode(s.bgMode);setBgColor(s.bgColor);setBgId(s.bgId);setGenPrompt(s.genPrompt);setGenNeg(s.genNeg);
+    setProducts(s.products);setShadow(s.shadow);setLogoId(s.logoId);setLogoScale(s.logoScale);setLogoCorner(s.logoCorner);
+    setHuftMode(s.huftMode);setHuftLockup(s.huftLockup);setHuftCorner(s.huftCorner);setHuftScale(s.huftScale);
+    setHl(s.hl);setSh(s.sh);setAnchor(s.anchor);setDivider(s.divider);setCt(s.ct);setCtaBg(s.ctaBg);
+    setTextShadow(s.textShadow);setTextAlign(s.textAlign);setOldPrice(s.oldPrice);
+    lastSnapRef.current=s; // so the recorder sees no diff and won't log this restore
+  };
+  React.useEffect(()=>{
+    const cur=snapshot();
+    if(lastSnapRef.current===null){lastSnapRef.current=cur;return;} // init, don't record
+    const prev=lastSnapRef.current;
+    if(JSON.stringify(cur)===JSON.stringify(prev))return; // restore or no real change
+    clearTimeout(debRef.current);
+    debRef.current=setTimeout(()=>{
+      const now=snapshot();
+      if(JSON.stringify(now)===JSON.stringify(prev))return;
+      histRef.current.past.push(prev);
+      if(histRef.current.past.length>60)histRef.current.past.shift();
+      histRef.current.future=[];
+      lastSnapRef.current=now;
+      setHistTick(t=>t+1);
+    },350);
+  },[snapshot]);
+  const undo=()=>{const h=histRef.current;if(!h.past.length)return;clearTimeout(debRef.current);h.future.unshift(lastSnapRef.current||snapshot());restoreSnap(h.past.pop());setHistTick(t=>t+1);};
+  const redo=()=>{const h=histRef.current;if(!h.future.length)return;clearTimeout(debRef.current);h.past.push(lastSnapRef.current||snapshot());restoreSnap(h.future.shift());setHistTick(t=>t+1);};
+  const canUndo=histRef.current.past.length>0, canRedo=histRef.current.future.length>0;
+  React.useEffect(()=>{
+    if(!editorOpen)return;
+    const onKey=(e)=>{
+      const t=e.target,tag=(t&&t.tagName||"").toLowerCase();
+      if(tag==="input"||tag==="textarea"||tag==="select")return; // let fields handle their own undo
+      const k=(e.key||"").toLowerCase();
+      if((e.metaKey||e.ctrlKey)&&k==="z"){e.preventDefault();(e.shiftKey?redo:undo)();}
+      else if((e.metaKey||e.ctrlKey)&&k==="y"){e.preventDefault();redo();}
+    };
+    window.addEventListener("keydown",onKey);
+    return()=>window.removeEventListener("keydown",onKey);
+  },[editorOpen]);
 
   const reloadLib=React.useCallback(()=>{setLoadingItems(true);api.get("/api/image-library").then(r=>setItems(r||[])).catch(()=>{}).finally(()=>setLoadingItems(false));},[]);
   React.useEffect(()=>{let on=true;Promise.all(Object.entries(HUFT_LOGOS).map(([k,url])=>loadImage(url).then(im=>{huftCache.current[k]=im;}).catch(()=>{}))).then(()=>{if(on)setHuftReady(true);});return()=>{on=false;};},[]);
@@ -3525,7 +3574,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
     const priceActive=template==="service"&&(oldPrice.text||"").trim();
     const shEff=priceActive?{...sh,text:("~"+oldPrice.text.trim()+"~ "+(sh.text||"")).trim()}:sh;
     const S=wrapFit(ctx,shEff,maxW,sz.w*0.042,5);
-    const hLineH=H.px*1.12, sLineH=S.px*1.32, gap=H.px*0.55;
+    const hLineH=H.px*0.97, sLineH=S.px*1.18, gap=H.px*0.55;
     const hBlock=H.lines.length*hLineH;
     const sBlock=S.lines.length? gap+S.lines.length*sLineH : 0;
     const ctaH=ct.text? H.px*1.7 : 0;
@@ -3670,7 +3719,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
 
   const fieldL={fontSize:11,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.4,marginBottom:5,display:"block"};
   const ctrl={width:"100%",border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 9px",fontSize:13,boxSizing:"border-box"};
-  const slider=(label,val,min,max,set,fmt)=>{const unit=fmt?fmt("").toString().replace(/[\s·\d.+-]/g,""):"";return<div><label style={fieldL}>{label}</label><div style={{display:"flex",alignItems:"center",gap:8}}><input type="range"min={min}max={max}value={val}onChange={e=>set(+e.target.value)}style={{flex:1}}/><input type="number"min={min}max={max}value={val}onChange={e=>{let v=e.target.value===""?min:+e.target.value;if(isNaN(v))return;if(v<min)v=min;if(v>max)v=max;set(v);}}style={{width:52,border:`1px solid ${C.line}`,borderRadius:6,padding:"3px 5px",fontSize:12,textAlign:"right"}}/>{unit&&<span style={{fontSize:11,color:C.sub}}>{unit}</span>}</div></div>;};
+  const slider=(label,val,min,max,set,fmt)=>{const unit=fmt?fmt("").toString().replace(/[\s·\d.+-]/g,""):"";return<div><label style={fieldL}>{label}</label><div style={{display:"flex",alignItems:"center",gap:8}}><input type="range"min={min}max={max}value={val}onChange={e=>set(+e.target.value)}style={{flex:1,minWidth:0}}/><input type="number"min={min}max={max}value={val}onChange={e=>{let v=e.target.value===""?min:+e.target.value;if(isNaN(v))return;if(v<min)v=min;if(v>max)v=max;set(v);}}style={{width:52,border:`1px solid ${C.line}`,borderRadius:6,padding:"3px 5px",fontSize:12,textAlign:"right"}}/>{unit&&<span style={{fontSize:11,color:C.sub}}>{unit}</span>}</div></div>;};
   // collapsible per-element section: everything for that element lives under its own header
   const sect=(k,title,el,setEl,extra,sizeSet)=>{
     const isOpen=open[k];
@@ -3682,7 +3731,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
         </span>
         <ChevronDown size={16}color={C.sub}style={{transform:isOpen?"rotate(180deg)":"none",transition:"transform .15s",flexShrink:0}}/>
       </button>
-      {isOpen&&<div style={{padding:"10px 12px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,borderTop:`1px solid ${C.line}`}}>
+      {isOpen&&<div style={{padding:"10px 12px",display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:10,borderTop:`1px solid ${C.line}`}}>
         <div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Text</label><input value={el.text}onChange={e=>setEl({...el,text:e.target.value})}style={ctrl}/></div>
         <div><label style={fieldL}>Font</label><select value={el.font}onChange={e=>setEl({...el,font:e.target.value})}style={ctrl}>{COMPOSER_FONTS.map(f=><option key={f}value={f}>{f}</option>)}</select></div>
         <div><label style={fieldL}>Weight</label><button onClick={()=>setEl({...el,bold:!el.bold})}style={{...ctrl,cursor:"pointer",textAlign:"left",fontWeight:el.bold?800:400,background:el.bold?C.coral+"18":"#fff",borderColor:el.bold?C.coral:C.line,color:el.bold?C.coral:C.sub}}>{el.bold?"Bold ✓":"Regular"}</button></div>
@@ -3728,10 +3777,15 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
       </div>
       <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
         <div style={{display:"flex",alignItems:"center",gap:2,border:`1px solid ${C.line}`,borderRadius:8,padding:"2px 4px",background:"#fff"}}>
+          <button onClick={undo}disabled={!canUndo}title="Undo (⌘Z)"style={{border:"none",background:"none",cursor:canUndo?"pointer":"not-allowed",fontSize:15,fontWeight:700,color:canUndo?C.ink:C.line,width:26,lineHeight:1,opacity:canUndo?1:.6}}>↶</button>
+          <button onClick={redo}disabled={!canRedo}title="Redo (⇧⌘Z)"style={{border:"none",background:"none",cursor:canRedo?"pointer":"not-allowed",fontSize:15,fontWeight:700,color:canRedo?C.ink:C.line,width:26,lineHeight:1,opacity:canRedo?1:.6}}>↷</button>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:2,border:`1px solid ${C.line}`,borderRadius:8,padding:"2px 4px",background:"#fff"}}>
           <button onClick={()=>setZoom(z=>Math.max(.25,+(z-.1).toFixed(2)))}title="Zoom out"style={{border:"none",background:"none",cursor:"pointer",fontSize:16,fontWeight:700,color:C.sub,width:24,lineHeight:1}}>−</button>
           <button onClick={()=>setZoom(1)}title="Fit"style={{border:"none",background:"none",cursor:"pointer",fontSize:11.5,fontWeight:700,color:C.ink,minWidth:44}}>{Math.round(zoom*100)}%</button>
           <button onClick={()=>setZoom(z=>Math.min(2.5,+(z+.1).toFixed(2)))}title="Zoom in"style={{border:"none",background:"none",cursor:"pointer",fontSize:16,fontWeight:700,color:C.sub,width:24,lineHeight:1}}>+</button>
         </div>
+        <button onClick={()=>setGuides(g=>!g)}title="Toggle alignment guides"style={{display:"flex",alignItems:"center",gap:5,border:`1px solid ${guides?C.coral:C.line}`,background:guides?C.coral+"14":"#fff",color:guides?C.coral:C.sub,borderRadius:8,cursor:"pointer",padding:"6px 10px",fontSize:12.5,fontWeight:700}}><Crosshair size={14}/>Guides</button>
         <Btn small variant="ghost"disabled={saving}onClick={saveToLib}>{saving?"Saving…":"Save to library"}</Btn>
         {patch&&<Btn small variant="dark"disabled={finalSaving}onClick={useAsFinal}><CheckCircle2 size={13}/>{finalSaving?"Setting…":"Use as final"}</Btn>}
         <Btn small onClick={exportPng}><Download size={13}/>Download PNG</Btn>
@@ -3739,9 +3793,9 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
       </div>
     </div>
     <div style={{flex:1,minHeight:0,display:"flex"}}>
-      <div style={{width:300,flexShrink:0,overflowY:"auto",borderRight:`1px solid ${C.line}`,background:"#fff",padding:16}}>
+      <div style={{width:320,flexShrink:0,overflowY:"auto",borderRight:`1px solid ${C.line}`,background:"#fff",padding:16}}>
         <div style={{fontSize:11,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.6,marginBottom:10}}>Canvas &amp; source</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:11,alignContent:"start"}}>
+        <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:11,alignContent:"start"}}>
         <div><label style={fieldL}>Size</label><select value={sizeIdx}onChange={e=>setSizeIdx(+e.target.value)}style={ctrl}>{COMPOSER_SIZES.map((s,i)=><option key={i}value={i}>{s.label} ({s.w}×{s.h})</option>)}</select></div>
         <div><label style={fieldL}>Source · keep or switch</label><select value={bgMode}onChange={e=>setBgMode(e.target.value)}style={ctrl}>
           <option value="plain">Plain background + product</option>
@@ -3779,19 +3833,29 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
             <Btn small disabled={genBusy}onClick={runGenerate}>{genBusy?"Generating…":"Generate image"}</Btn>
             <span style={{fontSize:11,color:C.sub}}>{isBusiness?"One-click":"Products & copy stay on top"}</span>
           </div>
-          {genErr&&<div style={{fontSize:11.5,color:"#DC2626"}}>{genErr}</div>}
+          {genErr&&<div style={{fontSize:11.5,color:"#DC2626",overflowWrap:"anywhere",wordBreak:"break-word",lineHeight:1.45}}>{genErr}</div>}
         </div>}
 
         </div>
       </div>
       <div style={{flex:1,minWidth:0,overflow:"auto",display:"flex",alignItems:"center",justifyContent:"center",padding:28}}>
         <div style={{transform:`scale(${zoom})`,transformOrigin:"center center",transition:"transform .08s",flexShrink:0}}>
+          <div style={{position:"relative",display:"block"}}>
           <canvas ref={ref}style={{display:"block",width:"min(72vh,760px)",height:"auto",maxWidth:"82vw",borderRadius:10,boxShadow:"0 10px 44px rgba(0,0,0,.18)",background:"#fff",border:`1px solid ${C.line}`}}/>
+          {guides&&<div style={{position:"absolute",inset:0,pointerEvents:"none",borderRadius:10,overflow:"hidden"}}>
+            <div style={{position:"absolute",left:"33.333%",top:0,bottom:0,width:1,background:"rgba(255,61,141,.22)"}}/>
+            <div style={{position:"absolute",left:"66.666%",top:0,bottom:0,width:1,background:"rgba(255,61,141,.22)"}}/>
+            <div style={{position:"absolute",top:"33.333%",left:0,right:0,height:1,background:"rgba(255,61,141,.22)"}}/>
+            <div style={{position:"absolute",top:"66.666%",left:0,right:0,height:1,background:"rgba(255,61,141,.22)"}}/>
+            <div style={{position:"absolute",left:"50%",top:0,bottom:0,borderLeft:"1.5px dashed #FF3D8D",transform:"translateX(-50%)"}}/>
+            <div style={{position:"absolute",top:"50%",left:0,right:0,borderTop:"1.5px dashed #FF3D8D",transform:"translateY(-50%)"}}/>
+          </div>}
+          </div>
         </div>
       </div>
-      <div style={{width:340,flexShrink:0,overflowY:"auto",borderLeft:`1px solid ${C.line}`,background:"#fff",padding:16}}>
+      <div style={{width:360,flexShrink:0,overflowY:"auto",borderLeft:`1px solid ${C.line}`,background:"#fff",padding:16}}>
         <div style={{fontSize:11,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.6,marginBottom:10}}>Content &amp; styling</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:11,alignContent:"start"}}>
+        <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:11,alignContent:"start"}}>
         {/* products / mockups — multi, from library only */}
         <div style={{gridColumn:"1 / -1",borderTop:`1px solid ${C.line}`,paddingTop:11,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <span style={{fontSize:11.5,fontWeight:800,color:C.ink}}>Products / mockups{products.length>1?" · "+products.length:""}</span>
@@ -3803,7 +3867,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
         {c.product&&<div style={{gridColumn:"1 / -1",fontSize:11,color:C.sub,marginTop:-4}}>Brief product: <b style={{color:C.ink}}>{c.product}</b> — multi-product posts: add each one from the library.</div>}
         {!loadingItems&&items.length===0&&<div style={{gridColumn:"1 / -1",fontSize:11.5,color:"#B45309",background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:8,padding:"8px 10px"}}>The Image library is empty, so there are no products to pick. Upload packshots to the Image library, then hit Refresh.</div>}
 
-        {products.map((p,idx)=><div key={p.pid}style={{gridColumn:"1 / -1",border:`1px solid ${C.line}`,borderRadius:8,padding:"10px 12px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        {products.map((p,idx)=><div key={p.pid}style={{gridColumn:"1 / -1",border:`1px solid ${C.line}`,borderRadius:8,padding:"10px 12px",display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:10}}>
           <div style={{gridColumn:"1 / -1",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <span style={{fontSize:10.5,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.4}}>Product {idx+1}</span>
             {products.length>1&&<button onClick={()=>rmProduct(p.pid)}style={{border:"none",background:"none",color:"#B91C1C",fontSize:11,fontWeight:700,cursor:"pointer",padding:0}}>Remove</button>}
