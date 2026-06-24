@@ -62,7 +62,7 @@ async function callClaude(system,prompt,expectJson){
 // Role-based default tab
 const ROLE_TAB={admin:"dashboard",business:"dashboard",content:"content",design:"design",brand:"dashboard"};
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v26.7 · PN shows push format only (tolerant channel detect, no full WhatsApp copy) + click-to-edit + friendly Gemini error";
+const BUILD="v26.9 · AI scene reserves a clean product spot + text space; real product PNG composited on top (exact label, never AI-recreated)";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -3368,6 +3368,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
   const[zoom,setZoom]=useState(1);
   const[guides,setGuides]=useState(false);
   const[editCopy,setEditCopy]=useState(null); // which copy block is being edited inline on the canvas: "hl"|"sh"|"cta"|null
+  const[genUsedProduct,setGenUsedProduct]=useState(false); // true when the generated image already contains the product (don't composite again)
   const copyHitsRef=React.useRef({}); // {hl:[y0,y1], sh:[y0,y1], cta:[y0,y1]} in canvas (intrinsic) coords
   const[linkSizes,setLinkSizes]=useState(true); // sub-headline size scales with headline unless unlinked
   const[autoFit,setAutoFit]=useState(true); // auto-place/scale products into free space (no overlap)
@@ -3599,7 +3600,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
     const copyTop=topY+Hdy*sz.h, copyBot=topY+blockH+Cdy*sz.h;
 
     // ---- 2) products / mockups: auto-fit into the free region (no overlap), or manual ----
-    const rendered=products.filter(p=>prodImgs[p.id]);
+    const rendered=(bgMode==="generate"&&genUsedProduct)?[]:products.filter(p=>prodImgs[p.id]);
     let regTop,regBot;
     if(vPos==="bottom"){regTop=sz.h*0.05;regBot=copyTop-sz.h*0.03;}
     else{regTop=copyBot+sz.h*0.03;regBot=sz.h*0.96;}
@@ -3696,7 +3697,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
         ctx.drawImage(limg,lx,ly,lw,lh);
       }
     }
-  },[sz,bgMode,bgColor,bgImg,genImg,products,prodImgs,shadow,hl,sh,anchor,ct,ctaBg,logoImg,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,huftReady,divider,autoFit,textShadow,textAlign,oldPrice,copyScale,editorOpen]);
+  },[sz,bgMode,bgColor,bgImg,genImg,products,prodImgs,shadow,hl,sh,anchor,ct,ctaBg,logoImg,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,huftReady,divider,autoFit,textShadow,textAlign,oldPrice,copyScale,genUsedProduct,editorOpen]);
 
   React.useEffect(()=>{draw();},[draw]);
 
@@ -3704,9 +3705,11 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
     if(!genPrompt.trim()){setGenErr("No prompt available to generate from.");return;}
     setGenBusy(true);setGenErr("");
     try{
-      const r=await api.post("/api/generate-image",{prompt:genPrompt,negativePrompt:genNeg,aspectRatio:sz.ar});
+      const hasProduct=products.some(p=>p.id); // reserve a clean spot for the real packshot
+      const r=await api.post("/api/generate-image",{prompt:genPrompt,negativePrompt:genNeg,aspectRatio:sz.ar,reserveProductSpace:hasProduct});
       const im=await loadImage(r.image);setGenImg(im);setBgMode("generate");
-      if(toast)toast("Image generated ✓ — products & copy kept on top","success");
+      setGenUsedProduct(false); // product is composited as the exact PNG, never AI-recreated
+      if(toast)toast(hasProduct?"Scene generated ✓ — your exact product PNG sits on top":"Image generated ✓ — copy kept on top","success");
     }catch(e){setGenErr(e.message||"Generation failed");}
     setGenBusy(false);
   };

@@ -73,14 +73,20 @@ const CLAUDE_MODEL = process.env.CLAUDE_MODEL || "claude-sonnet-4-6";
 
 // Text-to-image via Gemini. Returns a data URL (data:image/png;base64,...).
 // aspectRatio is one of Gemini's supported ratios: 1:1, 4:5, 9:16, 16:9, 3:4, 4:3, etc.
-async function generateImageFromPrompt(prompt, aspectRatio = "1:1") {
+async function generateImageFromPrompt(prompt, aspectRatio = "1:1", productImage = null) {
   if (!GEMINI_KEY) throw new Error("Image generation needs GEMINI_API_KEY in the server env.");
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_IMAGE_MODEL}:generateContent?key=${GEMINI_KEY}`;
+  const reqParts = [];
+  if (productImage) {
+    const m = /^data:([^;]+);base64,(.*)$/.exec(String(productImage));
+    if (m) reqParts.push({ inlineData: { mimeType: m[1], data: m[2] } });
+  }
+  reqParts.push({ text: prompt });
   const r = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      contents: [{ role: "user", parts: reqParts }],
       generationConfig: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio } },
     }),
   });
@@ -838,9 +844,14 @@ app.post("/api/image-library", authMiddleware, roles("admin", "brand", "design",
 // Generate a background/scene image from a text prompt (Composer "Generate image").
 // body: { prompt, negativePrompt?, aspectRatio? }  →  { image: dataURL }
 app.post("/api/generate-image", authMiddleware, roles("admin", "brand", "design", "business"), async (req, res) => {
-  const { prompt, negativePrompt, aspectRatio } = req.body || {};
+  const { prompt, negativePrompt, aspectRatio, reserveProductSpace } = req.body || {};
   if (!prompt || !String(prompt).trim()) return res.status(400).json({ error: "prompt required" });
-  const full = negativePrompt ? `${prompt}\n\nAvoid: ${negativePrompt}` : String(prompt);
+  const textSpace = "Composition for a marketing creative: keep a generous, clean, low-detail area (roughly one third of the frame — usually the top or left) as negative space so a large headline, sub-headline and a button can be overlaid with high legibility. Do NOT render any text, words, numbers, logos, badges or watermarks in the image.";
+  const productSpace = reserveProductSpace
+    ? "Leave a clean, well-lit, uncluttered spot (typically the lower portion or one side, opposite the text area) where a real product packshot will be placed on top afterwards — keep that spot simple and free of clutter. IMPORTANT: do NOT draw, render, invent or imply any product, package, pouch, box, bottle, can, label or packaging anywhere in the image — only the empty scene/background and props."
+    : "";
+  let full = [String(prompt), productSpace, textSpace].filter(Boolean).join("\n\n");
+  if (negativePrompt) full += `\n\nAvoid: ${negativePrompt}`;
   try {
     const image = await generateImageFromPrompt(full, aspectRatio || "1:1");
     res.json({ image });
