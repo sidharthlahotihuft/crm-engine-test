@@ -44,7 +44,7 @@ const db = async (sql, params = []) => {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const uid = () => Math.random().toString(36).slice(2, 11);
 const safeJson = (s) => { try { return JSON.parse(s); } catch (e) { return null; } };
-const SERVER_BUILD = "server-v29.9.2 · campaigns now return created_by_name (brief creator) for row identifiers; send-back clears selectedCopyIdx; auth returns slots+sub_brands; gated pipeline; category routing; notifications";
+const SERVER_BUILD = "server-v29.10 · brand-reject stores sentBack + lastRejectReason + sentBackBy in asset data (for the send-back reason banner & resend gate)";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -747,14 +747,17 @@ app.post("/api/campaigns/:id/brand-approve", authMiddleware, roles("brand", "adm
 // Brand lead sends copy back to the content team with required changes
 app.post("/api/campaigns/:id/brand-reject", authMiddleware, roles("brand", "admin"), async (req, res) => {
   try {
+    const reason = (req.body.reason && req.body.reason.trim()) ? req.body.reason.trim() : "";
     const rows = await db(
-      `UPDATE campaigns SET stage='content', copy_approver=NULL, data = COALESCE(data,'{}'::jsonb) || '{"selectedCopyIdx":null}'::jsonb WHERE id=$1 AND stage='brand_review' RETURNING *`,
-      [req.params.id]
+      `UPDATE campaigns SET stage='content', copy_approver=NULL,
+         data = COALESCE(data,'{}'::jsonb) || jsonb_build_object('selectedCopyIdx', null, 'sentBack', true, 'lastRejectReason', $2::text, 'sentBackBy', $3::text, 'sentBackAt', $4::text)
+       WHERE id=$1 AND stage='brand_review' RETURNING *`,
+      [req.params.id, reason, req.user.name || "", new Date().toISOString()]
     );
     if (!rows.length) return res.status(409).json({ error: "Campaign is not awaiting brand review." });
     // Always log a visible send-back note for the copy team (generic if no reason given)
-    const note = (req.body.reason && req.body.reason.trim())
-      ? ("Sent back: " + req.body.reason.trim())
+    const note = reason
+      ? ("Sent back: " + reason)
       : "Sent back to copy for changes — see comments above.";
     await db(
       `INSERT INTO comments (campaign_id, context, body, author_id, author_name, author_role)
