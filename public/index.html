@@ -62,7 +62,7 @@ async function callClaude(system,prompt,expectJson){
 // Role-based default tab
 const ROLE_TAB={admin:"dashboard",business:"dashboard",content:"content",design:"design",brand:"dashboard"};
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v19 · fix composer crash (items init order)";
+const BUILD="v21 · cascade move (headline→all, sub→sub+cta) + reset position";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -3079,7 +3079,8 @@ function SmartLibraryPicker({d,setD,copy,brief,product,campaignId}){
   };
   React.useEffect(()=>{loadSuggested();},[campaignId]);
 
-  const all=items||[];
+  // Background suggestions = scenes/assets only — never product mockups (those go in the product layer)
+  const all=(items||[]).filter(i=>i.kind!=="product");
 
   return<div style={{marginBottom:12}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:8}}>
@@ -3426,6 +3427,15 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
     const hAlign=hPos==="left"?"left":hPos==="right"?"right":"center";
     const anchorX=hPos==="left"?pad:hPos==="right"?sz.w-pad:sz.w/2;
     ctx.textBaseline="top";
+    // draws one line; strikes only ~...~ segments (or whole line if fullStrike)
+    const drawCopyLine=(line,baseX,yy,align,px,color,fullStrike)=>{
+      const segs=String(line).split("~");
+      let total=0;for(const s of segs)total+=ctx.measureText(s).width;
+      let cx=align==="left"?baseX:align==="right"?baseX-total:baseX-total/2;
+      const prev=ctx.textAlign;ctx.textAlign="left";
+      segs.forEach((s,idx)=>{if(!s)return;ctx.fillStyle=color;ctx.fillText(s,cx,yy);const w=ctx.measureText(s).width;if(fullStrike||idx%2===1){ctx.save();ctx.strokeStyle=color;ctx.lineWidth=Math.max(2,px*0.08);ctx.beginPath();ctx.moveTo(cx,yy+px*0.52);ctx.lineTo(cx+w,yy+px*0.52);ctx.stroke();ctx.restore();}cx+=w;});
+      ctx.textAlign=prev;
+    };
     const H=wrapFit(ctx,hl,maxW,sz.w*0.085,4);
     const S=wrapFit(ctx,sh,maxW,sz.w*0.042,5);
     const hLineH=H.px*1.12, sLineH=S.px*1.32, gap=H.px*0.55;
@@ -3433,27 +3443,34 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
     const sBlock=S.lines.length? gap+S.lines.length*sLineH : 0;
     const ctaH=ct.text? H.px*1.7 : 0;
     const blockH=hBlock+sBlock+ctaH;
-    let topY = vPos==="top"? sz.h*0.08 : vPos==="bottom"? sz.h*0.92-blockH : (sz.h-blockH)/2;
+    // reserve vertical space so a top logo never collides with top-anchored copy
+    let topReserve=0;
+    if(huftMode!=="none"&&huftCorner.indexOf("top")===0){const aspect=huftLockup==="stk"?0.674:0.1745;topReserve=sz.w*huftScale*aspect+sz.h*0.045;}
+    let topY = vPos==="top"? sz.h*0.06+topReserve : vPos==="bottom"? sz.h*0.92-blockH : (sz.h-blockH)/2;
+    // cascade: headline offset shifts all; sub-headline shifts sub+CTA; CTA shifts only itself
+    const Hdx=(hl.dx||0), Hdy=(hl.dy||0);
+    const Sdx=Hdx+(sh.dx||0), Sdy=Hdy+(sh.dy||0);
+    const Cdx=Sdx+(ct.dx||0), Cdy=Sdy+(ct.dy||0);
 
     ctx.fillStyle=hl.color||"#FFFFFF";ctx.textAlign=hAlign;
     ctx.font=(hl.bold?"800":"400")+" "+H.px+"px '"+hl.font+"'";try{ctx.letterSpacing=(hl.kern||0)+"px";}catch(e){}
     ctx.shadowColor="rgba(0,0,0,0.25)";ctx.shadowBlur=6;ctx.shadowOffsetY=2;
-    let y=topY+(hl.dy||0)*sz.h;const hx=anchorX+(hl.dx||0)*sz.w;
-    for(const ln of H.lines){ctx.fillText(ln,hx,y);if(hl.strike){const w=ctx.measureText(ln).width,sx0=hAlign==="left"?hx:hAlign==="right"?hx-w:hx-w/2;ctx.save();ctx.strokeStyle=hl.color||"#fff";ctx.lineWidth=Math.max(2,H.px*0.07);ctx.beginPath();ctx.moveTo(sx0,y+H.px*0.5);ctx.lineTo(sx0+w,y+H.px*0.5);ctx.stroke();ctx.restore();}y+=hLineH;}
+    let y=topY+Hdy*sz.h;const hx=anchorX+Hdx*sz.w;
+    for(const ln of H.lines){drawCopyLine(ln,hx,y,hAlign,H.px,hl.color||"#FFFFFF",!!hl.strike);y+=hLineH;}
     if(S.lines.length){
       ctx.fillStyle=sh.color||"#FFFFFF";
       ctx.font=(sh.bold?"700":"400")+" "+S.px+"px '"+sh.font+"'";try{ctx.letterSpacing=(sh.kern||0)+"px";}catch(e){}
-      let sy=topY+hBlock+gap+(sh.dy||0)*sz.h;const sx=anchorX+(sh.dx||0)*sz.w;
-      for(const ln of S.lines){ctx.fillText(ln,sx,sy);if(sh.strike){const w=ctx.measureText(ln).width,sx0=hAlign==="left"?sx:hAlign==="right"?sx-w:sx-w/2;ctx.save();ctx.strokeStyle=sh.color||"#fff";ctx.lineWidth=Math.max(2,S.px*0.08);ctx.beginPath();ctx.moveTo(sx0,sy+S.px*0.5);ctx.lineTo(sx0+w,sy+S.px*0.5);ctx.stroke();ctx.restore();}sy+=sLineH;}
+      let sy=topY+hBlock+gap+Sdy*sz.h;const sx=anchorX+Sdx*sz.w;
+      for(const ln of S.lines){drawCopyLine(ln,sx,sy,hAlign,S.px,sh.color||"#FFFFFF",!!sh.strike);sy+=sLineH;}
     }
     ctx.shadowColor="transparent";ctx.shadowBlur=0;ctx.shadowOffsetY=0;try{ctx.letterSpacing="0px";}catch(e){}
     if(ct.text){
       const cpx=Math.round(sz.w*0.04*(ct.size||1));ctx.font=(ct.bold?"700":"400")+" "+cpx+"px '"+ct.font+"'";
       try{ctx.letterSpacing=(ct.kern||0)+"px";}catch(e){}
       const tw=ctx.measureText(ct.text).width, bw=tw+cpx*1.7, bh=cpx*2.1;
-      const cAnchorX=anchorX+(ct.dx||0)*sz.w;
+      const cAnchorX=anchorX+Cdx*sz.w;
       let bx = hAlign==="left"? cAnchorX : hAlign==="right"? cAnchorX-bw : cAnchorX-bw/2;
-      const by=topY+hBlock+sBlock+H.px*0.35+(ct.dy||0)*sz.h;
+      const by=topY+hBlock+sBlock+H.px*0.35+Cdy*sz.h;
       ctx.fillStyle=ctaBg;
       if(ctx.roundRect){ctx.beginPath();ctx.roundRect(bx,by,bw,bh,bh/2);ctx.fill();}else ctx.fillRect(bx,by,bw,bh);
       ctx.fillStyle=ct.color||"#FFFFFF";ctx.textAlign="left";ctx.textBaseline="middle";
@@ -3514,15 +3531,17 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
     setTemplate(name);
     if(name==="bigOffer"){
       setBgMode("plain");const p=BRAND_PALETTES[0];setBgColor(p.bg);
-      setHl(h=>({...h,color:p.text,bold:true,size:1.35}));setSh(s=>({...s,color:p.text,bold:false}));setCt(t=>({...t,color:"#FFFFFF",bold:true}));setCtaBg(p.cta);
+      setHl(h=>({...h,color:p.text,bold:true,size:1.35,strike:false}));setSh(s=>({...s,color:p.text,bold:false,strike:false}));setCt(t=>({...t,color:"#FFFFFF",bold:true}));setCtaBg(p.cta);
       setAnchor("top-center");setHuftMode("auto");setHuftLockup("horiz");setHuftCorner("top-center");setHuftScale(0.3);setDivider(d=>({...d,on:false}));
     }else if(name==="multiPack"){
       setBgMode("plain");setBgColor("#FBF1DF");
-      setHl(h=>({...h,color:"#241A14",bold:true,size:1.1}));setSh(s=>({...s,color:"#3A2A1E",bold:false}));setCt(t=>({...t,color:"#FFFFFF",bold:true}));setCtaBg("#5A3A1E");
-      setAnchor("top-center");setHuftMode("dark");setHuftLockup("horiz");setHuftCorner("top-center");setHuftScale(0.3);setDivider(d=>({...d,on:false}));
+      setHl(h=>({...h,color:"#241A14",bold:true,size:1.1,strike:false}));setSh(s=>({...s,color:"#3A2A1E",bold:false,strike:false}));setCt(t=>({...t,color:"#FFFFFF",bold:true}));setCtaBg("#5A3A1E");
+      setAnchor("top-center");setHuftMode("auto");setHuftLockup("horiz");setHuftCorner("top-center");setHuftScale(0.3);setDivider(d=>({...d,on:false}));
     }else if(name==="service"){
-      setHl(h=>({...h,color:C.coral,bold:true,size:1.3}));setSh(s=>({...s,color:"#FFFFFF",bold:true,strike:true}));setCt(t=>({...t,color:"#FFFFFF",bold:true}));setCtaBg(C.coral);
-      setAnchor("top-left");setHuftMode("white");setHuftLockup("horiz");setHuftCorner("top-left");setHuftScale(0.3);setDivider({on:true,y:0.46,w:0.38,color:"#FFFFFF"});
+      setBgMode("plain");setBgColor("#1B1B1D"); // dark, like the spa/price-drop references
+      setHl(h=>({...h,color:C.coral,bold:true,size:1.3,strike:false}));
+      setSh(s=>({...s,color:"#FFFFFF",bold:true,strike:false}));setCt(t=>({...t,color:"#FFFFFF",bold:true}));setCtaBg(C.coral);
+      setAnchor("top-left");setHuftMode("auto");setHuftLockup("horiz");setHuftCorner("top-left");setHuftScale(0.3);setDivider({on:true,y:0.46,w:0.38,color:"#FFFFFF"});
     }
   };
   const useAsFinal=()=>{const cv=ref.current;if(!cv||!patch)return;setFinalSaving(true);
@@ -3551,9 +3570,13 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
         {"strike"in el&&<div><label style={fieldL}>Strikethrough</label><button onClick={()=>setEl({...el,strike:!el.strike})}style={{...ctrl,cursor:"pointer",textAlign:"left",textDecoration:el.strike?"line-through":"none",background:el.strike?C.coral+"18":"#fff",borderColor:el.strike?C.coral:C.line,color:el.strike?C.coral:C.sub}}>{el.strike?"On ✓":"Off"}</button></div>}
         {slider("Font size",Math.round(el.size*100),50,200,v=>setEl({...el,size:v/100}),v=>v+"%")}
         {slider("Kerning",el.kern,-5,30,v=>setEl({...el,kern:v}),v=>v+"px")}
-        {slider("Horizontal",Math.round(el.dx*100),-30,30,v=>setEl({...el,dx:v/100}),v=>v+"%")}
-        {slider("Vertical",Math.round(el.dy*100),-30,30,v=>setEl({...el,dy:v/100}),v=>v+"%")}
+        {slider("Move left–right ↔",Math.round(el.dx*100),-30,30,v=>setEl({...el,dx:v/100}),v=>v+"%")}
+        {slider("Move up–down ↕",Math.round(el.dy*100),-30,30,v=>setEl({...el,dy:v/100}),v=>v+"%")}
         <div><label style={fieldL}>{k==="cta"?"Text colour":"Colour"}</label><input type="color"value={el.color}onChange={e=>setEl({...el,color:e.target.value})}style={{...ctrl,padding:2,height:34}}/></div>
+        <div style={{gridColumn:"1 / -1",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <span style={{fontSize:10.5,color:C.sub}}>{k==="hl"?"Moves headline, sub-headline & CTA together":k==="sh"?"Moves sub-headline & CTA":"Moves the CTA only"}</span>
+          {(el.dx||el.dy)?<button onClick={()=>setEl({...el,dx:0,dy:0})}style={{fontSize:11.5,fontWeight:700,color:C.coral,background:C.coral+"14",border:`1px solid ${C.coral}55`,borderRadius:7,padding:"4px 10px",cursor:"pointer"}}>↺ Reset position</button>:null}
+        </div>
         {extra}
       </div>}
     </div>;
@@ -3573,9 +3596,10 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
     </div>
     <div style={{display:"flex",gap:16,padding:16,flexWrap:"wrap"}}>
       <div style={{flex:"0 0 auto"}}>
-        <canvas ref={ref}style={{width:Math.min(300,sz.w/3),maxWidth:300,height:"auto",borderRadius:8,border:`1px solid ${C.line}`,boxShadow:"0 4px 14px rgba(0,0,0,.12)",display:"block",background:"#fff"}}/>
+        <canvas ref={ref}style={{width:Math.min(380,sz.w/2.4),maxWidth:380,height:"auto",borderRadius:8,border:`1px solid ${C.line}`,boxShadow:"0 4px 14px rgba(0,0,0,.12)",display:"block",background:"#fff"}}/>
         <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap"}}>
           <Btn small onClick={exportPng}>Download PNG</Btn>
+          <Btn small variant="ghost"onClick={()=>{const cv=ref.current;if(!cv)return;const u=cv.toDataURL("image/png");const w=window.open("");if(w){w.document.write('<title>Preview</title><body style="margin:0;background:#111;display:flex;align-items:center;justify-content:center;min-height:100vh"><img src="'+u+'" style="max-width:96vw;max-height:96vh;box-shadow:0 8px 40px rgba(0,0,0,.5)"></body>');}}}>↗ Full size</Btn>
           <Btn small variant="ghost"disabled={saving}onClick={saveToLib}>{saving?"Saving…":"Save to library"}</Btn>
         </div>
         {patch&&<div style={{marginTop:8}}><Btn small variant="dark"disabled={finalSaving}onClick={useAsFinal}><CheckCircle2 size={13}/>{finalSaving?"Setting…":"Use as final design"}</Btn></div>}
@@ -3657,11 +3681,12 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
           </div>
         </div>
         {/* divider rule */}
-        <div style={{gridColumn:"1 / -1",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-          <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.ink,cursor:"pointer"}}><input type="checkbox"checked={divider.on}onChange={e=>setDivider({...divider,on:e.target.checked})}/>Divider rule</label>
-          {divider.on&&<><input type="color"value={divider.color}onChange={e=>setDivider({...divider,color:e.target.value})}style={{width:34,height:28,border:`1px solid ${C.line}`,borderRadius:6,padding:2}}/>
-            <span style={{fontSize:11,color:C.sub}}>Y</span><input type="range"min={5}max={95}value={Math.round(divider.y*100)}onChange={e=>setDivider({...divider,y:+e.target.value/100})}/>
-            <span style={{fontSize:11,color:C.sub}}>W</span><input type="range"min={10}max={90}value={Math.round(divider.w*100)}onChange={e=>setDivider({...divider,w:+e.target.value/100})}/></>}
+        <div style={{gridColumn:"1 / -1",borderTop:`1px solid ${C.line}`,paddingTop:11,fontSize:11.5,fontWeight:800,color:C.ink}}>Divider rule</div>
+        <div style={{gridColumn:"1 / -1",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",background:C.paper,border:`1px solid ${C.line}`,borderRadius:9,padding:"9px 11px"}}>
+          <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:600,color:C.ink,cursor:"pointer"}}><input type="checkbox"checked={divider.on}onChange={e=>setDivider({...divider,on:e.target.checked})}/>Show a horizontal rule</label>
+          {divider.on&&<><span style={{fontSize:11,color:C.sub}}>Colour</span><input type="color"value={divider.color}onChange={e=>setDivider({...divider,color:e.target.value})}style={{width:34,height:28,border:`1px solid ${C.line}`,borderRadius:6,padding:2}}/>
+            <span style={{fontSize:11,color:C.sub}}>Height ↕</span><input type="range"min={5}max={95}value={Math.round(divider.y*100)}onChange={e=>setDivider({...divider,y:+e.target.value/100})}/>
+            <span style={{fontSize:11,color:C.sub}}>Width ↔</span><input type="range"min={10}max={90}value={Math.round(divider.w*100)}onChange={e=>setDivider({...divider,w:+e.target.value/100})}/></>}
         </div>
 
         {/* logo */}
