@@ -62,7 +62,7 @@ async function callClaude(system,prompt,expectJson){
 // Role-based default tab
 const ROLE_TAB={admin:"dashboard",business:"dashboard",content:"content",design:"design",brand:"dashboard"};
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v18 · logo picker = lockups only (+ Logo kind)";
+const BUILD="v19 · fix composer crash (items init order)";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -3301,17 +3301,6 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
 
   // products / mockups — MULTI (library only). A post can feature several products (per the brief).
   const[products,setProducts]=useState([{pid:nextPid(),id:"",scale:0.55,x:0.5,y:0.62}]);
-  // Route the design's library pick once items load: asset → background scene; product mockup (or unknown) → product layer.
-  const pickRouted=React.useRef(false);
-  React.useEffect(()=>{
-    if(pickRouted.current)return;
-    const pick=dsg.libraryPick;
-    if(!pick||!items||!items.length)return;
-    pickRouted.current=true;
-    const it=items.find(x=>x.id===pick);
-    if(it&&it.kind==="asset"){setBgMode("library");setBgId(pick);}
-    else{setProducts(ps=>{const a=[...ps];a[0]={...a[0],id:pick,...productZone(anchor,a.length,0)};return a;});} // product or unclassified → product slot, keep bg plain
-  },[items,dsg.libraryPick]);
   const[prodImgs,setProdImgs]=useState({});   // id -> Image
   const[shadow,setShadow]=useState(true);
 
@@ -3374,6 +3363,17 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
   },[anchor]);
   const addProduct=()=>setProducts(ps=>{const n=ps.length+1;const a=[...ps,{pid:nextPid(),id:"",scale:0.5,x:0.5,y:0.62}];return a.map((p,i)=>({...p,...productZone(anchor,n,i)}));});
   const updProduct=(pid,f)=>setProducts(ps=>ps.map(p=>p.pid===pid?{...p,...f}:p));
+  // Route the design's library pick once items load: asset → background scene; product mockup (or unknown) → product layer.
+  const pickRouted=React.useRef(false);
+  React.useEffect(()=>{
+    if(pickRouted.current)return;
+    const pick=dsg.libraryPick;
+    if(!pick||!items||!items.length)return;
+    pickRouted.current=true;
+    const it=items.find(x=>x.id===pick);
+    if(it&&it.kind==="asset"){setBgMode("library");setBgId(pick);}
+    else{setProducts(ps=>{const a=[...ps];a[0]={...a[0],id:pick,...productZone(anchor,a.length,0)};return a;});} // product or unclassified → product slot, keep bg plain
+  },[items,dsg.libraryPick]);
   const rmProduct=(pid)=>setProducts(ps=>ps.filter(p=>p.pid!==pid));
 
   const wrapFit=(ctx,el,maxW,basePx,maxLines)=>{
