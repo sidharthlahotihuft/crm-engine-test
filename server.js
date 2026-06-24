@@ -44,7 +44,7 @@ const db = async (sql, params = []) => {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const uid = () => Math.random().toString(36).slice(2, 11);
 const safeJson = (s) => { try { return JSON.parse(s); } catch (e) { return null; } };
-const SERVER_BUILD = "server-v29.9.1 · brand-reject (send back to copy) now also clears selectedCopyIdx so the asset returns as a clean editable draft; auth returns approval_slots + sub_brands; gated pipeline; category routing; notifications";
+const SERVER_BUILD = "server-v29.9.2 · campaigns now return created_by_name (brief creator) for row identifiers; send-back clears selectedCopyIdx; auth returns slots+sub_brands; gated pipeline; category routing; notifications";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -465,9 +465,11 @@ app.get("/api/campaigns", authMiddleware, async (req, res) => {
              a.key_insight     AS audience_insight,
              a.trigger_event,
              a.lifecycle_stage,
-             a.segment_code
+             a.segment_code,
+             u.name            AS created_by_name
       FROM   campaigns c
       LEFT JOIN audiences a ON c.audience_id = a.id
+      LEFT JOIN users u ON u.id = c.created_by
       ORDER BY
         CASE c.stage WHEN 'brief' THEN 1 WHEN 'content' THEN 2 WHEN 'brand_review' THEN 3 WHEN 'design' THEN 4 ELSE 5 END,
         c.updated_at DESC
