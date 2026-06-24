@@ -62,7 +62,7 @@ async function callClaude(system,prompt,expectJson){
 // Role-based default tab
 const ROLE_TAB={admin:"dashboard",business:"dashboard",content:"content",design:"design",brand:"dashboard"};
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v15 · templates + HUFT logo, divider, strikethrough";
+const BUILD="v18 · logo picker = lockups only (+ Logo kind)";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -2440,7 +2440,7 @@ function ImageLibraryTab({me,toast}){
       <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8}}>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           <div style={{display:"flex",border:`1px solid ${C.line}`,borderRadius:8,overflow:"hidden"}}>
-            {[["product","Product mockup"],["asset","Asset"]].map(([k,lbl])=>
+            {[["product","Product mockup"],["asset","Asset"],["logo","Logo / lockup"]].map(([k,lbl])=>
               <button key={k}onClick={()=>setUploadKind(k)}style={{padding:"7px 11px",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",background:uploadKind===k?C.coral:"#fff",color:uploadKind===k?"#fff":C.sub}}>{lbl}</button>)}
           </div>
           <Btn onClick={()=>fileRef.current&&fileRef.current.click()}><UploadIcon size={16}/>Upload images</Btn>
@@ -3280,8 +3280,9 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
   const role=(me&&me.role)||"";
   const isBusiness=role==="business";
   const dsg=(c.data&&c.data.design)||{};
-  const initSource = dsg.imageSource==="library"||dsg.libraryPick ? "library"
-                   : dsg.imageSource==="prompt" ? "generate" : "plain";
+  // Background defaults to plain/generate — a library pick is routed by kind once the library loads
+  // (asset → background scene; product mockup → product layer). See pick-routing effect below.
+  const initSource = dsg.imageSource==="prompt" ? "generate" : "plain";
 
   const[sizeIdx,setSizeIdx]=useState(0);
   const[template,setTemplate]=useState("");
@@ -3290,7 +3291,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
   // background source
   const[bgMode,setBgMode]=useState(initSource);
   const[bgColor,setBgColor]=useState("#102242");
-  const[bgId,setBgId]=useState(dsg.libraryPick||"");
+  const[bgId,setBgId]=useState("");
   const[bgImg,setBgImg]=useState(null);
   const[genImg,setGenImg]=useState(null);
   const[genPrompt,setGenPrompt]=useState((approvedPrompt&&approvedPrompt.prompt)||"");
@@ -3300,6 +3301,17 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
 
   // products / mockups — MULTI (library only). A post can feature several products (per the brief).
   const[products,setProducts]=useState([{pid:nextPid(),id:"",scale:0.55,x:0.5,y:0.62}]);
+  // Route the design's library pick once items load: asset → background scene; product mockup (or unknown) → product layer.
+  const pickRouted=React.useRef(false);
+  React.useEffect(()=>{
+    if(pickRouted.current)return;
+    const pick=dsg.libraryPick;
+    if(!pick||!items||!items.length)return;
+    pickRouted.current=true;
+    const it=items.find(x=>x.id===pick);
+    if(it&&it.kind==="asset"){setBgMode("library");setBgId(pick);}
+    else{setProducts(ps=>{const a=[...ps];a[0]={...a[0],id:pick,...productZone(anchor,a.length,0)};return a;});} // product or unclassified → product slot, keep bg plain
+  },[items,dsg.libraryPick]);
   const[prodImgs,setProdImgs]=useState({});   // id -> Image
   const[shadow,setShadow]=useState(true);
 
@@ -3333,6 +3345,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
   // kind-aware lists: classified images go to the right picker; unclassified show in both
   const productItems=items.filter(i=>i.kind==="product"||!i.kind);
   const assetItems=items.filter(i=>i.kind==="asset"||!i.kind);
+  const logoItems=items.filter(i=>i.kind==="logo");
   const[finalSaving,setFinalSaving]=useState(false);
 
   const reloadLib=React.useCallback(()=>{setLoadingItems(true);api.get("/api/image-library").then(r=>setItems(r||[])).catch(()=>{}).finally(()=>setLoadingItems(false));},[]);
@@ -3345,7 +3358,21 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
     need.forEach(id=>api.get("/api/image-library/"+id).then(r=>loadImage(r.file_data)).then(im=>{if(on)setProdImgs(m=>({...m,[id]:im}));}).catch(()=>{}));
     return()=>{on=false;};},[products,prodImgs]);
 
-  const addProduct=()=>setProducts(ps=>[...ps,{pid:nextPid(),id:"",scale:0.5,x:0.5,y:0.62}]);
+  // Free-zone placement: keep products clear of the text band based on the headline anchor.
+  const productZone=(anc,n,i)=>{
+    const [v,h]=(anc||"top-left").split("-");
+    let cy=v==="top"?0.66:v==="bottom"?0.34:0.62;
+    let cx=h==="left"?0.66:h==="right"?0.34:0.5;
+    if(v==="middle"){cy=0.6;cx=h==="left"?0.72:h==="right"?0.28:0.5;}
+    if(n>1){const spread=0.18,span=(n-1)*spread;cx=cx-span/2+i*spread;cx=Math.max(0.16,Math.min(0.84,cx));}
+    return {x:cx,y:cy};
+  };
+  const firstAnchor=React.useRef(true);
+  React.useEffect(()=>{
+    if(firstAnchor.current){firstAnchor.current=false;return;}
+    setProducts(ps=>ps.map((p,i)=>({...p,...productZone(anchor,ps.length,i)})));
+  },[anchor]);
+  const addProduct=()=>setProducts(ps=>{const n=ps.length+1;const a=[...ps,{pid:nextPid(),id:"",scale:0.5,x:0.5,y:0.62}];return a.map((p,i)=>({...p,...productZone(anchor,n,i)}));});
   const updProduct=(pid,f)=>setProducts(ps=>ps.map(p=>p.pid===pid?{...p,...f}:p));
   const rmProduct=(pid)=>setProducts(ps=>ps.filter(p=>p.pid!==pid));
 
@@ -3537,6 +3564,13 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
       <ImageIcon size={15}color={C.coral}/><span style={{fontWeight:800,fontSize:13.5,color:C.ink}}>Creative Composer</span>
       <span style={{fontSize:11.5,color:C.sub}}>Real products + image copy · exact export</span>
     </div>
+    <div style={{padding:"12px 16px",borderBottom:`1px solid ${C.line}`,background:C.paper}}>
+      <div style={{fontSize:11.5,fontWeight:800,color:C.ink,marginBottom:7}}>Start from a template <span style={{fontWeight:500,color:C.sub}}>· lays out logo, copy & colours — tweak after</span></div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        {[["","Blank"],["bigOffer","Big-% Offer"],["multiPack","Multi-pack Cluster"],["service","Service / Price-drop"]].map(([k,lbl])=>
+          <button key={k}onClick={()=>applyTemplate(k)}style={{padding:"8px 14px",fontSize:12.5,fontWeight:700,borderRadius:9,cursor:"pointer",border:`1.5px solid ${template===k?C.coral:C.line}`,background:template===k?C.coral:"#fff",color:template===k?"#fff":C.ink}}>{lbl}</button>)}
+      </div>
+    </div>
     <div style={{display:"flex",gap:16,padding:16,flexWrap:"wrap"}}>
       <div style={{flex:"0 0 auto"}}>
         <canvas ref={ref}style={{width:Math.min(300,sz.w/3),maxWidth:300,height:"auto",borderRadius:8,border:`1px solid ${C.line}`,boxShadow:"0 4px 14px rgba(0,0,0,.12)",display:"block",background:"#fff"}}/>
@@ -3547,12 +3581,6 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
         {patch&&<div style={{marginTop:8}}><Btn small variant="dark"disabled={finalSaving}onClick={useAsFinal}><CheckCircle2 size={13}/>{finalSaving?"Setting…":"Use as final design"}</Btn></div>}
       </div>
       <div style={{flex:1,minWidth:260,display:"grid",gridTemplateColumns:"1fr 1fr",gap:11,alignContent:"start"}}>
-        <div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Template (lays out a starting point — tweak freely after)</label><select value={template}onChange={e=>applyTemplate(e.target.value)}style={ctrl}>
-          <option value="">— none (blank composer) —</option>
-          <option value="bigOffer">Big-% Offer · brand colour</option>
-          <option value="multiPack">Multi-pack Cluster · plain</option>
-          <option value="service">Service / Price-drop</option>
-        </select></div>
         <div><label style={fieldL}>Size</label><select value={sizeIdx}onChange={e=>setSizeIdx(+e.target.value)}style={ctrl}>{COMPOSER_SIZES.map((s,i)=><option key={i}value={i}>{s.label} ({s.w}×{s.h})</option>)}</select></div>
         <div><label style={fieldL}>Source · keep or switch</label><select value={bgMode}onChange={e=>setBgMode(e.target.value)}style={ctrl}>
           <option value="plain">Plain background + product</option>
@@ -3644,7 +3672,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
         {huftMode!=="none"&&slider("HUFT size",Math.round(huftScale*100),10,45,v=>setHuftScale(v/100),v=>v+"%")}
 
         <div style={{gridColumn:"1 / -1",borderTop:`1px solid ${C.line}`,paddingTop:11,fontSize:11.5,fontWeight:800,color:C.ink}}>Logo (sub-brand)</div>
-        <div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Logo image</label><select value={logoId}onChange={e=>setLogoId(e.target.value)}style={ctrl}><option value="">— none —</option>{items.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select></div>
+        <div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Logo image</label><select value={logoId}onChange={e=>setLogoId(e.target.value)}style={ctrl}><option value="">— none —</option>{logoItems.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select>{logoItems.length===0&&<div style={{fontSize:11,color:C.sub,marginTop:4}}>No sub-brand lockups yet — upload them in Image library as “Logo / lockup”. (HUFT master logo is built-in above.)</div>}</div>
         {logoId&&slider("Logo size",Math.round(logoScale*100),8,45,v=>setLogoScale(v/100),v=>v+"%")}
         {logoId&&<div><label style={fieldL}>Logo corner</label><select value={logoCorner}onChange={e=>setLogoCorner(e.target.value)}style={ctrl}><option value="top-left">Top left</option><option value="top-right">Top right</option><option value="bottom-left">Bottom left</option><option value="bottom-right">Bottom right</option></select></div>}
       </div>

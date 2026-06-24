@@ -829,7 +829,7 @@ app.post("/api/image-library", authMiddleware, roles("admin", "brand", "design",
        RETURNING id, file_name, file_type, product, category, tags, description, notes, dimensions_cm, kind, uploaded_by, uploaded_at`,
       [file_name || null, file_data, mime, analysis.product, analysis.category,
        JSON.stringify(analysis.tags), analysis.description, notes || null,
-       dimensions_cm || null, (kind === "product" ? "product" : kind === "asset" ? "asset" : null), req.user.id]
+       dimensions_cm || null, (["product","asset","logo"].includes(kind) ? kind : null), req.user.id]
     );
     res.json(rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
