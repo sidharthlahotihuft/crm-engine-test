@@ -844,11 +844,13 @@ app.post("/api/image-library", authMiddleware, roles("admin", "brand", "design",
 // Generate a background/scene image from a text prompt (Composer "Generate image").
 // body: { prompt, negativePrompt?, aspectRatio? }  →  { image: dataURL }
 app.post("/api/generate-image", authMiddleware, roles("admin", "brand", "design", "business"), async (req, res) => {
-  const { prompt, negativePrompt, aspectRatio, reserveProductSpace } = req.body || {};
+  const { prompt, negativePrompt, aspectRatio, reserveProductSpace, productCount } = req.body || {};
   if (!prompt || !String(prompt).trim()) return res.status(400).json({ error: "prompt required" });
+  const n = Math.max(1, Math.min(3, parseInt(productCount, 10) || 1));
   const textSpace = "Composition for a marketing creative: keep a generous, clean, low-detail area (roughly one third of the frame — usually the top or left) as negative space so a large headline, sub-headline and a button can be overlaid with high legibility. Do NOT render any text, words, numbers, logos, badges or watermarks in the image.";
+  const spot = n === 1 ? "a clean, well-lit, uncluttered spot" : `${n} clean, well-lit, uncluttered spots arranged together`;
   const productSpace = reserveProductSpace
-    ? "Leave a clean, well-lit, uncluttered spot (typically the lower portion or one side, opposite the text area) where a real product packshot will be placed on top afterwards — keep that spot simple and free of clutter. IMPORTANT: do NOT draw, render, invent or imply any product, package, pouch, box, bottle, can, label or packaging anywhere in the image — only the empty scene/background and props."
+    ? `Leave ${spot} (typically the lower portion or one side, opposite the text area) where ${n>1?"real product packshots":"a real product packshot"} will be placed on top afterwards — keep that area simple and free of clutter. IMPORTANT: do NOT draw, render, invent or imply any product, package, pouch, box, bottle, can, label or packaging anywhere in the image — only the empty scene/background and props.`
     : "";
   let full = [String(prompt), productSpace, textSpace].filter(Boolean).join("\n\n");
   if (negativePrompt) full += `\n\nAvoid: ${negativePrompt}`;

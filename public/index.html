@@ -62,7 +62,7 @@ async function callClaude(system,prompt,expectJson){
 // Role-based default tab
 const ROLE_TAB={admin:"dashboard",business:"dashboard",content:"content",design:"design",brand:"dashboard"};
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v26.9 · AI scene reserves a clean product spot + text space; real product PNG composited on top (exact label, never AI-recreated)";
+const BUILD="v27.0 · AI gen injects HUFT visual guidelines + design rules, auto-picks brief product, up to 3 products composited on top, product moved off right rail in generate mode";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -551,6 +551,13 @@ const isArchived=(c)=>!!(c&&c.data&&c.data.archived);
 // Map a campaign stage to the tab that should open for it
 const stageToTab=(s)=>s==="content"?"content":s==="design"?"design":s==="done"?"done":"brief";
 const activeRuleText=(rules)=>rules.filter(r=>r.active).map(r=>"- "+r.text).join("\n")||"(none yet)";
+// HUFT image/photography guidelines (distilled from the brand Image Guidelines) — injected into every AI scene generation.
+const HUFT_VISUAL_GUIDELINES=`HUFT VISUAL GUIDELINES — apply to the generated scene:
+- Feeling: warm, real, specific, India-grounded — a real moment you walked into, not a staged studio shot. The core test is "belonging", not aspiration. Avoid stock/sterile looks, white-studio portraits, glossy perfection, and Western pet-brand aesthetics.
+- Setting & light: Indian homes, balconies, streets, parks; natural Indian daylight (soft, chai-coloured morning light is ideal); lived-in, real textures; realistic directional lighting and natural depth of field.
+- Any pet must look like a real, specific individual (never clip-art, toy-like or cute-ified AI): anatomically correct with the right number of paws, toes, ears and eyes; natural varied fur (no plastic sheen); eyes symmetrical and naturally lit with a dark pupil (no glowing); shot at the pet's eye level. Expression: relaxed, happy, curious, alert or playful. Include Indian-breed (Indie/INDog) and senior dogs where natural. Never scared, cowering, aggressive, baring teeth, or a human-like smile.
+- Human–pet bond (when both are present): genuine physical closeness and habitual touch; the pet is the emotional anchor and the dominant subject (≈40%+ of the frame); the human is a supporting character, often looking at the pet.
+- Do NOT render any packaging, product packs, labels, sub-brand logos, badges, text, prices or watermarks — these are composited separately as approved artwork.`;
 
 /* ===== SVG icons ========================================================= */
 function Svg({size=18,color,style,children}){return<svg width={size}height={size}viewBox="0 0 24 24"fill="none"stroke={color||"currentColor"}strokeWidth="2"strokeLinecap="round"strokeLinejoin="round"style={style}>{children}</svg>;}
@@ -3353,7 +3360,7 @@ const BRAND_PALETTES=[
 function loadImage(src){return new Promise((res,rej)=>{const im=new Image();im.crossOrigin="anonymous";im.onload=()=>res(im);im.onerror=rej;im.src=src;});}
 let _pid=0;const nextPid=()=>"p"+(++_pid);
 
-function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
+function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   const ref=React.useRef(null);
   const role=(me&&me.role)||"";
   const isBusiness=role==="business";
@@ -3425,6 +3432,17 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
   const productItems=items.filter(i=>i.kind==="product"||!i.kind);
   const assetItems=items.filter(i=>i.kind==="asset"||!i.kind);
   const logoItems=items.filter(i=>i.kind==="logo");
+  // Auto-pick the brief's product into the first empty slot once the library loads
+  const autoPickedRef=React.useRef(false);
+  React.useEffect(()=>{
+    if(autoPickedRef.current||!productItems.length||!(c&&c.product))return;
+    if(products.some(p=>p.id))return; // user already picked something
+    const want=String(c.product||"").toLowerCase();
+    const norm=s=>String(s||"").toLowerCase();
+    const match=productItems.find(i=>{const n=norm(i.product);return n&&(want.includes(n)||n.includes(want));})
+              ||productItems.find(i=>{const n=norm(i.product);return n&&want.split(/\s+/).some(w=>w.length>3&&n.includes(w));});
+    if(match){autoPickedRef.current=true;setProducts(ps=>{const a=[...ps];a[0]={...(a[0]||{pid:nextPid(),scale:0.5,x:0.5,y:0.62}),id:match.id};return a;});}
+  },[productItems,c&&c.product]);
   const[finalSaving,setFinalSaving]=useState(false);
 
   // ===== Undo / redo history (snapshots editable state; excludes loaded image bitmaps) =====
@@ -3705,8 +3723,10 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
     if(!genPrompt.trim()){setGenErr("No prompt available to generate from.");return;}
     setGenBusy(true);setGenErr("");
     try{
-      const hasProduct=products.some(p=>p.id); // reserve a clean spot for the real packshot
-      const r=await api.post("/api/generate-image",{prompt:genPrompt,negativePrompt:genNeg,aspectRatio:sz.ar,reserveProductSpace:hasProduct});
+      const hasProduct=products.some(p=>p.id); // reserve clean spots for the real packshots
+      const rulesText=(promptRules&&promptRules.length)?activeRuleText(promptRules):"";
+      const fullPrompt=[genPrompt.trim(),HUFT_VISUAL_GUIDELINES,rulesText&&rulesText!=="(none yet)"?("HUFT DESIGN RULES — also follow:\n"+rulesText):""].filter(Boolean).join("\n\n");
+      const r=await api.post("/api/generate-image",{prompt:fullPrompt,negativePrompt:genNeg,aspectRatio:sz.ar,reserveProductSpace:hasProduct,productCount:products.filter(p=>p.id).length||1});
       const im=await loadImage(r.image);setGenImg(im);setBgMode("generate");
       setGenUsedProduct(false); // product is composited as the exact PNG, never AI-recreated
       if(toast)toast(hasProduct?"Scene generated ✓ — your exact product PNG sits on top":"Image generated ✓ — copy kept on top","success");
@@ -3853,8 +3873,19 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
               </>}
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             <Btn small disabled={genBusy}onClick={runGenerate}>{genBusy?"Generating…":"Generate image"}</Btn>
-            <span style={{fontSize:11,color:C.sub}}>{isBusiness?"One-click":"Products & copy stay on top"}</span>
+            <span style={{fontSize:11,color:C.sub}}>{isBusiness?"One-click":"Exact product PNG on top"}</span>
           </div>
+          {!isBusiness&&<div style={{borderTop:`1px solid ${C.line}`,paddingTop:8}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+              <span style={{fontSize:11,fontWeight:800,color:C.ink}}>Products on top — exact PNG{products.length>1?" · "+products.length:""}</span>
+              {products.length<3&&<button onClick={addProduct}style={{border:"none",background:"none",color:C.coral,fontSize:11,fontWeight:700,cursor:"pointer",padding:0}}>+ Add</button>}
+            </div>
+            {products.map((p,idx)=><div key={p.pid}style={{display:"flex",gap:6,alignItems:"center",marginBottom:6}}>
+              <select value={p.id}onChange={e=>updProduct(p.pid,{id:e.target.value})}style={{...ctrl,flex:1,minWidth:0}}><option value="">— product {idx+1} —</option>{productItems.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select>
+              {products.length>1&&<button onClick={()=>rmProduct(p.pid)}title="Remove"style={{border:"none",background:"none",color:"#B91C1C",fontSize:16,fontWeight:700,cursor:"pointer",padding:"0 4px",lineHeight:1}}>×</button>}
+            </div>)}
+            <div style={{fontSize:10.5,color:C.sub}}>Up to 3. The scene auto-picks your brief product and leaves clean space; exact packshots composite on top.</div>
+          </div>}
           {genErr&&(()=>{
             const low=genErr.toLowerCase();
             const isQuota=low.includes("quota")||low.includes("limit: 0")||low.includes("billing")||low.includes("free_tier");
@@ -3898,6 +3929,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
       <div style={{width:360,flexShrink:0,overflowY:"auto",borderLeft:`1px solid ${C.line}`,background:"#fff",padding:16}}>
         <div style={{fontSize:11,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.6,marginBottom:10}}>Content &amp; styling</div>
         <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:11,alignContent:"start"}}>
+        {bgMode!=="generate"&&<>
         {/* products / mockups — multi, from library only */}
         <div style={{gridColumn:"1 / -1",borderTop:`1px solid ${C.line}`,paddingTop:11,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <span style={{fontSize:11.5,fontWeight:800,color:C.ink}}>Products / mockups{products.length>1?" · "+products.length:""}</span>
@@ -3922,6 +3954,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
         </div>)}
         <label style={{gridColumn:"1 / -1",display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.ink,cursor:"pointer"}}><input type="checkbox"checked={autoFit}onChange={e=>setAutoFit(e.target.checked)}/>Auto-fit products into free space <span style={{fontSize:11,color:C.sub}}>(scales & places to avoid overlap — turn off for manual size/position)</span></label>
         <label style={{gridColumn:"1 / -1",display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.ink,cursor:"pointer"}}><input type="checkbox"checked={shadow}onChange={e=>setShadow(e.target.checked)}/>Contact shadow under products</label>
+        </>}
 
         {/* image copy */}
         <div style={{gridColumn:"1 / -1",borderTop:`1px solid ${C.line}`,paddingTop:11,fontSize:11.5,fontWeight:800,color:C.ink}}>Image copy</div>
@@ -4142,7 +4175,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
         {["design","admin"].includes(me.role)&&<div>
           <div style={{marginTop:14,marginBottom:6,fontSize:13,fontWeight:800,color:C.ink}}>Finish the design — two ways</div>
           <div style={{fontSize:12.5,color:C.sub,marginBottom:4}}>Either build it in the composer below, <b>or</b> upload your own design (file / link) at the bottom. You only need one.</div>
-          {isOpen&&copy&&<CreativeComposer c={c}copy={copy}me={me}patch={patch}d={d}approvedPrompt={approvedPrompt}toast={(typeof toast!=="undefined"?toast:null)}/>}
+          {isOpen&&copy&&<CreativeComposer c={c}copy={copy}me={me}patch={patch}d={d}approvedPrompt={approvedPrompt}promptRules={promptRules}toast={(typeof toast!=="undefined"?toast:null)}/>}
           {(approvedPrompt||d.libraryPick||d.finalFile)&&<FinalDesignUpload c={c}d={d}patch={patch}me={me}/>}
         </div>}
         <FeedbackBar stage="design"by={me.name}onSave={saveFeedback}/>
