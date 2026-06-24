@@ -62,7 +62,7 @@ async function callClaude(system,prompt,expectJson){
 // Role-based default tab
 const ROLE_TAB={admin:"dashboard",business:"dashboard",content:"content",design:"design",brand:"dashboard"};
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v27.1 · AI scene reserves the actual text area + a real product surface; product composited grounded at proper proportion (not a flat paste)";
+const BUILD="v27.2 · manual product placement in generate mode + Enter-for-newline in headline/sub + tidier left generate panel";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -3552,15 +3552,25 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
 
   const wrapFit=(ctx,el,maxW,basePx,maxLines)=>{
     let px=Math.round(basePx*(el.size||1));const fam="'"+el.font+"'";
+    const paras=String(el.text||"").split("\n"); // explicit line breaks are honoured
+    const minLines=paras.filter(p=>p.length).length||1;
+    const cap=Math.max(maxLines,minLines); // never collapse the user's manual breaks
     while(px>12){
       ctx.font=(el.bold?"800":"400")+" "+px+"px "+fam;try{ctx.letterSpacing=(el.kern||0)+"px";}catch(e){}
-      const words=(el.text||"").split(/\s+/).filter(Boolean);const lines=[];let line="";
-      for(const w of words){const t=line?line+" "+w:w;if(ctx.measureText(t).width>maxW&&line){lines.push(line);line=w;}else line=t;}
-      if(line)lines.push(line);
-      if(lines.length<=maxLines)return{lines,px};
+      const lines=[];
+      for(const para of paras){
+        const words=para.split(/\s+/).filter(Boolean);
+        if(!words.length)continue;
+        let line="";
+        for(const w of words){const t=line?line+" "+w:w;if(ctx.measureText(t).width>maxW&&line){lines.push(line);line=w;}else line=t;}
+        if(line)lines.push(line);
+      }
+      if(lines.length<=cap)return{lines,px};
       px-=4;
     }
-    return{lines:(el.text||"").split(/\s+/).filter(Boolean).length?[el.text]:[],px};
+    const fallback=[];
+    for(const para of paras){const t=para.trim();if(t)fallback.push(t);}
+    return{lines:fallback.length?fallback:[],px};
   };
   const drawBgImage=(ctx,img)=>{const s=Math.max(sz.w/img.width,sz.h/img.height);const dw=img.width*s,dh=img.height*s;ctx.drawImage(img,(sz.w-dw)/2,(sz.h-dh)/2,dw,dh);};
 
@@ -3783,7 +3793,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
         <ChevronDown size={16}color={C.sub}style={{transform:isOpen?"rotate(180deg)":"none",transition:"transform .15s",flexShrink:0}}/>
       </button>
       {isOpen&&<div style={{padding:"10px 12px",display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:10,borderTop:`1px solid ${C.line}`}}>
-        <div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Text</label><input value={el.text}onChange={e=>setEl({...el,text:e.target.value})}style={ctrl}/></div>
+        <div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Text <span style={{fontWeight:400,textTransform:"none",letterSpacing:0,color:C.sub}}>· press Enter for a new line</span></label><textarea value={el.text}onChange={e=>setEl({...el,text:e.target.value})}rows={2}style={{...ctrl,resize:"vertical",fontFamily:"inherit"}}/></div>
         <div><label style={fieldL}>Font</label><select value={el.font}onChange={e=>setEl({...el,font:e.target.value})}style={ctrl}>{COMPOSER_FONTS.map(f=><option key={f}value={f}>{f}</option>)}</select></div>
         <div><label style={fieldL}>Weight</label><button onClick={()=>setEl({...el,bold:!el.bold})}style={{...ctrl,cursor:"pointer",textAlign:"left",fontWeight:el.bold?800:400,background:el.bold?C.coral+"18":"#fff",borderColor:el.bold?C.coral:C.line,color:el.bold?C.coral:C.sub}}>{el.bold?"Bold ✓":"Regular"}</button></div>
         {slider("Font size",Math.round(el.size*100),50,200,sizeSet?(v=>sizeSet(v/100)):(v=>setEl({...el,size:v/100})),v=>v+"%")}
@@ -3880,20 +3890,25 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
                 <div><label style={fieldL}>Prompt (scene / background)</label><textarea value={genPrompt}onChange={e=>setGenPrompt(e.target.value)}rows={2}style={{...ctrl,resize:"vertical"}}placeholder="e.g. warm rustic kitchen counter, soft morning light"/></div>
                 <div><label style={fieldL}>Avoid (optional)</label><input value={genNeg}onChange={e=>setGenNeg(e.target.value)}style={ctrl}placeholder="text, watermarks, other products"/></div>
               </>}
-          <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            <Btn small disabled={genBusy}onClick={runGenerate}>{genBusy?"Generating…":"Generate image"}</Btn>
-            <span style={{fontSize:11,color:C.sub}}>{isBusiness?"One-click":"Exact product PNG on top"}</span>
-          </div>
+          <Btn small disabled={genBusy}onClick={runGenerate}style={{width:"100%",justifyContent:"center"}}>{genBusy?"Generating…":"Generate scene"}</Btn>
           {!isBusiness&&<div style={{borderTop:`1px solid ${C.line}`,paddingTop:8}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <span style={{fontSize:11,fontWeight:800,color:C.ink}}>Products on top — exact PNG{products.length>1?" · "+products.length:""}</span>
               {products.length<3&&<button onClick={addProduct}style={{border:"none",background:"none",color:C.coral,fontSize:11,fontWeight:700,cursor:"pointer",padding:0}}>+ Add</button>}
             </div>
-            {products.map((p,idx)=><div key={p.pid}style={{display:"flex",gap:6,alignItems:"center",marginBottom:6}}>
-              <select value={p.id}onChange={e=>updProduct(p.pid,{id:e.target.value})}style={{...ctrl,flex:1,minWidth:0}}><option value="">— product {idx+1} —</option>{productItems.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select>
-              {products.length>1&&<button onClick={()=>rmProduct(p.pid)}title="Remove"style={{border:"none",background:"none",color:"#B91C1C",fontSize:16,fontWeight:700,cursor:"pointer",padding:"0 4px",lineHeight:1}}>×</button>}
+            <div style={{fontSize:10.5,color:C.sub,margin:"2px 0 8px"}}>Up to 3. Auto-picks your brief product; the exact packshot composites onto the scene.</div>
+            {products.map((p,idx)=><div key={p.pid}style={{marginBottom:8}}>
+              <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:p.id&&!autoFit?6:0}}>
+                <select value={p.id}onChange={e=>updProduct(p.pid,{id:e.target.value})}style={{...ctrl,flex:1,minWidth:0}}><option value="">— product {idx+1} —</option>{productItems.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select>
+                {products.length>1&&<button onClick={()=>rmProduct(p.pid)}title="Remove"style={{border:"none",background:"none",color:"#B91C1C",fontSize:16,fontWeight:700,cursor:"pointer",padding:"0 4px",lineHeight:1}}>×</button>}
+              </div>
+              {p.id&&!autoFit&&<div style={{display:"grid",gap:6}}>
+                {slider("Size",Math.round(p.scale*100),15,100,v=>updProduct(p.pid,{scale:v/100}),v=>v+"%")}
+                {slider("Left–right",Math.round(p.x*100),0,100,v=>updProduct(p.pid,{x:v/100}),v=>v+"%")}
+                {slider("Up–down",Math.round(p.y*100),5,95,v=>updProduct(p.pid,{y:v/100}),v=>v+"%")}
+              </div>}
             </div>)}
-            <div style={{fontSize:10.5,color:C.sub}}>Up to 3. The scene auto-picks your brief product and leaves clean space; exact packshots composite on top.</div>
+            {products.some(p=>p.id)&&<label style={{display:"flex",alignItems:"center",gap:7,fontSize:12,color:C.ink,cursor:"pointer"}}><input type="checkbox"checked={autoFit}onChange={e=>setAutoFit(e.target.checked)}/>Auto-place on the scene <span style={{fontSize:10.5,color:C.sub}}>(uncheck to position by hand)</span></label>}
           </div>}
           {genErr&&(()=>{
             const low=genErr.toLowerCase();
@@ -3927,8 +3942,8 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
             const label=editCopy==="hl"?"headline":editCopy==="sh"?"sub-headline":"button";
             return<div style={{position:"absolute",left:"3%",width:"94%",top:top+"%",height:height+"%",minHeight:38,zIndex:6}}>
               <textarea autoFocus value={cur.text}onChange={e=>setCur({...cur,text:e.target.value})}
-                onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();setEditCopy(null);}if(e.key==="Escape"){e.preventDefault();setEditCopy(null);}}}
-                onBlur={()=>setEditCopy(null)}placeholder={"Edit "+label+"…"}
+                onKeyDown={e=>{if(e.key==="Escape"){e.preventDefault();setEditCopy(null);}}}
+                onBlur={()=>setEditCopy(null)}placeholder={"Edit "+label+"… (Enter = new line, Esc = done)"}
                 style={{width:"100%",height:"100%",resize:"none",border:`2px solid ${C.coral}`,borderRadius:8,background:"rgba(255,255,255,.97)",padding:"6px 9px",fontSize:15,fontWeight:700,color:C.ink,boxShadow:"0 8px 24px rgba(0,0,0,.20)",textAlign:"center",fontFamily:"inherit",outline:"none",boxSizing:"border-box",lineHeight:1.2}}/>
             </div>;
           })()}
