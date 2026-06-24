@@ -103,7 +103,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.9.8 · clarity + fixes — every workflow tab now shows an action-needed count (Brief/Copy/Design/etc.); Copy rows show real status (Needs copy / Pick one of N / Sent back) instead of a misleading Copy approved; Approve no longer full-reloads the page (refreshes in place — fixes the logout) so approvals complete and Alerts populate; reference-image upload now downscales big photos so they actually show. Carries v29.9.7 identifiers + calendar";
+const BUILD="v29.10.1 · Dashboard time-period selector — defaults to Last 7 days, with Last 30/90, All time, and a Custom date range (filters the overview by asset creation date). Stat cards + activity scope to the window; total-briefs and the dedicated Approvals/My-Tasks tabs stay all-time. Carries v29.10 push preview + sent-back reason/resend gate + comment edit";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -1174,7 +1174,7 @@ function App(){
     }
     return{created,failed,errors};
   };
-  const open=(id,jt)=>{const c=campaigns.find(x=>x.id===id);setActiveId(id);setTab(jt||(c?(c.stage==="done"?"done":c.stage==="content"?"content":c.stage==="design"?"design":"brief"):"brief"));};
+  const open=(id,jt)=>{const c=campaigns.find(x=>x.id===id);const stageTab=c?(c.stage==="done"?"done":(c.stage==="content"||c.stage==="brand_review")?"content":c.stage==="design"?"design":"brief"):"brief";setActiveId(id);setTab(jt||stageTab);};
 
   // Pending counts per stage (for nav badges)
   const scoped=scopeCampaigns(campaigns,me);
@@ -1579,9 +1579,33 @@ function MyTasksTab({campaigns,onOpen,me,team}){
       </Card>}
   </div>;
 }
-function Dashboard({campaigns,onNew,onOpen,me,setTab,reload}){
+function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
   const[view,setView]=useState("list");
   const[approving,setApproving]=useState("");
+  const[period,setPeriod]=useState("7d");
+  const[cFrom,setCFrom]=useState("");
+  const[cTo,setCTo]=useState("");
+  // ── Time-period filter (by asset creation date) ──
+  const periodRange=(()=>{
+    if(period==="all")return null;
+    if(period==="custom"){
+      return {f:cFrom?new Date(cFrom+"T00:00:00"):null, t:cTo?new Date(cTo+"T23:59:59"):null};
+    }
+    const days=period==="7d"?7:period==="30d"?30:90;
+    const f=new Date();f.setHours(0,0,0,0);f.setDate(f.getDate()-(days-1));
+    return {f,t:null};
+  })();
+  const inRange=(c)=>{
+    if(!periodRange)return true;
+    const d=c.created_at?new Date(c.created_at):null;
+    if(!d)return true; // keep undated assets visible
+    if(periodRange.f&&d<periodRange.f)return false;
+    if(periodRange.t&&d>periodRange.t)return false;
+    return true;
+  };
+  // Overview (stat cards + activity lists) is scoped to the period; approvals stay unscoped so nothing actionable is hidden.
+  const campaigns=allCampaigns.filter(inRange);
+  const periodLabel=period==="all"?"all time":period==="custom"?((cFrom||"…")+" → "+(cTo||"…")):period==="7d"?"last 7 days":period==="30d"?"last 30 days":"last 90 days";
   const approveGate=async(c,action)=>{setApproving(c.id+action);
     try{
       const ep=action==="copy"?"brand-approve":action==="design"?"design-approve":action==="asset"?"asset-approve":"final-approve";
@@ -1674,7 +1698,22 @@ function Dashboard({campaigns,onNew,onOpen,me,setTab,reload}){
   return<div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:18}}>
       <div><Eyebrow>Dashboard</Eyebrow><h1 style={{margin:"4px 0 0",fontSize:26,fontWeight:800}}>Hi {firstName},</h1><div style={{fontSize:13.5,color:C.sub,marginTop:3}}>Your tasks and approvals — here's where each one stands.</div></div>
-      <div style={{display:"flex",gap:8,alignItems:"center"}}>
+      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
+        <div style={{display:"flex",alignItems:"center",gap:6,border:`1px solid ${C.line}`,borderRadius:8,padding:"3px 8px",background:"#fff"}}>
+          <CalendarIcon size={13}color={C.sub}/>
+          <select value={period}onChange={e=>setPeriod(e.target.value)}style={{border:"none",background:"transparent",fontSize:12.5,fontWeight:600,color:C.ink,outline:"none",cursor:"pointer"}}>
+            <option value="7d">Last 7 days</option>
+            <option value="30d">Last 30 days</option>
+            <option value="90d">Last 90 days</option>
+            <option value="all">All time</option>
+            <option value="custom">Custom range…</option>
+          </select>
+          {period==="custom"&&<>
+            <input type="date"value={cFrom}max={cTo||undefined}onChange={e=>setCFrom(e.target.value)}style={{border:`1px solid ${C.line}`,borderRadius:6,padding:"3px 6px",fontSize:12,color:C.ink,outline:"none"}}/>
+            <span style={{color:C.sub,fontSize:12}}>→</span>
+            <input type="date"value={cTo}min={cFrom||undefined}onChange={e=>setCTo(e.target.value)}style={{border:`1px solid ${C.line}`,borderRadius:6,padding:"3px 6px",fontSize:12,color:C.ink,outline:"none"}}/>
+          </>}
+        </div>
         <div style={{display:"flex",border:`1px solid ${C.line}`,borderRadius:8,overflow:"hidden"}}>
           <button onClick={()=>setView("list")}style={{padding:"6px 14px",border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:view==="list"?C.navy:"#fff",color:view==="list"?"#fff":C.sub,display:"flex",alignItems:"center",gap:5}}><LayoutDashboard size={13}/>List</button>
           <button onClick={()=>setView("calendar")}style={{padding:"6px 14px",border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:view==="calendar"?C.navy:"#fff",color:view==="calendar"?"#fff":C.sub,display:"flex",alignItems:"center",gap:5}}><CalendarIcon size={13}/>Calendar</button>
@@ -1682,8 +1721,9 @@ function Dashboard({campaigns,onNew,onOpen,me,setTab,reload}){
         {canCreateBrief(me)&&<Btn onClick={onNew}><Plus size={16}/>New asset</Btn>}
       </div>
     </div>
+    <div style={{fontSize:12,color:C.sub,marginBottom:10,marginTop:-8}}>Showing assets created in the <b style={{color:C.ink}}>{periodLabel}</b> · {campaigns.length} of {allCampaigns.length}</div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:18}}>
-      {stat.map(s=><Card key={s.k}style={{padding:16}}><div style={{fontSize:30,fontWeight:800,color:s.color}}>{counts[s.k]||0}</div><div style={{fontSize:13,color:C.sub,fontWeight:600}}>{s.label}</div></Card>)}
+      {stat.map(s=><Card key={s.k}style={{padding:16}}><div style={{fontSize:30,fontWeight:800,color:s.color}}>{counts[s.k]||0}</div><div style={{fontSize:13,color:C.sub,fontWeight:600}}>{s.label}</div>{s.k==="brief"&&<div style={{fontSize:11,color:C.sub,marginTop:3}}>{allCampaigns.length} brief{allCampaigns.length===1?"":"s"} created total</div>}</Card>)}
     </div>
     {/* ===== Approvals waiting on me (slot-aware) ===== */}
     {(mySlots.length>0||isSuper(me))&&<Card style={{padding:0,overflow:"hidden",marginBottom:18,border:`1.5px solid ${approvals.length?"#9333EA":C.line}`}}>
@@ -2724,6 +2764,8 @@ function CommentThread({campaignId,context,me,compact}){
   const[draft,setDraft]=useState("");
   const[replyTo,setReplyTo]=useState(null);
   const[busy,setBusy]=useState(false);
+  const[editId,setEditId]=useState(null);
+  const[editDraft,setEditDraft]=useState("");
   const load=async()=>{try{setItems(await api.get(`/api/campaigns/${campaignId}/comments?context=${context}`));}catch(e){setItems([]);}};
   useEffect(()=>{load();},[campaignId,context]);
   const add=async()=>{
@@ -2732,24 +2774,33 @@ function CommentThread({campaignId,context,me,compact}){
     catch(e){}setBusy(false);
   };
   const toggleResolve=async(c)=>{try{await api.put(`/api/comments/${c.id}`,{resolved:!c.resolved});await load();}catch(e){}};
-  const del=async(c)=>{try{await api.del(`/api/comments/${c.id}`);await load();}catch(e){}};
+  const del=async(c)=>{if(!window.confirm("Delete this comment?"))return;try{await api.del(`/api/comments/${c.id}`);await load();}catch(e){}};
+  const saveEdit=async(c)=>{if(!editDraft.trim()){setEditId(null);return;}try{await api.put(`/api/comments/${c.id}`,{body:editDraft.trim()});setEditId(null);setEditDraft("");await load();}catch(e){}};
+  const mine=(c)=>(c.author_id&&me.id&&c.author_id===me.id)||(c.author_name&&c.author_name===me.name);
   if(items===null)return<div style={{fontSize:12,color:C.sub,padding:"8px 0"}}>Loading comments…</div>;
   const roots=items.filter(c=>!c.parent_id);
   const repliesOf=(id)=>items.filter(c=>c.parent_id===id);
   const roleColor=new Proxy({},{get:(_,k)=>roleHue(String(k))});
-  const Bubble=({c})=><div style={{marginBottom:8}}>
+  const Bubble=({c})=><div style={{marginBottom:8,opacity:c.resolved?.55:1}}>
     <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:2}}>
       <span style={{fontWeight:700,fontSize:12.5}}>{c.author_name||"User"}</span>
       <span style={{background:(roleColor[c.author_role]||C.sub)+"22",color:roleColor[c.author_role]||C.sub,fontSize:9.5,fontWeight:700,padding:"1px 6px",borderRadius:999}}>{roleLabel(c.author_role)}</span>
       <span style={{fontSize:10.5,color:C.sub}}>{fmtTime?fmtTime(c.created_at):new Date(c.created_at).toLocaleString()}</span>
       {c.resolved&&<span style={{fontSize:10,color:C.green,fontWeight:700,display:"flex",alignItems:"center",gap:3}}><CheckCircle2 size={11}/>resolved</span>}
     </div>
-    <div style={{fontSize:13,color:C.ink,lineHeight:1.5,whiteSpace:"pre-line"}}>{c.body}</div>
-    <div style={{display:"flex",gap:10,marginTop:3}}>
+    {editId===c.id
+      ?<div style={{display:"flex",gap:7,margin:"3px 0"}}>
+        <input value={editDraft}onChange={e=>setEditDraft(e.target.value)}onKeyDown={e=>{if(e.key==="Enter")saveEdit(c);if(e.key==="Escape")setEditId(null);}}autoFocus style={{flex:1,border:`1.5px solid ${C.line}`,borderRadius:14,padding:"6px 12px",fontSize:13,outline:"none"}}/>
+        <Btn small onClick={()=>saveEdit(c)}disabled={!editDraft.trim()}>Save</Btn>
+        <button onClick={()=>setEditId(null)}style={{border:"none",background:"none",color:C.sub,fontSize:11,cursor:"pointer",fontWeight:600}}>Cancel</button>
+      </div>
+      :<div style={{fontSize:13,color:C.ink,lineHeight:1.5,whiteSpace:"pre-line",textDecoration:c.resolved?"line-through":"none"}}>{c.body}</div>}
+    {editId!==c.id&&<div style={{display:"flex",gap:10,marginTop:3}}>
       <button onClick={()=>setReplyTo(replyTo===c.id?null:c.id)}style={{border:"none",background:"none",color:C.sub,fontSize:11,cursor:"pointer",padding:0,fontWeight:600}}>{replyTo===c.id?"Cancel":"Reply"}</button>
       {canBrandApprove(me)&&<button onClick={()=>toggleResolve(c)}style={{border:"none",background:"none",color:C.sub,fontSize:11,cursor:"pointer",padding:0,fontWeight:600}}>{c.resolved?"Reopen":"Resolve"}</button>}
-      {(c.author_name===me.name||isSuper(me))&&<button onClick={()=>del(c)}style={{border:"none",background:"none",color:"#DC2626",fontSize:11,cursor:"pointer",padding:0,fontWeight:600}}>Delete</button>}
-    </div>
+      {mine(c)&&<button onClick={()=>{setEditId(c.id);setEditDraft(c.body);}}style={{border:"none",background:"none",color:C.sub,fontSize:11,cursor:"pointer",padding:0,fontWeight:600}}>Edit</button>}
+      {(mine(c)||isSuper(me))&&<button onClick={()=>del(c)}style={{border:"none",background:"none",color:"#DC2626",fontSize:11,cursor:"pointer",padding:0,fontWeight:600}}>Delete</button>}
+    </div>}
   </div>;
   return<div style={{borderTop:`1px solid ${C.line}`,paddingTop:10,marginTop:10}}>
     <div style={{fontSize:11,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5,marginBottom:8,display:"flex",alignItems:"center",gap:5}}><MessageSquare size={12}/>{context==="design"?"Art direction comments":"Copy comments"} · {items.length}</div>
@@ -3091,6 +3142,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
     const[showAll,setShowAll]=useState(false);
     const[manualMode,setManualMode]=useState(null); // null | "add" | "edit"
     const[mockupOpt,setMockupOpt]=useState(null);
+    const[pushOpt,setPushOpt]=useState(null);
     const isWAchan=/whatsapp/i.test(c.channel||"");
     const mockImage=c.data?.design?.finalFile?.dataUrl||c.data?.design?.generatedImage||null;
     const[multiPick,setMultiPick]=useState([]);
@@ -3161,7 +3213,7 @@ Put the hook + payoff as the first lines of the body; RTBs and CTA follow below.
           :"each: {direction,header,body,cta}. header=image overlay 2-3 short punchy lines, body=WhatsApp opener+bullets+sign-off, cta=action phrase";
         const sys="You write "+(c.channel||"WhatsApp")+" CRM copy for HUFT.\n"+BRAND_CONTEXT+"\n"+channelRules+"\n"+COPY_BEST_PRACTICES+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nTeam feedback:\n"+fb:"")+`\nReturn ONLY JSON array of ${nOpts} options, `+shape;
         const j=sanitizeOptions(await callClaude(sys,briefBlock,true));
-        patch(c.id,{data:{...(c.data||{}),copyOptions:j,selectedCopyIdx:null},copy_approver:null,stage:"content"});
+        patch(c.id,{data:{...(c.data||{}),copyOptions:j,selectedCopyIdx:null,sentBack:false},copy_approver:null,stage:"content"});
         setShowAll(false);
       }catch(e){console.error("Gen error:",e);setErr("Generation failed: "+(e.message||"unknown error — check Vercel logs"));}setBusy(false);
     };
@@ -3174,7 +3226,7 @@ Put the hook + payoff as the first lines of the body; RTBs and CTA follow below.
         const usr=briefBlock+"\n\nCurrent:\n"+JSON.stringify(opts[idx])+"\n\nSteer (one-time): "+refineText;
         const j=sanitizeOption(await callClaude(sys,usr,true));
         const wasSelected=sel===idx;
-        const newData={...(c.data||{}),copyOptions:opts.map((o,i)=>i===idx?j:o)};
+        const newData={...(c.data||{}),copyOptions:opts.map((o,i)=>i===idx?j:o),sentBack:false};
         if(wasSelected)newData.selectedCopyIdx=null;
         patch(c.id,{data:newData,...(wasSelected?{copy_approver:null,stage:"content"}:{})});
         setRefineFor(null);setRefineText("");
@@ -3182,6 +3234,10 @@ Put the hook + payoff as the first lines of the body; RTBs and CTA follow below.
     };
 
     const select=(idx)=>{
+      if(idx!==null&&c.data?.sentBack){
+        if(toast)toast("This was sent back — revise the copy (Regenerate, Steer, or Edit) before resending.","error");
+        return;
+      }
       if(idx===null){
         patch(c.id,{data:{...(c.data||{}),selectedCopyIdx:null},stage:"content",copy_approver:null});
         if(toast)toast("Copy unselected — pick another option","success");
@@ -3199,7 +3255,7 @@ Put the hook + payoff as the first lines of the body; RTBs and CTA follow below.
       if(sel!=null){newOpts=base.map((o,i)=>i===sel?{...opt,manual:true}:o);newSel=sel;}
       else{newOpts=[...base,{...opt,manual:true}];newSel=newOpts.length-1;}
       const isPush=isPushChannel(c.channel);
-      const patchFields={data:{...(c.data||{}),copyOptions:newOpts,selectedCopyIdx:newSel},copy_approver:me.name};
+      const patchFields={data:{...(c.data||{}),copyOptions:newOpts,selectedCopyIdx:newSel,sentBack:false},copy_approver:me.name};
       if(sel==null){patchFields.stage="brand_review";}
       patch(c.id,patchFields);
       // Learning signal: store the team-written copy as feedback so future generations emulate it
@@ -3214,14 +3270,14 @@ Put the hook + payoff as the first lines of the body; RTBs and CTA follow below.
     const editDirectly=(idx,updated)=>{
       const base=opts||[];
       const newOpts=base.map((o,i)=>i===idx?{...o,...updated,manual:true}:o);
-      patch(c.id,{data:{...(c.data||{}),copyOptions:newOpts}});
-      if(toast)toast("Copy updated ✓","success");
+      patch(c.id,{data:{...(c.data||{}),copyOptions:newOpts,sentBack:false}});
+      if(toast)toast("Copy updated ✓ — you can now resend for approval","success");
     };
 
     // Once copy is approved, use shared openId accordion — collapsed by default.
     if(sel!=null){
       const o=opts?.[sel];
-      const tone=c.stage==="brand_review"?{bar:"#9333EA",bg:"#FAF5FF"}:ROW_TONE[c.stage==="done"?"done":"approved"];
+      const tone=c.stage==="content"?{bar:"#92400E",bg:"#FFFBEB"}:c.stage==="brand_review"?{bar:"#9333EA",bg:"#FAF5FF"}:ROW_TONE[c.stage==="done"?"done":"approved"];
       const isPush=isPushChannel(c.channel);
       return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`4px solid ${tone.bar}`,background:tone.bg}}>
         {/* Collapsed header — always visible, click to expand */}
@@ -3235,9 +3291,9 @@ Put the hook + payoff as the first lines of the body; RTBs and CTA follow below.
               if(c.stage==="brand_review")return<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#9333EA",background:"#F3E8FF",padding:"3px 9px",borderRadius:999}}><Eye size={11}/>In brand review</span>;
               if(c.stage==="content"){
                 const opts=c.data?.copyOptions,selIdx=c.data?.selectedCopyIdx;
-                if(!opts||!opts.length)return<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#B45309",background:"#FEF3C7",padding:"3px 9px",borderRadius:999}}>Needs copy</span>;
-                if(selIdx==null)return<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#B45309",background:"#FEF3C7",padding:"3px 9px",borderRadius:999}}>Pick one of {opts.length}</span>;
-                return<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#B45309",background:"#FEF3C7",padding:"3px 9px",borderRadius:999}}>Sent back — review &amp; resend</span>;
+                if(!opts||!opts.length)return<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#92400E",background:"#FBEAD7",padding:"3px 9px",borderRadius:999}}>Needs copy</span>;
+                if(selIdx==null)return<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#92400E",background:"#FBEAD7",padding:"3px 9px",borderRadius:999}}>Pick one of {opts.length}</span>;
+                return<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#92400E",background:"#FBEAD7",padding:"3px 9px",borderRadius:999}}>Sent back — review &amp; resend</span>;
               }
               return<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#5B21B6",background:"#EDE9FE",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>Copy approved</span>;
             })()}
@@ -3262,7 +3318,7 @@ Put the hook + payoff as the first lines of the body; RTBs and CTA follow below.
             <button onClick={()=>setManualMode(manualMode==="edit"?null:"edit")}style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,fontWeight:600,padding:"4px 10px",borderRadius:8,border:`1px solid ${C.line}`,background:"#fff",color:C.ink,cursor:"pointer"}}><PenLine size={12}/>Edit copy</button>
             <button onClick={()=>setManualMode(manualMode==="add"?null:"add")}style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,fontWeight:600,padding:"4px 10px",borderRadius:8,border:`1px solid ${C.line}`,background:"#fff",color:C.ink,cursor:"pointer"}}><Plus size={12}/>Add manually</button>
             <button onClick={()=>select(null)}style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,fontWeight:600,padding:"4px 10px",borderRadius:8,border:`1px solid ${C.line}`,background:"#fff",color:C.sub,cursor:"pointer"}}><X size={12}/>Unselect</button>
-            {c.copy_approver&&<span style={{fontSize:11,color:C.sub}}>Approved by {c.copy_approver}</span>}
+            {c.copy_approver&&<span style={{fontSize:11,color:C.sub}}>Selected by {c.copy_approver}</span>}
           </div>
 
           {/* Brand review controls — shown while awaiting Ilena's sign-off */}
@@ -3319,8 +3375,18 @@ Put the hook + payoff as the first lines of the body; RTBs and CTA follow below.
           {c.copy_author&&<span style={{fontSize:11.5,color:C.sub}}>· writer: {c.copy_author}</span>}
           {!c.category&&inferCategory(c)&&<span style={{fontSize:11,color:C.sub}}>(auto-inferred — override if wrong)</span>}
           {isWAchan&&opts&&opts.length>0&&<button onClick={()=>setMockupOpt(opts[sel!=null?sel:0])}style={{marginLeft:"auto",display:"inline-flex",alignItems:"center",gap:5,fontSize:12,fontWeight:700,color:"#0b141a",background:"#00a884",border:"none",borderRadius:8,padding:"6px 11px",cursor:"pointer"}}><MessageSquare size={13}/>Preview as WhatsApp</button>}
+          {isPushChannel(c.channel)&&opts&&opts.length>0&&<button onClick={()=>setPushOpt(opts[sel!=null?sel:0])}style={{marginLeft:isWAchan?0:"auto",display:"inline-flex",alignItems:"center",gap:5,fontSize:12,fontWeight:700,color:"#fff",background:C.navy,border:"none",borderRadius:8,padding:"6px 11px",cursor:"pointer"}}><BellIcon size={13}/>Preview as notification</button>}
         </div>
         {mockupOpt&&<WhatsAppMockup o={mockupOpt}image={mockImage}product={c.product}onClose={()=>setMockupOpt(null)}/>}
+        {pushOpt&&<PushMockup o={pushOpt}image={mockImage}product={c.product}onClose={()=>setPushOpt(null)}/>}
+        {c.data?.sentBack&&<div style={{display:"flex",gap:10,alignItems:"flex-start",background:"#FFF7ED",border:"1px solid #FED7AA",borderLeft:"4px solid #C2410C",borderRadius:10,padding:"11px 13px",marginBottom:12}}>
+          <div style={{flexShrink:0,marginTop:1,color:"#C2410C"}}><RotateCcw size={16}/></div>
+          <div style={{minWidth:0,flex:1}}>
+            <div style={{fontSize:11,fontWeight:800,color:"#9A3412",textTransform:"uppercase",letterSpacing:.4}}>Sent back for changes{c.data.sentBackBy?" · by "+c.data.sentBackBy:""}</div>
+            <div style={{fontSize:13.5,color:"#7C2D12",fontWeight:600,marginTop:3,lineHeight:1.45,whiteSpace:"pre-line"}}>{c.data.lastRejectReason||"See the copy comments below for the requested changes."}</div>
+            <div style={{fontSize:11.5,color:"#9A3412",marginTop:5}}>Revise the copy below — <b>Regenerate</b>, <b>Steer with AI</b>, or <b>Edit</b> — then the <b>Resend for approval</b> button unlocks.</div>
+          </div>
+        </div>}
         <BriefSummaryCard active={c}activeBrief={activeBrief}copyRules={copyRules}busy={busy}refineFor={refineFor}gen={gen}opts={opts}patch={patch}/>
         {c.copy_approver&&<div style={{marginBottom:10,display:"flex",alignItems:"center",gap:8}}><ApproverChip name={`Copy approved · ${c.copy_approver}`}at={c.copy_approved_at}color={C.purple}/>{sel!=null&&<span style={{fontSize:12,color:C.sub}}>· {opts[sel]?.direction}</span>}</div>}
         {err&&<div style={{color:C.coral,fontSize:13,marginBottom:8}}>{err}</div>}
@@ -3332,12 +3398,12 @@ Put the hook + payoff as the first lines of the body; RTBs and CTA follow below.
         {opts&&<div>
           {sel!=null&&<div style={{marginBottom:10}}>
             <div style={{fontSize:11,fontWeight:700,color:"#5B21B6",textTransform:"uppercase",letterSpacing:.5,marginBottom:6,display:"flex",alignItems:"center",gap:4}}><CheckCircle2 size={11}/>Approved copy</div>
-            <ContentCard o={opts[sel]}idx={sel}sel={true}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}onEditSave={editDirectly}channel={c.channel}/>
+            <ContentCard o={opts[sel]}idx={sel}sel={true}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}onEditSave={editDirectly}channel={c.channel}sentBack={c.data?.sentBack}isResend={!!c.data?.lastRejectReason}/>
           </div>}
           {sel!=null&&<button onClick={()=>setShowAll(v=>!v)}style={{display:"flex",alignItems:"center",gap:5,background:"none",border:"none",cursor:"pointer",color:C.sub,fontSize:12.5,fontWeight:600,marginBottom:8}}>{showAll?<><ChevronDown size={13}/>Hide other options</>:<><Eye size={13}/>See other {opts.length-1} options</>}</button>}
           {sel==null&&opts&&opts.length>1&&<div style={{marginBottom:10,fontSize:12.5,color:C.sub,background:C.paper,border:`1px solid ${C.line}`,borderRadius:10,padding:"9px 13px"}}>Pick <b>one</b> option below — it goes straight to Ilena for approval.</div>}
           {(sel==null||showAll)&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
-            {opts.map((o,i)=>{if(sel!=null&&i===sel)return null;return<ContentCard key={i}o={o}idx={i}sel={false}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}onEditSave={editDirectly}channel={c.channel}/>;})}</div>}
+            {opts.map((o,i)=>{if(sel!=null&&i===sel)return null;return<ContentCard key={i}o={o}idx={i}sel={false}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}onEditSave={editDirectly}channel={c.channel}sentBack={c.data?.sentBack}isResend={!!c.data?.lastRejectReason}/>;})}</div>}
         </div>}
         {sel!=null&&<div style={{marginTop:12,background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:10,padding:"14px 16px"}}>
           <div style={{fontSize:12,fontWeight:700,color:"#15803D",textTransform:"uppercase",letterSpacing:.5,marginBottom:10,display:"flex",alignItems:"center",gap:6}}><CheckCircle2 size={13}/>Copy approved — next steps</div>
@@ -3375,7 +3441,6 @@ Put the hook + payoff as the first lines of the body; RTBs and CTA follow below.
           const inReview=allCopy.filter(c=>c.stage==="brand_review");
           // "approved" = brand-approved and moved on (design/done), but still listed here
           const approved=allCopy.filter(c=>c.stage!=="content"&&c.stage!=="brand_review"&&c.data?.selectedCopyIdx!=null&&c.data?.copyOptions);
-          const archivedCopy=(campaigns||[]).filter(c=>isArchived(c)&&c.data?.copyOptions);
           return<>
             {needsCopy.length>0&&<div style={{marginBottom:16}}>
               <div style={{fontSize:11,fontWeight:700,color:"#92400E",textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>⬤ Needs attention · {needsCopy.length}</div>
@@ -3388,10 +3453,6 @@ Put the hook + payoff as the first lines of the body; RTBs and CTA follow below.
             {approved.length>0&&<div>
               <div style={{fontSize:11,fontWeight:700,color:"#5B21B6",textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>✓ Brand approved · {approved.length}</div>
               <div>{groupByDate(approved).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.purple}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}/>)}</Card></div>)}</div>
-            </div>}
-            {archivedCopy.length>0&&<div style={{marginTop:16}}>
-              <div style={{fontSize:11,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>Archived · {archivedCopy.length}</div>
-              <div style={{opacity:.5}}>{groupByDate(archivedCopy).map(([date,items])=><div key={date}style={{marginBottom:8}}><DateGroupHeader date={date}count={items.length}color={C.sub}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}/>)}</Card></div>)}</div>
             </div>}
           </>;
         })()}
@@ -3482,7 +3543,9 @@ function ManualCopyForm({initial,channel,onSave,onCancel}){
 
 function ApprovedCopyCard({copy,channel,product,image}){
   const[showMock,setShowMock]=useState(false);
+  const[showPush,setShowPush]=useState(false);
   const isWA=/whatsapp/i.test(channel||"");
+  const isPush=isPushChannel(channel);
   if(!copy)return null;
   return<div style={{background:"#F5F3FF",border:"1px solid #DDD6FE",borderLeft:"3px solid "+C.purple,borderRadius:10,padding:"10px 14px",marginBottom:12}}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,gap:8,flexWrap:"wrap"}}>
@@ -3490,6 +3553,7 @@ function ApprovedCopyCard({copy,channel,product,image}){
       <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
         {copy.direction&&<span style={{fontSize:10.5,color:"#7C3AED",background:"#EDE9FE",padding:"2px 7px",borderRadius:5,fontWeight:600}}>{copy.direction}</span>}
         {isWA&&<button onClick={()=>setShowMock(true)}style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,fontWeight:700,color:"#0b141a",background:"#00a884",border:"none",borderRadius:7,padding:"4px 9px",cursor:"pointer"}}><MessageSquare size={12}/>Preview as WhatsApp</button>}
+        {isPush&&<button onClick={()=>setShowPush(true)}style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,fontWeight:700,color:"#fff",background:C.navy,border:"none",borderRadius:7,padding:"4px 9px",cursor:"pointer"}}><BellIcon size={12}/>Preview as notification</button>}
         <CopyBtn text={()=>copyTextFromOption(copy)}/>
       </div>
     </div>
@@ -3505,6 +3569,7 @@ function ApprovedCopyCard({copy,channel,product,image}){
     </div>}
     {copy.cta&&<div style={{marginTop:8,fontSize:11,fontWeight:700,color:"#5B21B6"}}>{copy.cta} →</div>}
     {showMock&&<WhatsAppMockup o={copy}image={image}product={product}onClose={()=>setShowMock(false)}/>}
+    {showPush&&<PushMockup o={copy}image={image}product={product}onClose={()=>setShowPush(false)}/>}
   </div>;
 }
 
@@ -3558,7 +3623,49 @@ function WhatsAppMockup({o,image,product,onClose}){
     </div>
   </div>;
 }
-function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,busy,onSelect,onRefine,onEditSave,channel}){
+function PushMockup({o,image,product,onClose}){
+  // Push notifications: title = header/hook, body = the message. Render as a phone lock-screen banner.
+  const rawTitle=stripForbidden((o&&(o.header||o.title))||"");
+  const rawBody=stripForbidden((o&&o.body)||"");
+  const{hook,rest}=waPreviewSplit(rawBody);
+  const title=rawTitle||hook||(product?product:"Heads Up For Tails");
+  const body=rawTitle?rawBody:(rest||rawBody);
+  const now=new Date().toLocaleTimeString("en-IN",{hour:"numeric",minute:"2-digit"});
+  const day=new Date().toLocaleDateString("en-IN",{weekday:"long",day:"numeric",month:"long"});
+  const hh=new Date().toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:false});
+  return<div onClick={onClose}style={{position:"fixed",inset:0,background:"rgba(10,15,25,.6)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+    <div onClick={e=>e.stopPropagation()}style={{width:330,maxWidth:"94vw",borderRadius:34,overflow:"hidden",boxShadow:"0 20px 60px rgba(0,0,0,.45)",border:"8px solid #0c0c0e",
+      background:image?`url(${image}) center/cover`:"linear-gradient(160deg,#3b4a63,#1c2536 70%)",minHeight:560,position:"relative",display:"flex",flexDirection:"column"}}>
+      {/* dim overlay so text reads over any wallpaper */}
+      <div style={{position:"absolute",inset:0,background:"linear-gradient(180deg,rgba(0,0,0,.30),rgba(0,0,0,.12) 30%,rgba(0,0,0,.30))"}}/>
+      {/* notch */}
+      <div style={{position:"relative",height:30,display:"flex",alignItems:"center",justifyContent:"center"}}>
+        <div style={{width:120,height:22,background:"#0c0c0e",borderRadius:999,marginTop:-8}}/>
+      </div>
+      {/* clock */}
+      <div style={{position:"relative",textAlign:"center",color:"#fff",marginTop:10}}>
+        <div style={{fontSize:15,fontWeight:600,letterSpacing:.5,textShadow:"0 1px 6px rgba(0,0,0,.5)"}}>{day}</div>
+        <div style={{fontSize:62,fontWeight:300,lineHeight:1.05,textShadow:"0 2px 10px rgba(0,0,0,.45)"}}>{hh}</div>
+      </div>
+      {/* notification banner */}
+      <div style={{position:"relative",marginTop:"auto",padding:"0 12px 18px"}}>
+        <div style={{background:"rgba(245,245,247,.82)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",borderRadius:18,padding:"11px 13px",boxShadow:"0 6px 20px rgba(0,0,0,.18)"}}>
+          <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:6}}>
+            <div style={{width:26,height:26,borderRadius:7,background:"#E8632A",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontWeight:800,color:"#fff",fontSize:13}}>H</div>
+            <div style={{fontSize:12,fontWeight:600,color:"#3c3c43",letterSpacing:.3,textTransform:"uppercase",flex:1,minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>Heads Up For Tails</div>
+            <div style={{fontSize:11.5,color:"#8a8a8e"}}>now</div>
+          </div>
+          <div style={{fontSize:14.5,fontWeight:700,color:"#000",lineHeight:1.3}}>{title}</div>
+          {body&&<div style={{fontSize:13.5,color:"#1c1c1e",lineHeight:1.4,marginTop:2,display:"-webkit-box",WebkitLineClamp:4,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{body}</div>}
+        </div>
+        <div style={{textAlign:"center",marginTop:14,color:"rgba(255,255,255,.85)",fontSize:11.5,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+          <BellIcon size={12}/>Lock-screen preview · how it lands on a phone
+        </div>
+      </div>
+    </div>
+  </div>;
+}
+function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,busy,onSelect,onRefine,onEditSave,channel,sentBack,isResend}){
   const isPush=isPushChannel(channel);
   const isEmail=channel==="Email"||channel==="WhatsApp + Email";
   const dirColors=[
@@ -3668,7 +3775,9 @@ function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,
         </div>
       /* Default action bar */
       :<div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
-          {!sel&&<Btn small variant="dark"onClick={()=>onSelect(idx)}><CheckCircle2 size={12}/>Select</Btn>}
+          {!sel&&(sentBack
+            ?<button disabled title="Revise the copy first (Regenerate, Steer, or Edit), then resend"style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,fontWeight:700,color:"#9CA3AF",background:"#F3F4F6",border:`1px solid ${C.line}`,borderRadius:8,padding:"6px 11px",cursor:"not-allowed"}}><RotateCcw size={12}/>Edit to resend</button>
+            :<Btn small variant="dark"onClick={()=>onSelect(idx)}><CheckCircle2 size={12}/>{isResend?"Resend for approval":"Select"}</Btn>)}
           {sel&&<Btn small variant="ghost"onClick={()=>onSelect(null)}><X size={12}/>Unselect</Btn>}
           <Btn small variant="ghost"onClick={()=>setEditMode("menu")}><PenLine size={13}/>Edit copy</Btn>
           <CopyBtn text={()=>copyTextFromOption(o)}/>
@@ -5096,7 +5205,6 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
         {(()=>{
           const needsDesign=allDesign.filter(c=>!(c.data?.design?.approvedPromptIdx!=null||c.data?.design?.libraryPick));
           const done=allDesign.filter(c=>c.data?.design?.approvedPromptIdx!=null||c.data?.design?.libraryPick);
-          const archivedDesign=(campaigns||[]).filter(c=>isArchived(c)&&c.data?.design);
           return<>
             {needsDesign.length>0&&<div style={{marginBottom:16}}>
               <div style={{fontSize:11,fontWeight:700,color:C.coral,textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>⬤ Needs attention · {needsDesign.length}</div>
@@ -5105,10 +5213,6 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
             {done.length>0&&<div>
               <div style={{fontSize:11,fontWeight:700,color:C.teal,textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>✓ Image selected · {done.length}</div>
               <div style={{opacity:.75}}>{groupByDate(done).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.teal}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><DesignRow key={c.id}c={c}/>)}</Card></div>)}</div>
-            </div>}
-            {archivedDesign.length>0&&<div style={{marginTop:16}}>
-              <div style={{fontSize:11,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>Archived · {archivedDesign.length}</div>
-              <div style={{opacity:.5}}>{groupByDate(archivedDesign).map(([date,items])=><div key={date}style={{marginBottom:8}}><DateGroupHeader date={date}count={items.length}color={C.sub}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><DesignRow key={c.id}c={c}/>)}</Card></div>)}</div>
             </div>}
           </>;
         })()}
@@ -5510,11 +5614,12 @@ function NotifPanel({notifs,onClose,onRead,onReadAll,onOpen}){
         {notifs.length===0&&<div style={{padding:"40px 18px",textAlign:"center",color:C.sub,fontSize:13.5}}>No alerts yet. You'll be notified here when copy, design, or assets need your attention.</div>}
         {notifs.map(n=><div key={n.id}onClick={()=>{if(!n.read)onRead(n.id);onOpen(n.campaign_id);}}style={{padding:"13px 18px",borderBottom:`1px solid ${C.line}`,cursor:"pointer",background:n.read?"#fff":"#FFF7ED",display:"flex",gap:11}}>
           <div style={{width:8,height:8,borderRadius:999,background:n.read?"transparent":C.coral,marginTop:6,flexShrink:0}}/>
-          <div style={{minWidth:0}}>
+          <div style={{minWidth:0,flex:1}}>
             <div style={{fontSize:12.5,fontWeight:800,color:C.ink}}>{n.kind||"Update"}</div>
             <div style={{fontSize:12.5,color:"#374151",marginTop:2,lineHeight:1.45}}>{n.body}</div>
             <div style={{fontSize:11,color:C.sub,marginTop:4}}>{fmtTime(n.created_at)}{n.campaign_id?" · tap to open":""}</div>
           </div>
+          {!n.read&&<button onClick={(e)=>{e.stopPropagation();onRead(n.id);}}title="Mark as read"style={{flexShrink:0,alignSelf:"center",fontSize:11,fontWeight:700,color:C.sub,background:"#fff",border:`1px solid ${C.line}`,borderRadius:7,padding:"4px 9px",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4}}><CheckCircle2 size={12}/>Read</button>}
         </div>)}
       </div>
     </div>
@@ -5670,9 +5775,10 @@ function TeamDrawer({onClose,me}){
       {canManageTeam(me)&&u.id!==me.id&&<button onClick={()=>remove(u.id)}style={{border:"none",background:"transparent",cursor:"pointer",color:C.sub}}><Trash2 size={15}/></button>}
       </div>
       {canManageTeam(me)&&<div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginTop:7,paddingLeft:42}}>
-        <span style={{fontSize:10.5,color:C.sub,fontWeight:600}}>Approvals:</span>
-        {SLOTS.map(([k,label])=>{const on=(u.approval_slots||[]).includes(k);return<button key={k}onClick={()=>setUserSlots(u.id,on?(u.approval_slots||[]).filter(x=>x!==k):[...(u.approval_slots||[]),k])}style={{fontSize:10.5,fontWeight:700,padding:"2px 9px",borderRadius:999,cursor:"pointer",border:`1px solid ${on?"#C026D3":C.line}`,background:on?"#C026D318":"#fff",color:on?"#C026D3":C.sub}}>{on?"✓ ":""}{label}</button>;})}
-        {(!u.approval_slots||u.approval_slots.length===0)&&<span style={{fontSize:10.5,color:C.sub,fontStyle:"italic"}}>none</span>}
+        <span style={{fontSize:10.5,color:C.sub,fontWeight:600}}>Can approve <span style={{fontWeight:500,fontStyle:"italic"}}>(tap to grant/remove):</span></span>
+        {SLOTS.map(([k,label])=>{const on=(u.approval_slots||[]).includes(k);return<button key={k}onClick={()=>setUserSlots(u.id,on?(u.approval_slots||[]).filter(x=>x!==k):[...(u.approval_slots||[]),k])}title={on?"Granted — tap to remove":"Not granted — tap to grant"}style={{fontSize:10.5,fontWeight:700,padding:"2px 9px",borderRadius:999,cursor:"pointer",border:`1px solid ${on?"#C026D3":C.line}`,background:on?"#C026D3":"#fff",color:on?"#fff":"#9CA3AF"}}>{on?"✓ ":"+ "}{label}</button>;})}
+        {(!u.approval_slots||u.approval_slots.length===0)&&<span style={{fontSize:10.5,color:"#9CA3AF",fontStyle:"italic"}}>no approval rights yet</span>}
+        {(!u.approval_slots||u.approval_slots.length===0)&&<span style={{fontSize:10.5,color:C.sub,fontStyle:"italic"}}></span>}
       </div>}
       {canManageTeam(me)&&<div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginTop:6,paddingLeft:42}}>
         <span style={{fontSize:10.5,color:C.sub,fontWeight:600,whiteSpace:"nowrap"}}>Sub-brands:</span>
