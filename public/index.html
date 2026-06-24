@@ -62,7 +62,7 @@ async function callClaude(system,prompt,expectJson){
 // Role-based default tab
 const ROLE_TAB={admin:"dashboard",business:"dashboard",content:"content",design:"design",brand:"dashboard"};
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v28.4 · Image library: Upload folder button (webkitdirectory) adds a whole folder at once, tagged with the selected kind — one folder per kind (packshots, lifestyle, mockup backgrounds, logos)";
+const BUILD="v28.5 · upload size-guard: files that fit go up untouched (full quality, alpha intact); only oversized files are gently downscaled to clear the 413 limit, preserving transparency for packshots/logos. Tunable via UPLOAD_MAX_DATAURL for self-hosted servers";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -2509,11 +2509,12 @@ function ImageLibraryTab({me,toast}){
       const key=f.name+Date.now();
       setUploading(u=>[...u,{key,name:f.name,status:"reading"}]);
       try{
-        const dataUrl=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f);});
+        const{dataUrl,recompressed}=await prepUpload(f,uploadKind);
+        const mime=!recompressed?f.type:((uploadKind==="product"||uploadKind==="logo")?"image/png":"image/jpeg");
         setUploading(u=>u.map(x=>x.key===key?{...x,status:"analysing"}:x));
-        await api.post("/api/image-library",{file_name:f.name,file_data:dataUrl,file_type:f.type,kind:uploadKind,dimensions_cm:uploadDims||null});
+        await api.post("/api/image-library",{file_name:f.name,file_data:dataUrl,file_type:mime,kind:uploadKind,dimensions_cm:uploadDims||null});
         setUploading(u=>u.filter(x=>x.key!==key));
-        if(toast)toast(`${f.name} added & tagged ✓`,"success");
+        if(toast)toast(`${f.name} added${recompressed?" (resized to fit)":""} ✓`,"success");
       }catch(e){
         setUploading(u=>u.map(x=>x.key===key?{...x,status:"error"}:x));
         if(toast)toast(`${f.name}: ${e.message||"upload failed"}`,"error");
@@ -3379,6 +3380,34 @@ const MOCKUP_PRESETS=[
   {k:"sweep",name:"Photo sweep",type:"sweep",wall:"#EFE6D7",floor:"#D8C6AC"},
 ];
 function loadImage(src){return new Promise((res,rej)=>{const im=new Image();im.crossOrigin="anonymous";im.onload=()=>res(im);im.onerror=rej;im.src=src;});}
+// Upload size guard. Files under this go up BYTE-FOR-BYTE (no re-encode, full quality, alpha intact).
+// Only oversized files are gently downscaled to fit. Raise this on a self-hosted server with a larger body limit.
+const UPLOAD_MAX_DATAURL=3300000; // ~3.3MB data-URL string (keeps requests under Vercel's 4.5MB cap)
+function readDataURL(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(file);});}
+function prepUpload(file,kind){
+  return readDataURL(file).then(orig=>{
+    if(orig.length<=UPLOAD_MAX_DATAURL)return{dataUrl:orig,recompressed:false}; // small enough → original, untouched
+    const transparent=(kind==="product"||kind==="logo"); // packshots & logos must keep alpha → stay PNG
+    return loadImage(orig).then(im=>{
+      const render=(dim,q)=>{
+        const scale=Math.min(1,dim/Math.max(im.width,im.height)); // never upscale
+        const w=Math.max(1,Math.round(im.width*scale)),h=Math.max(1,Math.round(im.height*scale));
+        const cv=document.createElement("canvas");cv.width=w;cv.height=h;
+        const ctx=cv.getContext("2d");ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality="high";ctx.drawImage(im,0,0,w,h);
+        return transparent?cv.toDataURL("image/png"):cv.toDataURL("image/jpeg",q);
+      };
+      let dim=2600,q=0.92,out=render(dim,q),guard=0; // start high-res, high-quality
+      while(out.length>UPLOAD_MAX_DATAURL&&guard<12){
+        guard++;
+        if(transparent)dim=Math.round(dim*0.82);        // PNG: shrink size only
+        else if(q>0.62)q=Math.round((q-0.08)*100)/100;  // JPEG: trim quality first
+        else dim=Math.round(dim*0.82);                   // then shrink size
+        out=render(dim,q);
+      }
+      return{dataUrl:out,recompressed:true};
+    });
+  });
+}
 let _pid=0;const nextPid=()=>"p"+(++_pid);
 
 function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
