@@ -797,14 +797,16 @@ app.get("/api/cron/sheet-sync", async (req, res) => {
 // Upload an image: the engine analyses it (product, category, tags, context) then stores it.
 // body: { file_name, file_data (data URL or raw base64), file_type, notes }
 app.post("/api/image-library", authMiddleware, roles("admin", "brand", "design", "business"), async (req, res) => {
-  const { file_name, file_data, file_type, notes } = req.body;
+  const { file_name, file_data, file_type, notes, product, category, tags, description, dimensions_cm, kind } = req.body;
   if (!file_data) return res.status(400).json({ error: "file_data required" });
   // Strip a data: URL prefix if present, to get raw base64 for the vision call
   const b64 = String(file_data).includes(",") ? String(file_data).split(",")[1] : String(file_data);
   const mime = file_type || (String(file_data).match(/^data:(.*?);/)?.[1]) || "image/jpeg";
 
-  let analysis = { product: "", category: "", tags: [], description: "" };
-  try {
+  let analysis = { product: product || "", category: category || "", tags: Array.isArray(tags) ? tags : [], description: description || "" };
+  // Only call Gemini vision when no product was supplied (skips the quota-limited call for bulk/known uploads)
+  if (!product) {
+   try {
     const sys = `You are an image cataloguer for HUFT, a premium Indian pet care brand with sub-brands like Sara's Wholesome Food, Hearty, Meowsi, NutriWag, NutriMeow, Yakies, HUFT Spa, HUFT Originals, DashDog and more. Look at the image and identify what it shows for a marketing image library. Return ONLY JSON: {"product":"best-guess product or sub-brand, or '' if unclear","category":"one of: dry food, wet food, treats, chews, grooming, accessories, apparel, toys, supplements, lifestyle, packshot, other","tags":["6-12 short descriptive tags: subject, setting, colours, mood, pet type, composition"],"description":"one sentence describing what the image shows and how it could be used"}`;
     const out = await generateVision(sys, "Catalogue this image for our marketing library.", b64, mime);
     const parsed = JSON.parse(out.replace(/```json|```/g, "").trim().replace(/^[^[{]*/, ""));
@@ -818,14 +820,16 @@ app.post("/api/image-library", authMiddleware, roles("admin", "brand", "design",
     console.error("Image analysis failed:", e.message);
     // Store anyway, without tags — better than losing the upload
   }
+  }
 
   try {
     const rows = await db(
-      `INSERT INTO image_library (file_name, file_data, file_type, product, category, tags, description, notes, uploaded_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-       RETURNING id, file_name, file_type, product, category, tags, description, notes, uploaded_by, uploaded_at`,
+      `INSERT INTO image_library (file_name, file_data, file_type, product, category, tags, description, notes, dimensions_cm, kind, uploaded_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       RETURNING id, file_name, file_type, product, category, tags, description, notes, dimensions_cm, kind, uploaded_by, uploaded_at`,
       [file_name || null, file_data, mime, analysis.product, analysis.category,
-       JSON.stringify(analysis.tags), analysis.description, notes || null, req.user.id]
+       JSON.stringify(analysis.tags), analysis.description, notes || null,
+       dimensions_cm || null, (kind === "product" ? "product" : kind === "asset" ? "asset" : null), req.user.id]
     );
     res.json(rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -850,8 +854,8 @@ app.post("/api/generate-image", authMiddleware, roles("admin", "brand", "design"
 app.get("/api/image-library", authMiddleware, async (req, res) => {
   const q = (req.query.q || "").trim().toLowerCase();
   const cols = req.query.withData === "1"
-    ? "id, file_name, file_data, file_type, product, category, tags, description, notes, uploaded_at"
-    : "id, file_name, file_type, product, category, tags, description, notes, uploaded_at";
+    ? "id, file_name, file_data, file_type, product, category, tags, description, notes, dimensions_cm, kind, uploaded_at"
+    : "id, file_name, file_type, product, category, tags, description, notes, dimensions_cm, kind, uploaded_at";
   try {
     let rows;
     if (q) {
@@ -1037,6 +1041,10 @@ app.listen(PORT, async () => {
   try {
     await pool.query("SELECT 1");
     console.log("✓ Supabase / PostgreSQL connected");
+    // idempotent column adds (image library: packaging dimensions + product/asset kind)
+    await pool.query("ALTER TABLE image_library ADD COLUMN IF NOT EXISTS dimensions_cm TEXT");
+    await pool.query("ALTER TABLE image_library ADD COLUMN IF NOT EXISTS kind TEXT");
+    console.log("✓ image_library schema ensured (dimensions_cm, kind)");
   } catch (e) {
     console.error("✗ Database connection failed:", e.message);
     console.error("  Check DATABASE_URL in your .env file");

@@ -62,7 +62,7 @@ async function callClaude(system,prompt,expectJson){
 // Role-based default tab
 const ROLE_TAB={admin:"dashboard",business:"dashboard",content:"content",design:"design",brand:"dashboard"};
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v12 · composer: CTA editor + bold per element";
+const BUILD="v14 · image kind (product/asset) + dimensions_cm";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -2397,6 +2397,8 @@ function ImageLibraryTab({me,toast}){
   const[q,setQ]=useState("");
   const[uploading,setUploading]=useState([]); // [{name, status}]
   const[preview,setPreview]=useState(null);
+  const[uploadKind,setUploadKind]=useState("product"); // product mockup | asset
+  const[uploadDims,setUploadDims]=useState("");        // optional packaging size, applies to this batch
   const fileRef=useRef(null);
 
   const load=async(query)=>{
@@ -2415,7 +2417,7 @@ function ImageLibraryTab({me,toast}){
       try{
         const dataUrl=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f);});
         setUploading(u=>u.map(x=>x.key===key?{...x,status:"analysing"}:x));
-        await api.post("/api/image-library",{file_name:f.name,file_data:dataUrl,file_type:f.type});
+        await api.post("/api/image-library",{file_name:f.name,file_data:dataUrl,file_type:f.type,kind:uploadKind,dimensions_cm:uploadDims||null});
         setUploading(u=>u.filter(x=>x.key!==key));
         if(toast)toast(`${f.name} added & tagged ✓`,"success");
       }catch(e){
@@ -2435,9 +2437,17 @@ function ImageLibraryTab({me,toast}){
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,flexWrap:"wrap",gap:12}}>
       <div><Eyebrow>Image library</Eyebrow><h1 style={{margin:"4px 0 0",fontSize:24,fontWeight:800}}>Brand image library</h1>
         <div style={{fontSize:13.5,color:C.sub,marginTop:4}}>Upload images — the engine identifies the product, tags them, and surfaces them in the design prompt section.</div></div>
-      <div>
-        <Btn onClick={()=>fileRef.current&&fileRef.current.click()}><UploadIcon size={16}/>Upload images</Btn>
-        <input ref={fileRef}type="file"accept="image/*"multiple style={{display:"none"}}onChange={e=>{if(e.target.files&&e.target.files.length)handleFiles(e.target.files);e.target.value="";}}/>
+      <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8}}>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <div style={{display:"flex",border:`1px solid ${C.line}`,borderRadius:8,overflow:"hidden"}}>
+            {[["product","Product mockup"],["asset","Asset"]].map(([k,lbl])=>
+              <button key={k}onClick={()=>setUploadKind(k)}style={{padding:"7px 11px",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",background:uploadKind===k?C.coral:"#fff",color:uploadKind===k?"#fff":C.sub}}>{lbl}</button>)}
+          </div>
+          <Btn onClick={()=>fileRef.current&&fileRef.current.click()}><UploadIcon size={16}/>Upload images</Btn>
+          <input ref={fileRef}type="file"accept="image/*"multiple style={{display:"none"}}onChange={e=>{if(e.target.files&&e.target.files.length)handleFiles(e.target.files);e.target.value="";}}/>
+        </div>
+        {uploadKind==="product"&&<input value={uploadDims}onChange={e=>setUploadDims(e.target.value)}placeholder="Packaging size (cm) — optional, e.g. 22.4 x 16.3 x 3.1 cm"style={{width:300,border:`1px solid ${C.line}`,borderRadius:8,padding:"6px 9px",fontSize:12}}/>}
+        <span style={{fontSize:10.5,color:C.sub}}>“{uploadKind==="product"?"Product mockup":"Asset"}” applies to the next upload</span>
       </div>
     </div>
 
@@ -3299,18 +3309,20 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
 
   // image copy ONLY (copy.header = on-image overlay; never copy.body)
   const headerLines=(((copy&&copy.header)||"").split(/\r?\n/).map(s=>s.trim()).filter(Boolean));
-  const[hl,setHl]=useState({text:headerLines[0]||"",font:"Korolev",size:1,kern:0,dx:0,dy:0,bold:true});
-  const[sh,setSh]=useState({text:headerLines.slice(1).join(" ")||"",font:"Rubik",size:1,kern:0,dx:0,dy:0,bold:false});
-  const[textColor,setTextColor]=useState("#FFFFFF");
+  const[hl,setHl]=useState({text:headerLines[0]||"",font:"Korolev",size:1,kern:0,dx:0,dy:0,bold:true,color:"#FFFFFF"});
+  const[sh,setSh]=useState({text:headerLines.slice(1).join(" ")||"",font:"Rubik",size:1,kern:0,dx:0,dy:0,bold:false,color:"#FFFFFF"});
   const[anchor,setAnchor]=useState("top-left");
-  const[editing,setEditing]=useState("");
+  const[open,setOpen]=useState({hl:true,sh:false,cta:false});
 
-  const[ct,setCt]=useState({text:(copy&&copy.cta)||"",font:"Rubik",size:1,kern:0,dx:0,dy:0,bold:true});
+  const[ct,setCt]=useState({text:(copy&&copy.cta)||"",font:"Rubik",size:1,kern:0,dx:0,dy:0,bold:true,color:"#FFFFFF"});
   const[ctaBg,setCtaBg]=useState(C.coral);
 
   const[items,setItems]=useState([]);
   const[loadingItems,setLoadingItems]=useState(true);
   const[saving,setSaving]=useState(false);
+  // kind-aware lists: classified images go to the right picker; unclassified show in both
+  const productItems=items.filter(i=>i.kind==="product"||!i.kind);
+  const assetItems=items.filter(i=>i.kind==="asset"||!i.kind);
   const[finalSaving,setFinalSaving]=useState(false);
 
   const reloadLib=React.useCallback(()=>{setLoadingItems(true);api.get("/api/image-library").then(r=>setItems(r||[])).catch(()=>{}).finally(()=>setLoadingItems(false));},[]);
@@ -3385,12 +3397,13 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
     const blockH=hBlock+sBlock+ctaH;
     let topY = vPos==="top"? sz.h*0.08 : vPos==="bottom"? sz.h*0.92-blockH : (sz.h-blockH)/2;
 
-    ctx.fillStyle=textColor;ctx.textAlign=hAlign;
+    ctx.fillStyle=hl.color||"#FFFFFF";ctx.textAlign=hAlign;
     ctx.font=(hl.bold?"800":"400")+" "+H.px+"px '"+hl.font+"'";try{ctx.letterSpacing=(hl.kern||0)+"px";}catch(e){}
     ctx.shadowColor="rgba(0,0,0,0.25)";ctx.shadowBlur=6;ctx.shadowOffsetY=2;
     let y=topY+(hl.dy||0)*sz.h;const hx=anchorX+(hl.dx||0)*sz.w;
     for(const ln of H.lines){ctx.fillText(ln,hx,y);y+=hLineH;}
     if(S.lines.length){
+      ctx.fillStyle=sh.color||"#FFFFFF";
       ctx.font=(sh.bold?"700":"400")+" "+S.px+"px '"+sh.font+"'";try{ctx.letterSpacing=(sh.kern||0)+"px";}catch(e){}
       let sy=topY+hBlock+gap+(sh.dy||0)*sz.h;const sx=anchorX+(sh.dx||0)*sz.w;
       for(const ln of S.lines){ctx.fillText(ln,sx,sy);sy+=sLineH;}
@@ -3405,7 +3418,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
       const by=topY+hBlock+sBlock+H.px*0.35+(ct.dy||0)*sz.h;
       ctx.fillStyle=ctaBg;
       if(ctx.roundRect){ctx.beginPath();ctx.roundRect(bx,by,bw,bh,bh/2);ctx.fill();}else ctx.fillRect(bx,by,bw,bh);
-      ctx.fillStyle="#FFFFFF";ctx.textAlign="left";ctx.textBaseline="middle";
+      ctx.fillStyle=ct.color||"#FFFFFF";ctx.textAlign="left";ctx.textBaseline="middle";
       ctx.fillText(ct.text,bx+cpx*0.85,by+bh/2);ctx.textBaseline="top";
       try{ctx.letterSpacing="0px";}catch(e){}
     }
@@ -3417,7 +3430,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
       const lx=lh2==="left"?m:sz.w-lw-m, ly=lv==="top"?m:sz.h-lh-m;
       ctx.drawImage(logoImg,lx,ly,lw,lh);
     }
-  },[sz,bgMode,bgColor,bgImg,genImg,products,prodImgs,shadow,hl,sh,textColor,anchor,ct,ctaBg,logoImg,logoScale,logoCorner]);
+  },[sz,bgMode,bgColor,bgImg,genImg,products,prodImgs,shadow,hl,sh,anchor,ct,ctaBg,logoImg,logoScale,logoCorner]);
 
   React.useEffect(()=>{draw();},[draw]);
 
@@ -3432,7 +3445,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
     setGenBusy(false);
   };
   const exportPng=()=>{const cv=ref.current;if(!cv)return;cv.toBlob(b=>{const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download=(c.product||"creative").replace(/\s+/g,"_")+"_"+sz.w+"x"+sz.h+".png";a.click();URL.revokeObjectURL(u);},"image/png");};
-  const saveToLib=async()=>{const cv=ref.current;if(!cv)return;setSaving(true);try{const dataUrl=cv.toDataURL("image/png");await api.post("/api/image-library",{file_name:(c.product||"creative")+"_composed.png",file_data:dataUrl,file_type:"image/png"});if(toast)toast("Saved to Image library ✓","success");}catch(e){if(toast)toast(e.status===403?"You don't have permission to save":"Save failed","error");}setSaving(false);};
+  const saveToLib=async()=>{const cv=ref.current;if(!cv)return;setSaving(true);try{const dataUrl=cv.toDataURL("image/png");await api.post("/api/image-library",{file_name:(c.product||"creative")+"_composed.png",file_data:dataUrl,file_type:"image/png",kind:"asset"});if(toast)toast("Saved to Image library ✓","success");}catch(e){if(toast)toast(e.status===403?"You don't have permission to save":"Save failed","error");}setSaving(false);};
   // Make the composed canvas the FINAL design file, so the design can be marked done in-app (no Canva export needed).
   const useAsFinal=()=>{const cv=ref.current;if(!cv||!patch)return;setFinalSaving(true);
     try{const dataUrl=cv.toDataURL("image/png");patch(c.id,{data:{...(c.data||{}),design:{...(d||{}),finalFile:{name:(c.product||"creative")+"_composed.png",type:"image/png",dataUrl},finalSource:"composer"}}});if(toast)toast("Set as final design ✓ — scroll down to Mark as done","success");}
@@ -3442,14 +3455,30 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
   const fieldL={fontSize:11,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.4,marginBottom:5,display:"block"};
   const ctrl={width:"100%",border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 9px",fontSize:13,boxSizing:"border-box"};
   const slider=(label,val,min,max,set,fmt)=><div><label style={fieldL}>{label}{fmt?" · "+fmt(val):""}</label><input type="range"min={min}max={max}value={val}onChange={e=>set(+e.target.value)}style={{width:"100%"}}/></div>;
-  const editPanel=(el,setEl)=><div style={{gridColumn:"1 / -1",display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,padding:"10px 12px",background:C.paper,border:`1px solid ${C.line}`,borderRadius:8}}>
-    <div><label style={fieldL}>Font</label><select value={el.font}onChange={e=>setEl({...el,font:e.target.value})}style={ctrl}>{COMPOSER_FONTS.map(f=><option key={f}value={f}>{f}</option>)}</select></div>
-    <div><label style={fieldL}>Weight</label><button onClick={()=>setEl({...el,bold:!el.bold})}style={{...ctrl,cursor:"pointer",textAlign:"left",fontWeight:el.bold?800:400,background:el.bold?C.coral+"18":"#fff",borderColor:el.bold?C.coral:C.line,color:el.bold?C.coral:C.sub}}>{el.bold?"Bold ✓":"Regular"}</button></div>
-    {slider("Font size",Math.round(el.size*100),50,200,v=>setEl({...el,size:v/100}),v=>v+"%")}
-    {slider("Kerning",el.kern,-5,30,v=>setEl({...el,kern:v}),v=>v+"px")}
-    {slider("Horizontal",Math.round(el.dx*100),-30,30,v=>setEl({...el,dx:v/100}),v=>v+"%")}
-    {slider("Vertical",Math.round(el.dy*100),-30,30,v=>setEl({...el,dy:v/100}),v=>v+"%")}
-  </div>;
+  // collapsible per-element section: everything for that element lives under its own header
+  const sect=(k,title,el,setEl,extra)=>{
+    const isOpen=open[k];
+    return<div style={{gridColumn:"1 / -1",border:`1px solid ${C.line}`,borderRadius:9,overflow:"hidden",background:"#fff"}}>
+      <button onClick={()=>setOpen(o=>({...o,[k]:!o[k]}))}style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"10px 12px",background:isOpen?C.paper:"#fff",border:"none",cursor:"pointer",textAlign:"left"}}>
+        <span style={{display:"flex",flexDirection:"column",minWidth:0}}>
+          <span style={{fontSize:12,fontWeight:800,color:C.ink}}>{title}</span>
+          <span style={{fontSize:11,color:C.sub,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:230}}>{el.text||"—"}</span>
+        </span>
+        <ChevronDown size={16}color={C.sub}style={{transform:isOpen?"rotate(180deg)":"none",transition:"transform .15s",flexShrink:0}}/>
+      </button>
+      {isOpen&&<div style={{padding:"10px 12px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,borderTop:`1px solid ${C.line}`}}>
+        <div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Text</label><input value={el.text}onChange={e=>setEl({...el,text:e.target.value})}style={ctrl}/></div>
+        <div><label style={fieldL}>Font</label><select value={el.font}onChange={e=>setEl({...el,font:e.target.value})}style={ctrl}>{COMPOSER_FONTS.map(f=><option key={f}value={f}>{f}</option>)}</select></div>
+        <div><label style={fieldL}>Weight</label><button onClick={()=>setEl({...el,bold:!el.bold})}style={{...ctrl,cursor:"pointer",textAlign:"left",fontWeight:el.bold?800:400,background:el.bold?C.coral+"18":"#fff",borderColor:el.bold?C.coral:C.line,color:el.bold?C.coral:C.sub}}>{el.bold?"Bold ✓":"Regular"}</button></div>
+        {slider("Font size",Math.round(el.size*100),50,200,v=>setEl({...el,size:v/100}),v=>v+"%")}
+        {slider("Kerning",el.kern,-5,30,v=>setEl({...el,kern:v}),v=>v+"px")}
+        {slider("Horizontal",Math.round(el.dx*100),-30,30,v=>setEl({...el,dx:v/100}),v=>v+"%")}
+        {slider("Vertical",Math.round(el.dy*100),-30,30,v=>setEl({...el,dy:v/100}),v=>v+"%")}
+        <div><label style={fieldL}>{k==="cta"?"Text colour":"Colour"}</label><input type="color"value={el.color}onChange={e=>setEl({...el,color:e.target.value})}style={{...ctrl,padding:2,height:34}}/></div>
+        {extra}
+      </div>}
+    </div>;
+  };
 
   return<div style={{marginTop:14,border:`1px solid ${C.line}`,borderRadius:12,overflow:"hidden"}}>
     <div style={{padding:"11px 16px",background:C.paper,borderBottom:`1px solid ${C.line}`,display:"flex",alignItems:"center",gap:8}}>
@@ -3476,7 +3505,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
         {bgMode==="plain"&&<div style={{gridColumn:"1 / -1"}}>
           <label style={fieldL}>Brand colour combinations</label>
           <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:8}}>
-            {BRAND_PALETTES.map(p=><button key={p.name}title={p.name}onClick={()=>{setBgColor(p.bg);setTextColor(p.text);setCtaBg(p.cta);}}
+            {BRAND_PALETTES.map(p=><button key={p.name}title={p.name}onClick={()=>{setBgColor(p.bg);setHl(h=>({...h,color:p.text}));setSh(s=>({...s,color:p.text}));setCt(t=>({...t,color:"#FFFFFF"}));setCtaBg(p.cta);}}
               style={{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",borderRadius:8,cursor:"pointer",border:`1px solid ${bgColor===p.bg?C.coral:C.line}`,background:"#fff"}}>
               <span style={{width:16,height:16,borderRadius:4,background:p.bg,border:`1px solid ${C.line}`}}/>
               <span style={{width:10,height:10,borderRadius:"50%",background:p.text}}/>
@@ -3490,7 +3519,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
           </div>
         </div>}
 
-        {bgMode==="library"&&<div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Library image (scene)</label><select value={bgId}onChange={e=>setBgId(e.target.value)}style={ctrl}><option value="">— pick —</option>{items.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select></div>}
+        {bgMode==="library"&&<div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Library image (scene)</label><select value={bgId}onChange={e=>setBgId(e.target.value)}style={ctrl}><option value="">— pick —</option>{assetItems.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select></div>}
 
         {bgMode==="generate"&&<div style={{gridColumn:"1 / -1",display:"grid",gap:8,padding:"10px 12px",background:C.paper,border:`1px solid ${C.line}`,borderRadius:8}}>
           {isBusiness
@@ -3522,7 +3551,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
             <span style={{fontSize:10.5,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.4}}>Product {idx+1}</span>
             {products.length>1&&<button onClick={()=>rmProduct(p.pid)}style={{border:"none",background:"none",color:"#B91C1C",fontSize:11,fontWeight:700,cursor:"pointer",padding:0}}>Remove</button>}
           </div>
-          <div style={{gridColumn:"1 / -1"}}><select value={p.id}onChange={e=>updProduct(p.pid,{id:e.target.value})}style={ctrl}><option value="">— pick from library —</option>{items.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select></div>
+          <div style={{gridColumn:"1 / -1"}}><select value={p.id}onChange={e=>updProduct(p.pid,{id:e.target.value})}style={ctrl}><option value="">— pick from library —</option>{productItems.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select></div>
           {slider("Size",Math.round(p.scale*100),15,100,v=>updProduct(p.pid,{scale:v/100}),v=>v+"%")}
           {slider("Horizontal",Math.round(p.x*100),0,100,v=>updProduct(p.pid,{x:v/100}),v=>v+"%")}
           {slider("Vertical",Math.round(p.y*100),5,95,v=>updProduct(p.pid,{y:v/100}),v=>v+"%")}
@@ -3531,37 +3560,16 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
 
         {/* image copy */}
         <div style={{gridColumn:"1 / -1",borderTop:`1px solid ${C.line}`,paddingTop:11,fontSize:11.5,fontWeight:800,color:C.ink}}>Image copy</div>
-        <div style={{gridColumn:"1 / -1"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
-            <label style={fieldL}>Headline</label>
-            <button onClick={()=>setEditing(editing==="hl"?"":"hl")}style={{border:"none",background:"none",color:C.coral,fontSize:11,fontWeight:700,cursor:"pointer",padding:0}}>{editing==="hl"?"Close edit":"Edit"}</button>
-          </div>
-          <input value={hl.text}onChange={e=>setHl({...hl,text:e.target.value})}style={ctrl}/>
-        </div>
-        {editing==="hl"&&editPanel(hl,setHl)}
-        <div style={{gridColumn:"1 / -1"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
-            <label style={fieldL}>Sub-headline</label>
-            <button onClick={()=>setEditing(editing==="sh"?"":"sh")}style={{border:"none",background:"none",color:C.coral,fontSize:11,fontWeight:700,cursor:"pointer",padding:0}}>{editing==="sh"?"Close edit":"Edit"}</button>
-          </div>
-          <input value={sh.text}onChange={e=>setSh({...sh,text:e.target.value})}style={ctrl}/>
-        </div>
-        {editing==="sh"&&editPanel(sh,setSh)}
+        {sect("hl","Headline",hl,setHl)}
+        {sect("sh","Sub-headline",sh,setSh)}
+        {sect("cta","CTA (optional)",ct,setCt,
+          <div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Button colour</label><input type="color"value={ctaBg}onChange={e=>setCtaBg(e.target.value)}style={{...ctrl,padding:2,height:34}}/></div>
+        )}
         <div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Placement (headline · sub-headline follows)</label>
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:5}}>
             {PLACEMENTS.map(p=><button key={p.k}onClick={()=>setAnchor(p.k)}style={{padding:"6px 0",fontSize:11,fontWeight:700,borderRadius:7,cursor:"pointer",border:`1px solid ${anchor===p.k?C.coral:C.line}`,background:anchor===p.k?C.coral+"18":"#fff",color:anchor===p.k?C.coral:C.sub}}>{p.label}</button>)}
           </div>
         </div>
-        <div><label style={fieldL}>Text colour</label><input type="color"value={textColor}onChange={e=>setTextColor(e.target.value)}style={{...ctrl,padding:2,height:34}}/></div>
-        <div style={{gridColumn:"1 / -1"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
-            <label style={fieldL}>CTA (optional)</label>
-            <button onClick={()=>setEditing(editing==="cta"?"":"cta")}style={{border:"none",background:"none",color:C.coral,fontSize:11,fontWeight:700,cursor:"pointer",padding:0}}>{editing==="cta"?"Close edit":"Edit"}</button>
-          </div>
-          <input value={ct.text}onChange={e=>setCt({...ct,text:e.target.value})}style={ctrl}/>
-        </div>
-        {editing==="cta"&&editPanel(ct,setCt)}
-        <div><label style={fieldL}>CTA colour</label><input type="color"value={ctaBg}onChange={e=>setCtaBg(e.target.value)}style={{...ctrl,padding:2,height:34}}/></div>
 
         {/* logo */}
         <div style={{gridColumn:"1 / -1",borderTop:`1px solid ${C.line}`,paddingTop:11,fontSize:11.5,fontWeight:800,color:C.ink}}>Logo (sub-brand)</div>
