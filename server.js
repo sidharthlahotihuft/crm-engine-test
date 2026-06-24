@@ -844,13 +844,14 @@ app.post("/api/image-library", authMiddleware, roles("admin", "brand", "design",
 // Generate a background/scene image from a text prompt (Composer "Generate image").
 // body: { prompt, negativePrompt?, aspectRatio? }  →  { image: dataURL }
 app.post("/api/generate-image", authMiddleware, roles("admin", "brand", "design", "business"), async (req, res) => {
-  const { prompt, negativePrompt, aspectRatio, reserveProductSpace, productCount } = req.body || {};
+  const { prompt, negativePrompt, aspectRatio, reserveProductSpace, productCount, textZone, productZone } = req.body || {};
   if (!prompt || !String(prompt).trim()) return res.status(400).json({ error: "prompt required" });
   const n = Math.max(1, Math.min(3, parseInt(productCount, 10) || 1));
-  const textSpace = "Composition for a marketing creative: keep a generous, clean, low-detail area (roughly one third of the frame — usually the top or left) as negative space so a large headline, sub-headline and a button can be overlaid with high legibility. Do NOT render any text, words, numbers, logos, badges or watermarks in the image.";
-  const spot = n === 1 ? "a clean, well-lit, uncluttered spot" : `${n} clean, well-lit, uncluttered spots arranged together`;
+  const tZone = (textZone && String(textZone).trim()) || "the upper or left part of the frame";
+  const pZone = (productZone && String(productZone).trim()) || "the lower part of the frame";
+  const textSpace = `Composition for a marketing creative: the headline, sub-headline and a button will be overlaid on ${tZone} — keep THAT area clean, calm and low-detail (simple, uncluttered background there) so overlaid text stays highly legible. Do NOT render any text, words, numbers, logos, badges or watermarks in the image.`;
   const productSpace = reserveProductSpace
-    ? `Leave ${spot} (typically the lower portion or one side, opposite the text area) where ${n>1?"real product packshots":"a real product packshot"} will be placed on top afterwards — keep that area simple and free of clutter. IMPORTANT: do NOT draw, render, invent or imply any product, package, pouch, box, bottle, can, label or packaging anywhere in the image — only the empty scene/background and props.`
+    ? `In ${pZone}, include a clean, realistic, well-lit surface — a table top, kitchen counter, wooden board, or the ground — on which ${n>1?`${n} products`:"a product"} can stand. Light that surface naturally with a soft contact-shadow area and perspective consistent with ${n>1?"objects":"an object"} of roughly that size sitting there, so a product composited onto it afterwards looks grounded and correctly proportioned — but leave the spot itself EMPTY. IMPORTANT: do NOT draw, render, invent or imply any product, package, pouch, box, bottle, can, label or packaging anywhere in the image — only the empty scene, surface and props.`
     : "";
   let full = [String(prompt), productSpace, textSpace].filter(Boolean).join("\n\n");
   if (negativePrompt) full += `\n\nAvoid: ${negativePrompt}`;

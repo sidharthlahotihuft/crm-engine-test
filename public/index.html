@@ -62,7 +62,7 @@ async function callClaude(system,prompt,expectJson){
 // Role-based default tab
 const ROLE_TAB={admin:"dashboard",business:"dashboard",content:"content",design:"design",brand:"dashboard"};
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v27.0 · AI gen injects HUFT visual guidelines + design rules, auto-picks brief product, up to 3 products composited on top, product moved off right rail in generate mode";
+const BUILD="v27.1 · AI scene reserves the actual text area + a real product surface; product composited grounded at proper proportion (not a flat paste)";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -3627,10 +3627,11 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
       const img=prodImgs[p.id], aspect=img.height/img.width;
       let pw,ph,cx,cy;
       if(autoFit){
-        ph=regH*0.92;pw=ph/aspect;
         const gapW=sz.w*0.02, maxPw=(sz.w-pad*2-(nP-1)*gapW)/Math.max(1,nP);
+        const ground=bgMode==="generate"; // sit on the AI-rendered surface, not floating
+        ph=regH*(ground?0.82:0.92);pw=ph/aspect;
         if(pw>maxPw){pw=maxPw;ph=pw*aspect;}
-        cy=(regTop+regBot)/2;
+        cy=ground?(regBot-sz.h*0.04-ph/2):(regTop+regBot)/2;
         const totalW=pw*nP+(nP-1)*gapW, startX=(sz.w-totalW)/2;
         cx=startX+pw/2+pi*(pw+gapW);
       }else{pw=sz.w*p.scale;ph=pw*aspect;cx=sz.w*p.x;cy=sz.h*p.y;}
@@ -3726,10 +3727,18 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
       const hasProduct=products.some(p=>p.id); // reserve clean spots for the real packshots
       const rulesText=(promptRules&&promptRules.length)?activeRuleText(promptRules):"";
       const fullPrompt=[genPrompt.trim(),HUFT_VISUAL_GUIDELINES,rulesText&&rulesText!=="(none yet)"?("HUFT DESIGN RULES — also follow:\n"+rulesText):""].filter(Boolean).join("\n\n");
-      const r=await api.post("/api/generate-image",{prompt:fullPrompt,negativePrompt:genNeg,aspectRatio:sz.ar,reserveProductSpace:hasProduct,productCount:products.filter(p=>p.id).length||1});
+      // where text & product will actually sit, so the scene reserves the right areas
+      const [vP,hP]=String(anchor||"mid-center").split("-");
+      const hA=(textAlign&&textAlign!=="auto")?textAlign:(hP==="left"?"left":hP==="right"?"right":"center");
+      const vWord=vP==="top"?"upper":vP==="bottom"?"lower":"middle";
+      const hWord=hA==="left"?"left":hA==="right"?"right":"centre";
+      const textZone=`the ${vWord} ${hWord} part of the frame`;
+      const prodV=vP==="top"?"lower":vP==="bottom"?"upper":"lower";
+      const productZone=`the ${prodV} part of the frame`;
+      const r=await api.post("/api/generate-image",{prompt:fullPrompt,negativePrompt:genNeg,aspectRatio:sz.ar,reserveProductSpace:hasProduct,productCount:products.filter(p=>p.id).length||1,textZone,productZone});
       const im=await loadImage(r.image);setGenImg(im);setBgMode("generate");
       setGenUsedProduct(false); // product is composited as the exact PNG, never AI-recreated
-      if(toast)toast(hasProduct?"Scene generated ✓ — your exact product PNG sits on top":"Image generated ✓ — copy kept on top","success");
+      if(toast)toast(hasProduct?"Scene generated ✓ — exact product placed on its surface":"Image generated ✓ — copy kept on top","success");
     }catch(e){setGenErr(e.message||"Generation failed");}
     setGenBusy(false);
   };
