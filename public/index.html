@@ -62,7 +62,7 @@ async function callClaude(system,prompt,expectJson){
 // Role-based default tab
 const ROLE_TAB={admin:"dashboard",business:"dashboard",content:"content",design:"design",brand:"dashboard"};
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v27.6 · auto-avoid subject — copy scans the photo for the busy area (dog/bowl) and stays in the calm column so it never overlaps";
+const BUILD="v28.0 · roles: Business/Content get Library + Product-mockup modes only (no AI); Design/Admin/Brand keep full generation. New clean mockup-background presets, exact packshot on top";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -3357,6 +3357,14 @@ const BRAND_PALETTES=[
   {name:"Chicken & Brown Rice",bg:"#102242",text:"#DC5829",cta:"#DC5829"},
   {name:"Paneer & Eggs",bg:"#102242",text:"#00A6B4",cta:"#00A6B4"},
 ];
+const MOCKUP_PRESETS=[
+  {k:"studio-cream",name:"Studio cream",type:"grad",from:"#FBF3E6",to:"#E8D6BB"},
+  {k:"soft-grey",name:"Soft grey",type:"grad",from:"#F5F6F8",to:"#D7DBE1"},
+  {k:"coral-tint",name:"Coral tint",type:"grad",from:"#FCE9DF",to:"#F2C5AB"},
+  {k:"sage",name:"Sage calm",type:"grad",from:"#EEF2EA",to:"#C9D7C0"},
+  {k:"navy",name:"HUFT navy",type:"grad",from:"#1B3358",to:"#0E1E38"},
+  {k:"sweep",name:"Photo sweep",type:"sweep",wall:"#EFE6D7",floor:"#D8C6AC"},
+];
 function loadImage(src){return new Promise((res,rej)=>{const im=new Image();im.crossOrigin="anonymous";im.onload=()=>res(im);im.onerror=rej;im.src=src;});}
 let _pid=0;const nextPid=()=>"p"+(++_pid);
 
@@ -3364,10 +3372,12 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   const ref=React.useRef(null);
   const role=(me&&me.role)||"";
   const isBusiness=role==="business";
+  const canGenerate=["design","admin","brand"].includes(role); // full AI generation
+  const restricted=!canGenerate; // business, content → library + mockups only, no AI
   const dsg=(c.data&&c.data.design)||{};
   // Background defaults to plain/generate — a library pick is routed by kind once the library loads
   // (asset → background scene; product mockup → product layer). See pick-routing effect below.
-  const initSource = dsg.imageSource==="prompt" ? "generate" : "plain";
+  const initSource = (dsg.imageSource==="prompt"&&["design","admin","brand"].includes(role)) ? "generate" : "plain";
 
   const[sizeIdx,setSizeIdx]=useState(0);
   const[template,setTemplate]=useState("");
@@ -3379,6 +3389,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   const copyHitsRef=React.useRef({}); // {hl:[y0,y1], sh:[y0,y1], cta:[y0,y1]} in canvas (intrinsic) coords
   const[linkSizes,setLinkSizes]=useState(true); // sub-headline size scales with headline unless unlinked
   const[autoFit,setAutoFit]=useState(true); // auto-place/scale products into free space (no overlap)
+  const[mockupPreset,setMockupPreset]=useState("studio-cream"); // clean preset background for product mockups
   const sz=COMPOSER_SIZES[sizeIdx];
 
   // background source
@@ -3433,6 +3444,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   const productItems=items.filter(i=>i.kind==="product"||!i.kind);
   const assetItems=items.filter(i=>i.kind==="asset"||!i.kind);
   const logoItems=items.filter(i=>i.kind==="logo");
+  const mockupItems=items.filter(i=>i.kind==="mockup");
   // Auto-pick the brief's product into the first empty slot once the library loads
   const autoPickedRef=React.useRef(false);
   React.useEffect(()=>{
@@ -3574,6 +3586,22 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
     return{lines:fallback.length?fallback:[],px};
   };
   const drawBgImage=(ctx,img)=>{const s=Math.max(sz.w/img.width,sz.h/img.height);const dw=img.width*s,dh=img.height*s;ctx.drawImage(img,(sz.w-dw)/2,(sz.h-dh)/2,dw,dh);};
+  const drawMockupPreset=(ctx,k)=>{
+    const p=MOCKUP_PRESETS.find(x=>x.k===k)||MOCKUP_PRESETS[0];
+    if(p.type==="sweep"){
+      const g=ctx.createLinearGradient(0,0,0,sz.h);
+      g.addColorStop(0,p.wall);g.addColorStop(0.56,p.wall);
+      g.addColorStop(0.60,p.floor);g.addColorStop(1,p.floor);
+      ctx.fillStyle=g;ctx.fillRect(0,0,sz.w,sz.h);
+      const rg=ctx.createRadialGradient(sz.w/2,sz.h*0.42,sz.w*0.1,sz.w/2,sz.h*0.42,sz.w*0.75);
+      rg.addColorStop(0,"rgba(255,255,255,0.10)");rg.addColorStop(1,"rgba(0,0,0,0.08)");
+      ctx.fillStyle=rg;ctx.fillRect(0,0,sz.w,sz.h);
+    }else{
+      const g=ctx.createLinearGradient(0,0,0,sz.h);
+      g.addColorStop(0,p.from);g.addColorStop(1,p.to);
+      ctx.fillStyle=g;ctx.fillRect(0,0,sz.w,sz.h);
+    }
+  };
   // Scan the background for the busy/subject area (high edge energy) and return the calm
   // horizontal band the copy should live in, so text never collides with the dog/product/etc.
   const calmColumn=(img,y0,y1,align,padFrac)=>{
@@ -3627,7 +3655,8 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
 
     // 1) background
     if(bgMode==="generate"&&genImg) drawBgImage(ctx,genImg);
-    else if(bgMode==="library"&&bgImg) drawBgImage(ctx,bgImg);
+    else if((bgMode==="library"||bgMode==="mockup")&&bgImg) drawBgImage(ctx,bgImg);
+    else if(bgMode==="mockup") drawMockupPreset(ctx,mockupPreset);
     else{ctx.fillStyle=bgColor;ctx.fillRect(0,0,sz.w,sz.h);}
 
     // ---- copy metrics first, so products can auto-fit around the copy ----
@@ -3637,7 +3666,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
     let maxW=sz.w-pad*2;
     let anchorX=hAlign==="left"?pad:hAlign==="right"?sz.w-pad:sz.w/2;
     // Smart subject-avoidance: keep copy out of the busy part of the scene (the dog, the bowl…)
-    const scanBg=bgMode==="generate"?genImg:bgMode==="library"?bgImg:null;
+    const scanBg=bgMode==="generate"?genImg:(bgMode==="library"||bgMode==="mockup")?bgImg:null;
     if(autoAvoid&&scanBg){
       const band=vPos==="top"?[0.04,0.56]:vPos==="bottom"?[0.46,0.96]:[0.26,0.74];
       const fit=calmColumn(scanBg,band[0],band[1],hAlign,pad/sz.w);
@@ -3697,7 +3726,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
       let pw,ph,cx,cy;
       if(autoFit){
         const gapW=sz.w*0.02, maxPw=(sz.w-pad*2-(nP-1)*gapW)/Math.max(1,nP);
-        const ground=bgMode==="generate"; // sit on the AI-rendered surface, not floating
+        const ground=bgMode==="generate"||bgMode==="mockup"; // sit on the AI-rendered or mockup surface, not floating
         ph=regH*(ground?0.82:0.92);pw=ph/aspect;
         if(pw>maxPw){pw=maxPw;ph=pw*aspect;}
         cy=ground?(regBot-sz.h*0.04-ph/2):(regTop+regBot)/2;
@@ -3785,8 +3814,9 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
         ctx.drawImage(limg,lx,ly,lw,lh);
       }
     }
-  },[sz,bgMode,bgColor,bgImg,genImg,products,prodImgs,shadow,hl,sh,anchor,ct,ctaBg,logoImg,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,huftReady,divider,autoFit,textShadow,textAlign,oldPrice,copyScale,autoAvoid,genUsedProduct,editorOpen]);
+  },[sz,bgMode,bgColor,bgImg,genImg,mockupPreset,products,prodImgs,shadow,hl,sh,anchor,ct,ctaBg,logoImg,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,huftReady,divider,autoFit,textShadow,textAlign,oldPrice,copyScale,autoAvoid,genUsedProduct,editorOpen]);
 
+  React.useEffect(()=>{if(!canGenerate&&bgMode==="generate")setBgMode("mockup");},[canGenerate,bgMode]);
   React.useEffect(()=>{draw();},[draw]);
 
   const runGenerate=async()=>{
@@ -3922,8 +3952,9 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
         <div><label style={fieldL}>Size</label><select value={sizeIdx}onChange={e=>setSizeIdx(+e.target.value)}style={ctrl}>{COMPOSER_SIZES.map((s,i)=><option key={i}value={i}>{s.label} ({s.w}×{s.h})</option>)}</select></div>
         <div><label style={fieldL}>Source · keep or switch</label><select value={bgMode}onChange={e=>setBgMode(e.target.value)}style={ctrl}>
           <option value="plain">Plain background + product</option>
+          <option value="mockup">Product mockup (clean background)</option>
           <option value="library">Image from library</option>
-          <option value="generate">Generated image (AI)</option>
+          {canGenerate&&<option value="generate">Generated image (AI)</option>}
         </select></div>
 
         {bgMode==="plain"&&<div style={{gridColumn:"1 / -1"}}>
@@ -3945,15 +3976,25 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
 
         {bgMode==="library"&&<div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Library image (scene)</label><select value={bgId}onChange={e=>setBgId(e.target.value)}style={ctrl}><option value="">— pick —</option>{assetItems.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select></div>}
 
-        {bgMode==="generate"&&<div style={{gridColumn:"1 / -1",display:"grid",gap:8,padding:"10px 12px",background:C.paper,border:`1px solid ${C.line}`,borderRadius:8}}>
-          {isBusiness
-            ? <div style={{fontSize:12,color:C.sub}}>Generates a scene from the approved art-direction prompt. Products and copy stay on top, fully editable.</div>
-            : <>
-                <div><label style={fieldL}>Prompt (scene / background)</label><textarea value={genPrompt}onChange={e=>setGenPrompt(e.target.value)}rows={2}style={{...ctrl,resize:"vertical"}}placeholder="e.g. warm rustic kitchen counter, soft morning light"/></div>
-                <div><label style={fieldL}>Avoid (optional)</label><input value={genNeg}onChange={e=>setGenNeg(e.target.value)}style={ctrl}placeholder="text, watermarks, other products"/></div>
-              </>}
+        {bgMode==="mockup"&&<div style={{gridColumn:"1 / -1",display:"grid",gap:8,padding:"10px 12px",background:C.paper,border:`1px solid ${C.line}`,borderRadius:8}}>
+          <div><label style={fieldL}>Mockup background</label>
+            <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+              {MOCKUP_PRESETS.map(p=><button key={p.k}title={p.name}onClick={()=>{setMockupPreset(p.k);setBgId("");}}
+                style={{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",borderRadius:8,cursor:"pointer",border:`1px solid ${(!bgId&&mockupPreset===p.k)?C.coral:C.line}`,background:"#fff"}}>
+                <span style={{width:18,height:18,borderRadius:4,border:`1px solid ${C.line}`,background:p.type==="sweep"?`linear-gradient(${p.wall} 55%, ${p.floor} 55%)`:`linear-gradient(${p.from}, ${p.to})`}}/>
+                <span style={{fontSize:11,fontWeight:600,color:C.ink}}>{p.name}</span>
+              </button>)}
+            </div>
+          </div>
+          {mockupItems.length>0&&<div><label style={fieldL}>…or an uploaded mockup</label><select value={bgId}onChange={e=>setBgId(e.target.value)}style={ctrl}><option value="">— use a preset above —</option>{mockupItems.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select></div>}
+          <div style={{fontSize:10.5,color:C.sub}}>Your exact product packshot composites on top with a natural shadow — the label stays accurate. Add the product below.</div>
+        </div>}
+
+        {bgMode==="generate"&&canGenerate&&<div style={{gridColumn:"1 / -1",display:"grid",gap:8,padding:"10px 12px",background:C.paper,border:`1px solid ${C.line}`,borderRadius:8}}>
+          <div><label style={fieldL}>Prompt (scene / background)</label><textarea value={genPrompt}onChange={e=>setGenPrompt(e.target.value)}rows={2}style={{...ctrl,resize:"vertical"}}placeholder="e.g. warm rustic kitchen counter, soft morning light"/></div>
+          <div><label style={fieldL}>Avoid (optional)</label><input value={genNeg}onChange={e=>setGenNeg(e.target.value)}style={ctrl}placeholder="text, watermarks, other products"/></div>
           <Btn small disabled={genBusy}onClick={runGenerate}style={{width:"100%",justifyContent:"center"}}>{genBusy?"Generating…":"Generate scene"}</Btn>
-          {!isBusiness&&<div style={{borderTop:`1px solid ${C.line}`,paddingTop:8}}>
+          {<div style={{borderTop:`1px solid ${C.line}`,paddingTop:8}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <span style={{fontSize:11,fontWeight:800,color:C.ink}}>Products in the scene{products.length>1?" · "+products.length:""}</span>
               {products.length<3&&<button onClick={addProduct}style={{border:"none",background:"none",color:C.coral,fontSize:11,fontWeight:700,cursor:"pointer",padding:0}}>+ Add</button>}
