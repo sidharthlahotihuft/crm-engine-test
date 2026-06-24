@@ -62,7 +62,7 @@ async function callClaude(system,prompt,expectJson){
 // Role-based default tab
 const ROLE_TAB={admin:"dashboard",business:"dashboard",content:"content",design:"design",brand:"dashboard"};
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v28.5 · upload size-guard: files that fit go up untouched (full quality, alpha intact); only oversized files are gently downscaled to clear the 413 limit, preserving transparency for packshots/logos. Tunable via UPLOAD_MAX_DATAURL for self-hosted servers";
+const BUILD="v28.9 · submitted work stays in its tab marked Pending approval — copy out for approval shows in Copy tab (Pending brand approval); a design Used-as-final now stays in the Design tab with a purple Pending approval badge instead of vanishing";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -628,8 +628,8 @@ function ChannelIcon({channel,size=16}){
   return<span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:size+18,height:size+18,borderRadius:10,background:cfg.bg,color:cfg.fg,flexShrink:0}}>{cfg.ic}</span>;
 }
 function RowActions({c,patch,me,onEdit,onDelete,onDuplicate}){
-  const canEdit=me.role==="admin"||me.role==="business";
-  const canDup=["admin","business","design"].includes(me.role);
+  const canEdit=me.role==="admin"||me.role==="business"||me.role==="brand";
+  const canDup=["admin","business","design","brand"].includes(me.role);
   return<div style={{display:"flex",gap:5,alignItems:"center",flexShrink:0}}>
     {onEdit&&<button onClick={e=>{e.stopPropagation();onEdit();}}style={{display:"flex",alignItems:"center",gap:3,fontSize:11.5,padding:"4px 8px",borderRadius:6,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.sub,fontWeight:600}}><PenLine size={11}/>Edit</button>}
     {canDup&&onDuplicate&&<button onClick={e=>{e.stopPropagation();onDuplicate(c);}}style={{display:"flex",alignItems:"center",gap:3,fontSize:11.5,padding:"4px 8px",borderRadius:6,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.sub,fontWeight:600}}><Copy size={11}/>Duplicate</button>}
@@ -1330,7 +1330,7 @@ function Dashboard({campaigns,onNew,onOpen,me,setTab}){
           <button onClick={()=>setView("list")}style={{padding:"6px 14px",border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:view==="list"?C.navy:"#fff",color:view==="list"?"#fff":C.sub,display:"flex",alignItems:"center",gap:5}}><LayoutDashboard size={13}/>List</button>
           <button onClick={()=>setView("calendar")}style={{padding:"6px 14px",border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:view==="calendar"?C.navy:"#fff",color:view==="calendar"?"#fff":C.sub,display:"flex",alignItems:"center",gap:5}}><CalendarIcon size={13}/>Calendar</button>
         </div>
-        {(me.role==="admin"||me.role==="business")&&<Btn onClick={onNew}><Plus size={16}/>New asset</Btn>}
+        {(me.role==="admin"||me.role==="business"||me.role==="brand")&&<Btn onClick={onNew}><Plus size={16}/>New asset</Btn>}
       </div>
     </div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:18}}>
@@ -1816,7 +1816,7 @@ const AlertCircle=p=><Svg{...p}><circle cx="12"cy="12"r="10"/><path d="M12 8v4M1
 /* ===== Brief Tab ======================================================== */
 function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,onOpen,onDelete,onNew,onBulkImport,onBulkGenerate,toast}){
   const[view,setView]=useState("list");
-  const canCreate=me.role==="admin"||me.role==="business";
+  const canCreate=me.role==="admin"||me.role==="business"||me.role==="brand";
   const[importing,setImporting]=useState(false); // false | "open" | "working" | "done"
   const[importRows,setImportRows]=useState([]);
   const[importProg,setImportProg]=useState({done:0,total:0});
@@ -3969,11 +3969,11 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
     }
   };
   const useAsFinal=()=>{const cv=ref.current;if(!cv||!patch)return;setFinalSaving(true);
-    try{const dataUrl=cv.toDataURL("image/png");patch(c.id,{data:{...(c.data||{}),design:{...(d||{}),finalFile:{name:(c.product||"creative")+"_composed.png",type:"image/png",dataUrl},finalSource:"composer"}}});
+    try{const dataUrl=cv.toDataURL("image/png");patch(c.id,{data:{...(c.data||{}),design:{...(d||{}),finalFile:{name:(c.product||"creative")+"_composed.png",type:"image/png",dataUrl},finalSource:"composer",pendingApproval:true,submittedForApprovalAt:new Date().toISOString(),approvalStage:"design"}}});
       // rest the lifestyle/mockup image used here so it doesn't get reused for 45 days
       if((bgMode==="library"||bgMode==="mockup")&&bgId){api.post("/api/image-library/mark-used",{ids:[bgId]}).then(()=>reloadLib&&reloadLib()).catch(()=>{});}
-      if(toast)toast("Set as final design ✓ — scroll down to Mark as done","success");}
-    catch(e){if(toast)toast("Couldn't set final design","error");}
+      if(toast)toast("Submitted for approval ✓ — stays here, marked Pending approval","success");}
+    catch(e){if(toast)toast("Couldn't submit design","error");}
     setFinalSaving(false);};
 
   const fieldL={fontSize:11,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.4,marginBottom:5,display:"block"};
@@ -4362,6 +4362,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
           <div style={{fontSize:12,color:C.sub,display:"flex",gap:6,alignItems:"center"}}><span>{parseName(c.name).date&&<b style={{color:C.ink,marginRight:4}}>{parseName(c.name).date}</b>}{copy.direction}</span>{c.created_at&&<span style={{marginLeft:"auto",fontSize:11,color:C.sub,background:"#F3F4F6",padding:"2px 7px",borderRadius:5,flexShrink:0}}>{fmtDate(c.created_at)}</span>}</div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+          {d.pendingApproval&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:800,color:"#9333EA",background:"#FAF5FF",border:"1px solid #E9D5FF",padding:"3px 9px",borderRadius:999}}><Eye size={11}/>Pending approval</span>}
           {approvedPrompt?<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#0F766E",background:"#CCFBF1",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>Prompt approved</span>
           :d.imagePrompts?<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#1D4ED8",background:"#DBEAFE",padding:"3px 9px",borderRadius:999}}>Prompts ready</span>
           :<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#B91C1C",background:"#FEF2F2",padding:"3px 9px",borderRadius:999}}>Needs design</span>}
@@ -4915,11 +4916,15 @@ function RequestsDrawer({onClose,me,onOpen,onChange}){
 }
 
 function TeamDrawer({onClose,me}){
-  const[users,setUsers]=useState(null);const[form,setForm]=useState({name:"",email:"",password:"",role:"content"});const[err,setErr]=useState("");const[busy,setBusy]=useState(false);
+  const[users,setUsers]=useState(null);const[form,setForm]=useState({name:"",email:"",password:"",role:"content",approval_slots:[]});const[err,setErr]=useState("");const[busy,setBusy]=useState(false);
   useEffect(()=>{api.get("/api/users").then(setUsers).catch(()=>setUsers([]));},[]);
-  const add=async()=>{setErr("");setBusy(true);try{await api.post("/api/users",form);setUsers(await api.get("/api/users"));setForm({name:"",email:"",password:"",role:"content"});}catch(e){setErr(e.message);}setBusy(false);};
+  const add=async()=>{setErr("");setBusy(true);try{await api.post("/api/users",form);setUsers(await api.get("/api/users"));setForm({name:"",email:"",password:"",role:"content",approval_slots:[]});}catch(e){setErr(e.message);}setBusy(false);};
   const remove=async(id)=>{try{await api.del("/api/users/"+id);setUsers(await api.get("/api/users"));}catch(e){setErr(e.message);}};
   const changeRole=async(id,role)=>{try{await api.put("/api/users/"+id,{role});setUsers(await api.get("/api/users"));}catch(e){setErr(e.message);}};
+  const setUserSlots=async(id,slots)=>{try{await api.put("/api/users/"+id,{approval_slots:slots});setUsers(await api.get("/api/users"));}catch(e){setErr(e.message);}};
+  const SLOTS=[["copy","Copy approval","After copy is written"],["design","Design approval","After the design is created"],["asset","Full-asset approval","Copy + design, after design lead"],["final","Final sign-off","Last gate before Finalized"]];
+  const slotLabel=(k)=>(SLOTS.find(s=>s[0]===k)||[,k])[1];
+  const toggleFormSlot=(k)=>setForm(f=>({...f,approval_slots:(f.approval_slots||[]).includes(k)?f.approval_slots.filter(x=>x!==k):[...(f.approval_slots||[]),k]}));
   const ROLES=["admin","brand","business","content","design"];
   const roleColor={admin:C.coral,brand:"#C026D3",business:C.teal,content:C.purple,design:C.green};
   return<Drawer onClose={onClose}title={<><Users size={18}color={C.teal}/>Team</>}intro="Manage access. Each role lands on a different tab by default.">
@@ -4937,16 +4942,29 @@ function TeamDrawer({onClose,me}){
           {ROLES.map(r=><option key={r}value={r}>{r}</option>)}
         </select>
       </div>
+      <div style={{marginBottom:10}}>
+        <div style={{fontSize:12,fontWeight:700,color:C.ink,marginBottom:6}}>What approvals does this user give? <span style={{fontWeight:500,color:C.sub}}>(optional — leave empty for non-approvers)</span></div>
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {SLOTS.map(([k,label,when])=>{const on=(form.approval_slots||[]).includes(k);return<label key={k}style={{display:"flex",alignItems:"center",gap:8,fontSize:12.5,cursor:"pointer",padding:"6px 9px",border:`1px solid ${on?C.coral:C.line}`,borderRadius:8,background:on?C.coralSoft:"#fff"}}><input type="checkbox"checked={on}onChange={()=>toggleFormSlot(k)}/><span style={{fontWeight:600,color:C.ink}}>{label}</span><span style={{color:C.sub,fontSize:11.5}}>· {when}</span></label>;})}
+        </div>
+      </div>
       {err&&<div style={{color:C.coral,fontSize:12.5,marginBottom:8}}>{err}</div>}
       <Btn small onClick={add}disabled={busy||!form.name||!form.email||!form.password}><Plus size={13}/>Add user</Btn>
     </div>}
-    {users==null?<Spin label="Loading…"/>:users.map(u=><div key={u.id}style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderTop:`1px solid ${C.line}`}}>
+    {users==null?<Spin label="Loading…"/>:users.map(u=><div key={u.id}style={{padding:"10px 0",borderTop:`1px solid ${C.line}`}}>
+      <div style={{display:"flex",alignItems:"center",gap:10}}>
       <span style={{width:32,height:32,borderRadius:999,background:C.coralSoft,color:C.coral,display:"inline-flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:13,flexShrink:0}}>{u.name?u.name[0].toUpperCase():"?"}</span>
       <div style={{flex:1,minWidth:0}}><div style={{fontSize:13.5,fontWeight:600}}>{u.name}</div><div style={{fontSize:11.5,color:C.sub}}>{u.email}</div></div>
       {me.role==="admin"&&u.id!==me.id?<select value={u.role}onChange={e=>changeRole(u.id,e.target.value)}style={{border:`1px solid ${C.line}`,borderRadius:7,padding:"4px 8px",fontSize:12,color:roleColor[u.role]||C.sub,fontWeight:600}}>
         {ROLES.map(r=><option key={r}value={r}>{r}</option>)}
       </select>:<span style={{background:(roleColor[u.role]||C.sub)+"20",color:roleColor[u.role]||C.sub,fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:999}}>{u.role}</span>}
       {me.role==="admin"&&u.id!==me.id&&<button onClick={()=>remove(u.id)}style={{border:"none",background:"transparent",cursor:"pointer",color:C.sub}}><Trash2 size={15}/></button>}
+      </div>
+      {me.role==="admin"&&<div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginTop:7,paddingLeft:42}}>
+        <span style={{fontSize:10.5,color:C.sub,fontWeight:600}}>Approvals:</span>
+        {SLOTS.map(([k,label])=>{const on=(u.approval_slots||[]).includes(k);return<button key={k}onClick={()=>setUserSlots(u.id,on?(u.approval_slots||[]).filter(x=>x!==k):[...(u.approval_slots||[]),k])}style={{fontSize:10.5,fontWeight:700,padding:"2px 9px",borderRadius:999,cursor:"pointer",border:`1px solid ${on?"#C026D3":C.line}`,background:on?"#C026D318":"#fff",color:on?"#C026D3":C.sub}}>{on?"✓ ":""}{label}</button>;})}
+        {(!u.approval_slots||u.approval_slots.length===0)&&<span style={{fontSize:10.5,color:C.sub,fontStyle:"italic"}}>none</span>}
+      </div>}
     </div>)}
   </Drawer>;
 }

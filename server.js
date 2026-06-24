@@ -44,6 +44,7 @@ const db = async (sql, params = []) => {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const uid = () => Math.random().toString(36).slice(2, 11);
 const safeJson = (s) => { try { return JSON.parse(s); } catch (e) { return null; } };
+const SERVER_BUILD = "server-v28.7 · approval_slots + sub_brands on users; insert-first uploads; creative_requests; 45-day cooldown; brand full asset access";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -315,21 +316,24 @@ app.get("/api/auth/me", authMiddleware, (req, res) => res.json(req.user));
 
 app.get("/api/users", authMiddleware, roles("admin"), async (req, res) => {
   try {
-    res.json(await db("SELECT id,name,email,role,created_at,last_login FROM users ORDER BY created_at DESC"));
+    res.json(await db("SELECT id,name,email,role,approval_slots,sub_brands,created_at,last_login FROM users ORDER BY created_at DESC"));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post("/api/users", authMiddleware, roles("admin"), async (req, res) => {
-  const { name, email, password, role } = req.body;
+  const { name, email, password, role, approval_slots, sub_brands } = req.body;
   if (!name || !email || !password) return res.status(400).json({ error: "name, email, password required" });
   const validRoles = ["admin","brand","business","content","design"];
   const userRole = validRoles.includes(role) ? role : "content";
+  const VALID_SLOTS = ["copy","design","asset","final"];
+  const slots = Array.isArray(approval_slots) ? approval_slots.filter(s => VALID_SLOTS.includes(s)) : [];
+  const brands = Array.isArray(sub_brands) ? sub_brands.filter(Boolean).map(String) : [];
   try {
     const hash = await bcrypt.hash(password, 10);
     const id = uid();
     await db(
-      "INSERT INTO users (id,name,email,password,role) VALUES ($1,$2,$3,$4,$5)",
-      [id, name, email.toLowerCase().trim(), hash, userRole]
+      "INSERT INTO users (id,name,email,password,role,approval_slots,sub_brands) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+      [id, name, email.toLowerCase().trim(), hash, userRole, slots, brands]
     );
     res.json({ ok: true, id });
   } catch (e) {
@@ -339,12 +343,15 @@ app.post("/api/users", authMiddleware, roles("admin"), async (req, res) => {
 });
 
 app.put("/api/users/:id", authMiddleware, roles("admin"), async (req, res) => {
-  const { name, role, password } = req.body;
+  const { name, role, password, approval_slots, sub_brands } = req.body;
   const validRoles = ["admin","brand","business","content","design"];
+  const VALID_SLOTS = ["copy","design","asset","final"];
   try {
     if (password) await db("UPDATE users SET password=$1 WHERE id=$2", [await bcrypt.hash(password, 10), req.params.id]);
     if (name)                      await db("UPDATE users SET name=$1     WHERE id=$2", [name, req.params.id]);
     if (role && validRoles.includes(role)) await db("UPDATE users SET role=$1 WHERE id=$2", [role, req.params.id]);
+    if (Array.isArray(approval_slots)) await db("UPDATE users SET approval_slots=$1 WHERE id=$2", [approval_slots.filter(s => VALID_SLOTS.includes(s)), req.params.id]);
+    if (Array.isArray(sub_brands))     await db("UPDATE users SET sub_brands=$1 WHERE id=$2", [sub_brands.filter(Boolean).map(String), req.params.id]);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -498,7 +505,7 @@ app.put("/api/campaigns/:id", authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.delete("/api/campaigns/:id", authMiddleware, roles("admin","business"), async (req, res) => {
+app.delete("/api/campaigns/:id", authMiddleware, roles("admin","business","brand"), async (req, res) => {
   try { await db("DELETE FROM campaigns WHERE id=$1", [req.params.id]); res.json({ ok: true }); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -810,37 +817,38 @@ app.post("/api/image-library", authMiddleware, roles("admin", "brand", "design",
   // Strip a data: URL prefix if present, to get raw base64 for the vision call
   const b64 = String(file_data).includes(",") ? String(file_data).split(",")[1] : String(file_data);
   const mime = file_type || (String(file_data).match(/^data:(.*?);/)?.[1]) || "image/jpeg";
+  const k = ["product","asset","logo","mockup"].includes(kind) ? kind : null;
 
-  let analysis = { product: product || "", category: category || "", tags: Array.isArray(tags) ? tags : [], description: description || "" };
-  // Only call Gemini vision when no product was supplied (skips the quota-limited call for bulk/known uploads)
-  if (!product) {
-   try {
-    const sys = `You are an image cataloguer for HUFT, a premium Indian pet care brand with sub-brands like Sara's Wholesome Food, Hearty, Meowsi, NutriWag, NutriMeow, Yakies, HUFT Spa, HUFT Originals, DashDog and more. Look at the image and identify what it shows for a marketing image library. Return ONLY JSON: {"product":"best-guess product or sub-brand, or '' if unclear","category":"one of: dry food, wet food, treats, chews, grooming, accessories, apparel, toys, supplements, lifestyle, packshot, other","tags":["6-12 short descriptive tags: subject, setting, colours, mood, pet type, composition"],"description":"one sentence describing what the image shows and how it could be used"}`;
-    const out = await generateVision(sys, "Catalogue this image for our marketing library.", b64, mime);
-    const parsed = JSON.parse(out.replace(/```json|```/g, "").trim().replace(/^[^[{]*/, ""));
-    analysis = {
-      product: parsed.product || "",
-      category: parsed.category || "other",
-      tags: Array.isArray(parsed.tags) ? parsed.tags : [],
-      description: parsed.description || "",
-    };
-  } catch (e) {
-    console.error("Image analysis failed:", e.message);
-    // Store anyway, without tags — better than losing the upload
-  }
-  }
-
+  // 1) SAVE THE IMAGE FIRST — the upload must always land, even if AI tagging is slow/unavailable.
+  let row;
   try {
     const rows = await db(
       `INSERT INTO image_library (file_name, file_data, file_type, product, category, tags, description, notes, dimensions_cm, kind, uploaded_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
        RETURNING id, file_name, file_type, product, category, tags, description, notes, dimensions_cm, kind, uploaded_by, uploaded_at`,
-      [file_name || null, file_data, mime, analysis.product, analysis.category,
-       JSON.stringify(analysis.tags), analysis.description, notes || null,
-       dimensions_cm || null, (["product","asset","logo","mockup"].includes(kind) ? kind : null), req.user.id]
+      [file_name || null, file_data, mime, product || "", category || "",
+       JSON.stringify(Array.isArray(tags) ? tags : []), description || "", notes || null,
+       dimensions_cm || null, k, req.user.id]
     );
-    res.json(rows[0]);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+    row = rows[0];
+  } catch (e) { return res.status(500).json({ error: e.message }); }
+  res.json(row); // respond now — fast, no timeout risk
+
+  // 2) BEST-EFFORT auto-tagging in the background (never blocks or fails the upload).
+  if (!product) {
+    (async () => {
+      try {
+        const sys = `You are an image cataloguer for HUFT, a premium Indian pet care brand with sub-brands like Sara's Wholesome Food, Hearty, Meowsi, NutriWag, NutriMeow, Yakies, HUFT Spa, HUFT Originals, DashDog and more. Look at the image and identify what it shows for a marketing image library. Return ONLY JSON: {"product":"best-guess product or sub-brand, or '' if unclear","category":"one of: dry food, wet food, treats, chews, grooming, accessories, apparel, toys, supplements, lifestyle, packshot, other","tags":["6-12 short descriptive tags: subject, setting, colours, mood, pet type, composition"],"description":"one sentence describing what the image shows and how it could be used"}`;
+        const out = await generateVision(sys, "Catalogue this image for our marketing library.", b64, mime);
+        const parsed = JSON.parse(out.replace(/```json|```/g, "").trim().replace(/^[^[{]*/, ""));
+        await db(
+          `UPDATE image_library SET product=$1, category=$2, tags=$3, description=$4 WHERE id=$5`,
+          [parsed.product || "", parsed.category || "other",
+           JSON.stringify(Array.isArray(parsed.tags) ? parsed.tags : []), parsed.description || "", row.id]
+        );
+      } catch (e) { console.error("Image analysis failed (image already saved):", e.message); }
+    })();
+  }
 });
 
 // Generate a background/scene image from a text prompt (Composer "Generate image").
@@ -1154,6 +1162,10 @@ app.listen(PORT, async () => {
     await pool.query("ALTER TABLE image_library ADD COLUMN IF NOT EXISTS dimensions_cm TEXT");
     await pool.query("ALTER TABLE image_library ADD COLUMN IF NOT EXISTS kind TEXT");
     await pool.query("ALTER TABLE image_library ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMPTZ");
+    // Approval slots: which approval gates a user can clear (copy / asset / final). A user may hold several.
+    await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS approval_slots TEXT[] DEFAULT '{}'");
+    // Sub-brands a user is scoped to (empty = all). Used to split what each brand person sees.
+    await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS sub_brands TEXT[] DEFAULT '{}'");
     await pool.query(`CREATE TABLE IF NOT EXISTS brand_styles (
       sub_brand TEXT PRIMARY KEY,
       headline_font TEXT, subhead_font TEXT, cta_font TEXT,
@@ -1186,6 +1198,7 @@ app.listen(PORT, async () => {
   await seedRules();
   await seedAudiences();
   console.log(`\n  HUFT CRM Creative Engine`);
+  console.log(`  ${SERVER_BUILD}`);
   console.log(`  Running:  http://localhost:${PORT}`);
   console.log(`  Database: Supabase / PostgreSQL`);
   console.log(`  LLM:      ${PROVIDER === "gemini" ? "Gemini " + GEMINI_MODEL : PROVIDER === "claude" ? "Claude " + CLAUDE_MODEL : "MOCKED (add API key)"}\n`);
