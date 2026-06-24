@@ -103,7 +103,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.9 · standalone My Tasks + Approvals pages (nav, counts, inline approve); sub-brand scoping (users scoped to sub-brands see only those campaigns everywhere; editable in Team drawer); Team drawer subtitle + role legend tidied; fixes me.approval_slots/sub_brands now load so slot-aware approvals actually work";
+const BUILD="v29.9.1 · hotfix — moved sub-brand scoping out of a useMemo that sat after Apps early returns (was causing React #310 white-screen on load). Standalone My Tasks + Approvals pages; sub-brand scoping; Team drawer tidy; auth now returns approval_slots + sub_brands";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -1133,7 +1133,7 @@ function App(){
   const open=(id,jt)=>{const c=campaigns.find(x=>x.id===id);setActiveId(id);setTab(jt||(c?(c.stage==="done"?"done":c.stage==="content"?"content":c.stage==="design"?"design":"brief"):"brief"));};
 
   // Pending counts per stage (for nav badges)
-  const scoped=React.useMemo(()=>scopeCampaigns(campaigns,me),[campaigns,me]);
+  const scoped=scopeCampaigns(campaigns,me);
   const pending={brief:scoped.filter(c=>c.stage==="brief"&&!isArchived(c)).length,content:scoped.filter(c=>c.stage==="content"&&!isArchived(c)).length,brand_review:scoped.filter(c=>c.stage==="brand_review"&&!isArchived(c)).length,design:scoped.filter(c=>c.stage==="design"&&c.channel!=="Push notification"&&!isArchived(c)).length};
 
   // Tabs visible per role
