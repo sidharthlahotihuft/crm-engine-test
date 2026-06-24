@@ -62,7 +62,7 @@ async function callClaude(system,prompt,expectJson){
 // Role-based default tab
 const ROLE_TAB={admin:"dashboard",business:"dashboard",content:"content",design:"design",brand:"dashboard"};
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v27.2 · manual product placement in generate mode + Enter-for-newline in headline/sub + tidier left generate panel";
+const BUILD="v27.4 · smart copy auto-fit — whole copy block scales to fit its space so it never overflows or overlaps the product";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -3604,19 +3604,29 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
       segs.forEach((s,idx)=>{if(!s)return;ctx.fillStyle=color;ctx.fillText(s,cx,yy);const w=ctx.measureText(s).width;if(fullStrike||idx%2===1){ctx.save();ctx.strokeStyle=color;ctx.lineWidth=Math.max(2,px*0.08);ctx.beginPath();ctx.moveTo(cx,yy+px*0.52);ctx.lineTo(cx+w,yy+px*0.52);ctx.stroke();ctx.restore();}cx+=w;});
       ctx.textAlign=prev;
     };
-    const H=wrapFit(ctx,hl,maxW,sz.w*0.085*copyScale,4);
     const priceActive=template==="service"&&(oldPrice.text||"").trim();
     const priceOwnRow=priceActive&&oldPrice.ownRow;
     const shEff=(priceActive&&!priceOwnRow)?{...sh,text:("~"+oldPrice.text.trim()+"~ "+(sh.text||"")).trim()}:sh;
-    const S=wrapFit(ctx,shEff,maxW,sz.w*0.042*copyScale,5);
-    const hLineH=H.px*0.97, sLineH=S.px*1.18, gap=H.px*0.55;
-    const ppx=Math.round(sz.w*0.042*copyScale*(oldPrice.size||1)); // struck-price own size
-    const pLineH=ppx*1.30;
-    const hBlock=H.lines.length*hLineH;
-    const priceBlockH=priceOwnRow? pLineH : 0;
-    const lowerH=(S.lines.length||priceOwnRow)? gap+priceBlockH+S.lines.length*sLineH : 0;
-    const ctaH=ct.text? H.px*1.7 : 0;
-    const blockH=hBlock+lowerH+ctaH;
+    // Smart auto-fit: size the whole copy block to the space available so it never overflows
+    // the frame or collides with the product zone. copyScale acts as the upper bound.
+    let H,S,hLineH,sLineH,gap,ppx,pLineH,hBlock,priceBlockH,lowerH,ctaH,blockH;
+    const computeCopy=(cs)=>{
+      H=wrapFit(ctx,hl,maxW,sz.w*0.085*cs,4);
+      S=wrapFit(ctx,shEff,maxW,sz.w*0.042*cs,5);
+      hLineH=H.px*0.97; sLineH=S.px*1.18; gap=H.px*0.55;
+      ppx=Math.round(sz.w*0.042*cs*(oldPrice.size||1)); pLineH=ppx*1.30;
+      hBlock=H.lines.length*hLineH;
+      priceBlockH=priceOwnRow? pLineH : 0;
+      lowerH=(S.lines.length||priceOwnRow)? gap+priceBlockH+S.lines.length*sLineH : 0;
+      ctaH=ct.text? H.px*1.7 : 0;
+      blockH=hBlock+lowerH+ctaH;
+    };
+    let cs=copyScale; computeCopy(cs);
+    // copy may use up to ~52% of height when a product shares the frame, ~72% when it doesn't
+    const hasProd=products.some(p=>p.id)||(bgMode==="generate"&&genUsedProduct);
+    const maxCopyH=sz.h*(hasProd?0.52:0.72);
+    let guard=0;
+    while(blockH>maxCopyH&&cs>0.34&&guard<6){ cs*=Math.max(0.55,(maxCopyH/blockH)*0.97); computeCopy(cs); guard++; }
     // reserve vertical space so a top logo never collides with top-anchored copy
     let topReserve=0;
     if(huftMode!=="none"&&huftCorner.indexOf("top")===0){const aspect=huftLockup==="stk"?0.674:0.1745;topReserve=sz.w*huftScale*aspect+sz.h*0.045;}
@@ -3734,10 +3744,11 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
     if(!genPrompt.trim()){setGenErr("No prompt available to generate from.");return;}
     setGenBusy(true);setGenErr("");
     try{
-      const hasProduct=products.some(p=>p.id); // reserve clean spots for the real packshots
+      const sel=products.filter(p=>p.id);
+      const productImages=[];
+      for(const p of sel){try{const lib=await api.get("/api/image-library/"+p.id);if(lib&&lib.file_data)productImages.push(lib.file_data);}catch(e){}}
       const rulesText=(promptRules&&promptRules.length)?activeRuleText(promptRules):"";
       const fullPrompt=[genPrompt.trim(),HUFT_VISUAL_GUIDELINES,rulesText&&rulesText!=="(none yet)"?("HUFT DESIGN RULES — also follow:\n"+rulesText):""].filter(Boolean).join("\n\n");
-      // where text & product will actually sit, so the scene reserves the right areas
       const [vP,hP]=String(anchor||"mid-center").split("-");
       const hA=(textAlign&&textAlign!=="auto")?textAlign:(hP==="left"?"left":hP==="right"?"right":"center");
       const vWord=vP==="top"?"upper":vP==="bottom"?"lower":"middle";
@@ -3745,10 +3756,10 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
       const textZone=`the ${vWord} ${hWord} part of the frame`;
       const prodV=vP==="top"?"lower":vP==="bottom"?"upper":"lower";
       const productZone=`the ${prodV} part of the frame`;
-      const r=await api.post("/api/generate-image",{prompt:fullPrompt,negativePrompt:genNeg,aspectRatio:sz.ar,reserveProductSpace:hasProduct,productCount:products.filter(p=>p.id).length||1,textZone,productZone});
+      const r=await api.post("/api/generate-image",{prompt:fullPrompt,negativePrompt:genNeg,aspectRatio:sz.ar,productImages,textZone,productZone});
       const im=await loadImage(r.image);setGenImg(im);setBgMode("generate");
-      setGenUsedProduct(false); // product is composited as the exact PNG, never AI-recreated
-      if(toast)toast(hasProduct?"Scene generated ✓ — exact product placed on its surface":"Image generated ✓ — copy kept on top","success");
+      setGenUsedProduct(productImages.length>0); // product is blended into the scene — don't composite again
+      if(toast)toast(productImages.length?"Scene generated ✓ — product blended in with matched lighting":"Image generated ✓ — copy kept on top","success");
     }catch(e){setGenErr(e.message||"Generation failed");}
     setGenBusy(false);
   };
@@ -3893,22 +3904,14 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
           <Btn small disabled={genBusy}onClick={runGenerate}style={{width:"100%",justifyContent:"center"}}>{genBusy?"Generating…":"Generate scene"}</Btn>
           {!isBusiness&&<div style={{borderTop:`1px solid ${C.line}`,paddingTop:8}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <span style={{fontSize:11,fontWeight:800,color:C.ink}}>Products on top — exact PNG{products.length>1?" · "+products.length:""}</span>
+              <span style={{fontSize:11,fontWeight:800,color:C.ink}}>Products in the scene{products.length>1?" · "+products.length:""}</span>
               {products.length<3&&<button onClick={addProduct}style={{border:"none",background:"none",color:C.coral,fontSize:11,fontWeight:700,cursor:"pointer",padding:0}}>+ Add</button>}
             </div>
-            <div style={{fontSize:10.5,color:C.sub,margin:"2px 0 8px"}}>Up to 3. Auto-picks your brief product; the exact packshot composites onto the scene.</div>
-            {products.map((p,idx)=><div key={p.pid}style={{marginBottom:8}}>
-              <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:p.id&&!autoFit?6:0}}>
-                <select value={p.id}onChange={e=>updProduct(p.pid,{id:e.target.value})}style={{...ctrl,flex:1,minWidth:0}}><option value="">— product {idx+1} —</option>{productItems.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select>
-                {products.length>1&&<button onClick={()=>rmProduct(p.pid)}title="Remove"style={{border:"none",background:"none",color:"#B91C1C",fontSize:16,fontWeight:700,cursor:"pointer",padding:"0 4px",lineHeight:1}}>×</button>}
-              </div>
-              {p.id&&!autoFit&&<div style={{display:"grid",gap:6}}>
-                {slider("Size",Math.round(p.scale*100),15,100,v=>updProduct(p.pid,{scale:v/100}),v=>v+"%")}
-                {slider("Left–right",Math.round(p.x*100),0,100,v=>updProduct(p.pid,{x:v/100}),v=>v+"%")}
-                {slider("Up–down",Math.round(p.y*100),5,95,v=>updProduct(p.pid,{y:v/100}),v=>v+"%")}
-              </div>}
+            <div style={{fontSize:10.5,color:C.sub,margin:"2px 0 8px"}}>Up to 3. Auto-picks your brief product. The AI blends each product into the scene with matched lighting and a natural shadow — no manual placement needed. Regenerate for a different take.</div>
+            {products.map((p,idx)=><div key={p.pid}style={{display:"flex",gap:6,alignItems:"center",marginBottom:6}}>
+              <select value={p.id}onChange={e=>updProduct(p.pid,{id:e.target.value})}style={{...ctrl,flex:1,minWidth:0}}><option value="">— product {idx+1} —</option>{productItems.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select>
+              {products.length>1&&<button onClick={()=>rmProduct(p.pid)}title="Remove"style={{border:"none",background:"none",color:"#B91C1C",fontSize:16,fontWeight:700,cursor:"pointer",padding:"0 4px",lineHeight:1}}>×</button>}
             </div>)}
-            {products.some(p=>p.id)&&<label style={{display:"flex",alignItems:"center",gap:7,fontSize:12,color:C.ink,cursor:"pointer"}}><input type="checkbox"checked={autoFit}onChange={e=>setAutoFit(e.target.checked)}/>Auto-place on the scene <span style={{fontSize:10.5,color:C.sub}}>(uncheck to position by hand)</span></label>}
           </div>}
           {genErr&&(()=>{
             const low=genErr.toLowerCase();
