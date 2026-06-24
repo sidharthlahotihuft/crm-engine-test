@@ -44,7 +44,7 @@ const db = async (sql, params = []) => {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const uid = () => Math.random().toString(36).slice(2, 11);
 const safeJson = (s) => { try { return JSON.parse(s); } catch (e) { return null; } };
-const SERVER_BUILD = "server-v29.0 · 8-role model with old→new aliasing + idempotent role migration; role-equivalent guards; approval_slots + sub_brands; insert-first uploads";
+const SERVER_BUILD = "server-v29.9 · /api/auth/me + login now return approval_slots + sub_brands (fixes slot-aware approvals + sub-brand scoping); best-practice rules; gated pipeline; category routing; notifications";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -308,6 +308,33 @@ async function seedRules() {
   }
 }
 
+// Idempotently add the researched best-practice copy rules to the live rulebook.
+async function seedBestPractices() {
+  const BEST = [
+    "One objective, one CTA per message — never stack multiple offers or asks.",
+    "Lead with the value the reader cares about — open with the benefit, not the setup.",
+    "Tie every line to the brief's objective; cut anything that doesn't serve it.",
+    "Write to one person, conversationally — use the name, plain language, no jargon.",
+    "Strong first line that sparks curiosity; use action verbs (discover, switch, try, get).",
+    "Short and scannable — no fluff, filler or repetition. Make the next step obvious.",
+    "No ALL-CAPS words and no spammy phrasing; emojis sparingly, only where they add warmth.",
+    "WhatsApp: hook (pre-'read more') → payoff → RTB/USP proof → CTA → light opt-out line.",
+    "Never output placeholder tokens or merge tags (e.g. 'M-hash', {{1}}, {name}) — write the real words.",
+  ];
+  try {
+    const ex = await pool.query("SELECT text FROM rules WHERE type='copy'");
+    const have = new Set(ex.rows.map(r => (r.text || "").trim()));
+    let added = 0;
+    for (const text of BEST) {
+      if (!have.has(text.trim())) {
+        await pool.query("INSERT INTO rules (type, text, active) VALUES ($1,$2,$3)", ["copy", text, true]);
+        added++;
+      }
+    }
+    if (added) console.log("✓ Best-practice copy rules added:", added);
+  } catch (e) { console.error("Best-practice seed failed:", e.message); }
+}
+
 // ── AUTH ──────────────────────────────────────────────────────────────────────
 
 app.post("/api/auth/login", async (req, res) => {
@@ -324,11 +351,17 @@ app.post("/api/auth/login", async (req, res) => {
       { id: user.id, name: user.name, email: user.email, role: user.role },
       JWT_SECRET, { expiresIn: "7d" }
     );
-    res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+    res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role, approval_slots: user.approval_slots || [], sub_brands: user.sub_brands || [] } });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get("/api/auth/me", authMiddleware, (req, res) => res.json(req.user));
+app.get("/api/auth/me", authMiddleware, async (req, res) => {
+  try {
+    const r = await db("SELECT id,name,email,role,approval_slots,sub_brands FROM users WHERE id=$1", [req.user.id]);
+    if (r.length) return res.json({ ...req.user, ...r[0] });
+    res.json(req.user);
+  } catch (e) { res.json(req.user); }
+});
 
 // ── USERS ─────────────────────────────────────────────────────────────────────
 
@@ -483,7 +516,7 @@ app.put("/api/campaigns/:id", authMiddleware, async (req, res) => {
     "offer","crm_type","stage","data","go_live_date","campaign_week","campaign_month",
     "tat_brief_due","tat_content_due","tat_design_due",
     "brief_started_at","content_started_at","design_started_at","went_live_at",
-    "rtbs","references",
+    "rtbs","references","category","copy_author",
   ];
   const special = { copy_approver: null, design_approver: null };
 
@@ -534,6 +567,47 @@ app.get("/api/rules", authMiddleware, async (req, res) => {
   try { res.json(await db("SELECT * FROM rules ORDER BY created_at DESC")); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+// ── Category routing rules (writer ↔ category) ──────────────────────────────
+const CRM_CATEGORIES = ["cat edibles", "dog edibles", "lifestyle & spa", "litter"];
+app.get("/api/category-rules", authMiddleware, async (req, res) => {
+  try { res.json(await db("SELECT * FROM category_rules ORDER BY category")); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Super-admin replaces the whole mapping. Body: { rules: [{category, user_id, user_email}] }
+app.put("/api/category-rules", authMiddleware, roles("admin"), async (req, res) => {
+  try {
+    const rules = Array.isArray(req.body.rules) ? req.body.rules : [];
+    await db("DELETE FROM category_rules", []);
+    for (const r of rules) {
+      if (!r.category || !r.user_id) continue;
+      await db("INSERT INTO category_rules (id,category,user_id,user_email) VALUES ($1,$2,$3,$4)",
+        [uid(), r.category, r.user_id, r.user_email || null]);
+    }
+    res.json(await db("SELECT * FROM category_rules ORDER BY category"));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// One-time seed of the default writer↔category mapping (super-admin).
+app.post("/api/category-rules/seed", authMiddleware, roles("admin"), async (req, res) => {
+  try {
+    const wanted = [
+      { email: "arushi.mathur@headsupfortails.com", cats: ["cat edibles", "litter"] },
+      { email: "ritika.sharma@headsupfortails.com", cats: ["dog edibles"] },
+      { email: "isha.ray@headsupfortails.com", cats: ["lifestyle & spa"] },
+    ];
+    await db("DELETE FROM category_rules", []);
+    for (const w of wanted) {
+      const u = await db("SELECT id,email FROM users WHERE email=$1", [w.email]);
+      if (!u.length) continue;
+      for (const cat of w.cats) {
+        await db("INSERT INTO category_rules (id,category,user_id,user_email) VALUES ($1,$2,$3,$4)",
+          [uid(), cat, u[0].id, u[0].email]);
+      }
+    }
+    res.json(await db("SELECT * FROM category_rules ORDER BY category"));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 
 app.post("/api/rules", authMiddleware, async (req, res) => {
   const { type, text } = req.body;
@@ -602,12 +676,21 @@ app.post("/api/campaigns/:id/comments", authMiddleware, async (req, res) => {
   const { body, context, parent_id } = req.body;
   if (!body || !body.trim()) return res.status(400).json({ error: "Empty comment" });
   try {
+    const ctx = context === "design" ? "design" : context === "final" ? "final" : "copy";
     const rows = await db(
       `INSERT INTO comments (campaign_id, context, parent_id, body, author_id, author_name, author_role)
        VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-      [req.params.id, context === "design" ? "design" : "copy", parent_id || null,
+      [req.params.id, ctx, parent_id || null,
        body.trim(), req.user.id, req.user.name, req.user.role]
     );
+    const exec = ["cxo", "head_marketing"].includes(req.user.role);
+    if (exec || ctx === "final") {
+      const who = req.user.name + " (" + (req.user.role || "exec").replace("_", " ") + ")";
+      notify({ toRole: "brand_lead", campaignId: req.params.id, kind: "Comment on final asset",
+        body: who + ": " + body.trim().slice(0, 240) });
+      notify({ toRole: "design_lead", campaignId: req.params.id, kind: "Comment on final asset",
+        body: who + ": " + body.trim().slice(0, 240) });
+    }
     res.json(rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -650,6 +733,11 @@ app.post("/api/campaigns/:id/brand-approve", authMiddleware, roles("brand", "adm
       [req.user.name, req.params.id]
     );
     if (!rows.length) return res.status(409).json({ error: "Campaign is not awaiting brand review." });
+    const prod = rows[0].product || rows[0].name || "An asset";
+    notify({ toRole: "design_team", campaignId: req.params.id, kind: "Copy approved — design needed",
+      body: prod + " — copy approved by " + req.user.name + ". Ready for design." });
+    notify({ toRole: "design_lead", campaignId: req.params.id, kind: "Copy approved — design needed",
+      body: prod + " — copy approved. Design can begin." });
     res.json(rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -662,14 +750,179 @@ app.post("/api/campaigns/:id/brand-reject", authMiddleware, roles("brand", "admi
       [req.params.id]
     );
     if (!rows.length) return res.status(409).json({ error: "Campaign is not awaiting brand review." });
-    // Optionally log the reason as a comment
-    if (req.body.reason && req.body.reason.trim()) {
-      await db(
-        `INSERT INTO comments (campaign_id, context, body, author_id, author_name, author_role)
-         VALUES ($1,'copy',$2,$3,$4,$5)`,
-        [req.params.id, "Sent back: " + req.body.reason.trim(), req.user.id, req.user.name, req.user.role]
-      );
+    // Always log a visible send-back note for the copy team (generic if no reason given)
+    const note = (req.body.reason && req.body.reason.trim())
+      ? ("Sent back: " + req.body.reason.trim())
+      : "Sent back to copy for changes — see comments above.";
+    await db(
+      `INSERT INTO comments (campaign_id, context, body, author_id, author_name, author_role)
+       VALUES ($1,'copy',$2,$3,$4,$5)`,
+      [req.params.id, note, req.user.id, req.user.name, req.user.role]
+    );
+    notify({ toRole: "brand_team", campaignId: req.params.id, kind: "Copy sent back",
+      body: (rows[0].product || rows[0].name || "An asset") + " — " + note });
+    res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+
+// ─────────────────────────────────────────────────────────────
+// NOTIFICATIONS — in-app (DB) + optional email (nodemailer via SMTP_* env)
+// In-app works out of the box. Email sends only if SMTP_HOST/USER/PASS are set.
+// ─────────────────────────────────────────────────────────────
+let _mailer = null, _mailerTried = false;
+function getMailer() {
+  if (_mailerTried) return _mailer;
+  _mailerTried = true;
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) return null;
+  try {
+    const nodemailer = require("nodemailer");
+    _mailer = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: parseInt(process.env.SMTP_PORT || "587"),
+      secure: String(process.env.SMTP_SECURE || "false") === "true",
+      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    });
+  } catch (e) { console.error("nodemailer not available:", e.message); _mailer = null; }
+  return _mailer;
+}
+async function sendEmail(to, subject, text) {
+  const m = getMailer();
+  if (!m || !to) return false;
+  try {
+    await m.sendMail({ from: process.env.SMTP_FROM || process.env.SMTP_USER, to, subject, text });
+    return true;
+  } catch (e) { console.error("email send failed:", e.message); return false; }
+}
+function roleEquivList(role) {
+  const map = {
+    brand_lead: ["brand", "brand_lead"], brand: ["brand", "brand_lead"],
+    design_lead: ["design_lead"], design_team: ["design", "design_team"], design: ["design", "design_team"],
+    brand_team: ["content", "brand_team"], super_admin: ["admin", "super_admin"],
+    head_marketing: ["head_marketing"], cxo: ["cxo"], business: ["business"],
+  };
+  return map[role] || [role];
+}
+async function notify({ toRole, toUserIds, campaignId, kind, body, url }) {
+  const made = [];
+  try {
+    let emails = [];
+    if (toRole) {
+      const id = uid();
+      await db(`INSERT INTO notifications (id,to_role,campaign_id,kind,body,url) VALUES ($1,$2,$3,$4,$5,$6)`,
+        [id, toRole, campaignId || null, kind || null, body || "", url || null]);
+      made.push(id);
+      const r = await db(`SELECT email FROM users WHERE role=ANY($1)`, [roleEquivList(toRole)]);
+      emails = emails.concat(r.map(x => x.email).filter(Boolean));
     }
+    if (Array.isArray(toUserIds) && toUserIds.length) {
+      for (const u of toUserIds) {
+        const id = uid();
+        await db(`INSERT INTO notifications (id,to_user_id,campaign_id,kind,body,url) VALUES ($1,$2,$3,$4,$5,$6)`,
+          [id, u, campaignId || null, kind || null, body || "", url || null]);
+        made.push(id);
+      }
+      const r = await db(`SELECT email FROM users WHERE id=ANY($1)`, [toUserIds]);
+      emails = emails.concat(r.map(x => x.email).filter(Boolean));
+    }
+    emails = [...new Set(emails)];
+    if (emails.length) await sendEmail(emails.join(","), "[HUFT CRM] " + (kind || "Update"), body || "");
+  } catch (e) { console.error("notify failed:", e.message); }
+  return made;
+}
+app.get("/api/notifications", authMiddleware, async (req, res) => {
+  try {
+    const rows = await db(
+      `SELECT * FROM notifications WHERE to_user_id=$1 OR to_role=ANY($2) ORDER BY created_at DESC LIMIT 100`,
+      [req.user.id, roleEquivList(req.user.role)]
+    );
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post("/api/notifications/:id/read", authMiddleware, async (req, res) => {
+  try { await db(`UPDATE notifications SET read=true WHERE id=$1`, [req.params.id]); res.json({ ok: true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post("/api/notifications/read-all", authMiddleware, async (req, res) => {
+  try {
+    await db(`UPDATE notifications SET read=true WHERE to_user_id=$1 OR to_role=ANY($2)`,
+      [req.user.id, roleEquivList(req.user.role)]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post("/api/notify", authMiddleware, async (req, res) => {
+  try {
+    const { toRole, toUserIds, campaignId, kind, body, url } = req.body || {};
+    const made = await notify({ toRole, toUserIds, campaignId, kind, body, url });
+    res.json({ ok: true, created: made.length, emailConfigured: !!getMailer() });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+
+// ─────────────────────────────────────────────────────────────
+// GATED PIPELINE — design → full-asset → final sign-off
+// Each gate checks the user holds the matching approval_slot (super_admin overrides).
+// Gate state is tracked on campaigns.data.gates = {copy,design,asset,final}.
+// ─────────────────────────────────────────────────────────────
+async function userHoldsSlot(user, slot) {
+  if (normRole(user.role) === "super_admin" || user.role === "admin") return true;
+  const r = await db(`SELECT approval_slots FROM users WHERE id=$1`, [user.id]);
+  const slots = (r[0] && r[0].approval_slots) || [];
+  return slots.includes(slot);
+}
+function mergeGates(campaign, patch) {
+  const data = campaign.data ? (typeof campaign.data === "string" ? JSON.parse(campaign.data) : campaign.data) : {};
+  const gates = { ...(data.gates || {}), ...patch };
+  return { data: { ...data, gates }, gates };
+}
+// Design gate — Anmol (design slot). design pendingApproval → asset review (Ilena).
+app.post("/api/campaigns/:id/design-approve", authMiddleware, async (req, res) => {
+  try {
+    if (!(await userHoldsSlot(req.user, "design"))) return res.status(403).json({ error: "You don't hold the design-approval slot." });
+    const cur = await db(`SELECT * FROM campaigns WHERE id=$1`, [req.params.id]);
+    if (!cur.length) return res.status(404).json({ error: "Not found" });
+    const { data } = mergeGates(cur[0], { design: { by: req.user.name, at: new Date().toISOString() } });
+    const d2 = { ...data, design: { ...(data.design || {}), pendingApproval: false, assetReview: true } };
+    const rows = await db(`UPDATE campaigns SET data=$1, design_approver=$2, design_approved_at=NOW() WHERE id=$3 RETURNING *`,
+      [JSON.stringify(d2), req.user.name, req.params.id]);
+    const prod = cur[0].product || cur[0].name || "An asset";
+    notify({ toRole: "brand_lead", campaignId: req.params.id, kind: "Full asset needs review",
+      body: prod + " — design approved by " + req.user.name + ". Ready for full-asset sign-off." });
+    res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Full-asset gate — Ilena (asset slot). → final sign-off (HoM/CXO).
+app.post("/api/campaigns/:id/asset-approve", authMiddleware, async (req, res) => {
+  try {
+    if (!(await userHoldsSlot(req.user, "asset"))) return res.status(403).json({ error: "You don't hold the full-asset-approval slot." });
+    const cur = await db(`SELECT * FROM campaigns WHERE id=$1`, [req.params.id]);
+    if (!cur.length) return res.status(404).json({ error: "Not found" });
+    const { data } = mergeGates(cur[0], { asset: { by: req.user.name, at: new Date().toISOString() } });
+    const d2 = { ...data, design: { ...(data.design || {}), assetReview: false, finalReview: true } };
+    const rows = await db(`UPDATE campaigns SET data=$1 WHERE id=$2 RETURNING *`, [JSON.stringify(d2), req.params.id]);
+    const prod = cur[0].product || cur[0].name || "An asset";
+    notify({ toRole: "head_marketing", campaignId: req.params.id, kind: "Final sign-off needed",
+      body: prod + " — full asset approved by " + req.user.name + ". Awaiting final sign-off." });
+    notify({ toRole: "cxo", campaignId: req.params.id, kind: "Final sign-off needed",
+      body: prod + " — awaiting final sign-off." });
+    res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Final gate — HoM / CXO (final slot). → done.
+app.post("/api/campaigns/:id/final-approve", authMiddleware, async (req, res) => {
+  try {
+    if (!(await userHoldsSlot(req.user, "final"))) return res.status(403).json({ error: "You don't hold the final-sign-off slot." });
+    const cur = await db(`SELECT * FROM campaigns WHERE id=$1`, [req.params.id]);
+    if (!cur.length) return res.status(404).json({ error: "Not found" });
+    const { data } = mergeGates(cur[0], { final: { by: req.user.name, at: new Date().toISOString() } });
+    const d2 = { ...data, design: { ...(data.design || {}), finalReview: false } };
+    const rows = await db(`UPDATE campaigns SET data=$1, stage='done', went_live_at=NOW() WHERE id=$2 RETURNING *`,
+      [JSON.stringify(d2), req.params.id]);
+    const prod = cur[0].product || cur[0].name || "An asset";
+    notify({ toRole: "brand_lead", campaignId: req.params.id, kind: "Asset finalized",
+      body: prod + " — final sign-off by " + req.user.name + ". Now live/finalized." });
+    notify({ toRole: "business", campaignId: req.params.id, kind: "Asset finalized",
+      body: prod + " — finalized and ready." });
     res.json(rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1213,12 +1466,42 @@ app.listen(PORT, async () => {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`);
-    console.log("✓ image_library schema ensured (dimensions_cm, kind); brand_styles + creative_requests ready");
+    await pool.query(`CREATE TABLE IF NOT EXISTS notifications (
+      id TEXT PRIMARY KEY,
+      to_user_id TEXT,
+      to_role TEXT,
+      campaign_id TEXT,
+      kind TEXT,
+      body TEXT,
+      url TEXT,
+      read BOOLEAN NOT NULL DEFAULT false,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+    await pool.query("CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(to_user_id, read)");
+    await pool.query("CREATE INDEX IF NOT EXISTS idx_notif_role ON notifications(to_role, read)");
+    // Category routing rules: which writer owns which category (hard route).
+    await pool.query(`CREATE TABLE IF NOT EXISTS category_rules (
+      id TEXT PRIMARY KEY,
+      category TEXT NOT NULL,
+      user_id TEXT,
+      user_email TEXT,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+    // per-asset category override lives on campaigns
+    await pool.query("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS category TEXT");
+    await pool.query("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS copy_author TEXT");
+    // Refresh the role CHECK constraint to allow the 8-role model on a fresh DB too.
+    try {
+      await pool.query("ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check");
+      await pool.query("ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('super_admin','cxo','head_marketing','brand_lead','brand_team','design_lead','design_team','business','admin','brand','content','design'))");
+    } catch (ce) { console.error("role constraint refresh:", ce.message); }
+    console.log("✓ image_library schema ensured (dimensions_cm, kind); brand_styles + creative_requests + notifications + category_rules ready");
   } catch (e) {
     console.error("✗ Database connection failed:", e.message);
     console.error("  Check DATABASE_URL in your .env file");
   }
   await seedRules();
+  await seedBestPractices();
   await seedAudiences();
   console.log(`\n  HUFT CRM Creative Engine`);
   console.log(`  ${SERVER_BUILD}`);
