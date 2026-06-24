@@ -62,7 +62,7 @@ async function callClaude(system,prompt,expectJson){
 // Role-based default tab
 const ROLE_TAB={admin:"dashboard",business:"dashboard",content:"content",design:"design",brand:"dashboard"};
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v25 · Brand Assets hub (Assets/Styling/Rules/Audiences) + per-sub-brand styling applied in composer";
+const BUILD="v26 · full-screen composer (canvas centred, tools L/R, zoom, prominent download) + duplicate-to-new-asset + price-drop inline (Service only) + compose-or-upload gated to design/admin";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -616,10 +616,12 @@ function ChannelIcon({channel,size=16}){
     :{ic:<MessageSquare size={size}/>,bg:"#DCFCE7",fg:"#16A34A"};
   return<span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:size+18,height:size+18,borderRadius:10,background:cfg.bg,color:cfg.fg,flexShrink:0}}>{cfg.ic}</span>;
 }
-function RowActions({c,patch,me,onEdit,onDelete}){
+function RowActions({c,patch,me,onEdit,onDelete,onDuplicate}){
   const canEdit=me.role==="admin"||me.role==="business";
+  const canDup=["admin","business","design"].includes(me.role);
   return<div style={{display:"flex",gap:5,alignItems:"center",flexShrink:0}}>
     {onEdit&&<button onClick={e=>{e.stopPropagation();onEdit();}}style={{display:"flex",alignItems:"center",gap:3,fontSize:11.5,padding:"4px 8px",borderRadius:6,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.sub,fontWeight:600}}><PenLine size={11}/>Edit</button>}
+    {canDup&&onDuplicate&&<button onClick={e=>{e.stopPropagation();onDuplicate(c);}}style={{display:"flex",alignItems:"center",gap:3,fontSize:11.5,padding:"4px 8px",borderRadius:6,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.sub,fontWeight:600}}><Copy size={11}/>Duplicate</button>}
     {canEdit&&<button onClick={e=>{e.stopPropagation();if(window.confirm("Archive this asset? It moves out of the active pipeline into the Archive tab."))patch(c.id,{data:{archived:true}});}}style={{display:"flex",alignItems:"center",gap:3,fontSize:11.5,padding:"4px 8px",borderRadius:6,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.sub,fontWeight:600}}>Archive</button>}
     {canEdit&&onDelete&&<button onClick={e=>{e.stopPropagation();onDelete(c.id);}}style={{display:"flex",alignItems:"center",gap:3,fontSize:11.5,padding:"4px 8px",borderRadius:6,border:"1px solid #FECACA",background:"#FFF5F5",cursor:"pointer",color:"#B91C1C",fontWeight:600}}>Delete</button>}
   </div>;
@@ -866,6 +868,19 @@ function App(){
     setCampaigns(cs=>[c,...cs]);setActiveId(c.id);setTab("brief");
   };
 
+  // Duplicate an asset into a brand-new asset (new id) — copies brief + copy + design so it
+  // shows separately in analytics. Lands on the same stage so you can immediately build the variant.
+  const duplicateCampaign=async(src)=>{
+    if(!src)return;
+    try{
+      const base={name:((src.name||"Untitled")+" (copy)"),channel:src.channel,product:src.product,audience_id:src.audience_id,audience_label:src.audience_label,segment:src.segment,objective:src.objective,offer:src.offer,crm_type:src.crm_type,go_live_date:src.go_live_date,campaign_week:src.campaign_week,campaign_month:src.campaign_month,rtbs:src.rtbs,references:src.references};
+      const stage=src.stage==="done"?"design":(src.stage||"design");
+      const nc=await api.post("/api/campaigns",{...base,stage,data:{...(src.data||{}),duplicatedFrom:src.id,scheduled:null,performance:null}});
+      setCampaigns(cs=>[nc,...cs]);setActiveId(nc.id);setTab(stage==="content"?"content":stage==="brief"?"brief":"design");
+      if(toast)toast("Duplicated as a new asset ✓","success");
+    }catch(e){if(toast)toast("Duplicate failed: "+(e.message||"error"),"error");}
+  };
+
   // Multi-copy split: turn 2+ generated copies into separate assets; optionally archive the rest.
   const splitCopyAssets=async(src,indices,archiveRest)=>{
     const opts=src.data?.copyOptions||[];
@@ -1012,9 +1027,9 @@ function App(){
       {tab==="dashboard"&&<Dashboard campaigns={campaigns}onNew={newCampaign}onOpen={open}me={me}setTab={setTab}/>}
       {tab==="brief"&&<BriefTab active={active}patch={patch}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}audiences={audiences}onDelete={delCampaign}onNew={newCampaign}onBulkImport={bulkImportBriefs}onBulkGenerate={bulkGenerate}toast={toast}/>}
       {(tab==="content"||tab==="brand_review")&&<ContentTab active={active}patch={patch}copyRules={copyRules}addRule={addRule}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}toast={toast}onDelete={delCampaign}onSplit={splitCopyAssets}/>}
-      {tab==="design"&&<DesignTab active={active}patch={patch}promptRules={promptRules}addRule={addRule}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}onDelete={delCampaign}/>}
+      {tab==="design"&&<DesignTab active={active}patch={patch}promptRules={promptRules}addRule={addRule}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={campaigns}onOpen={open}onDelete={delCampaign}onDuplicate={duplicateCampaign}/>}
       {tab==="library"&&<BrandAssetsTab me={me}toast={toast}copyRules={copyRules}promptRules={promptRules}addRule={addRule}toggleRule={toggleRule}delRule={delRule}feedback={feedback}audiences={audiences}setAudiences={setAudiences}/>}
-      {tab==="done"&&<DoneTab campaigns={campaigns}patch={patch}onOpen={open}me={me}setTab={setTab}onDelete={delCampaign}/>}
+      {tab==="done"&&<DoneTab campaigns={campaigns}patch={patch}onOpen={open}me={me}setTab={setTab}onDelete={delCampaign}onDuplicate={duplicateCampaign}/>}
       {tab==="analytics"&&<AnalyticsTab campaigns={campaigns}patch={patch}onOpen={open}me={me}/>}
       {tab==="archive"&&<ArchiveTab campaigns={campaigns}patch={patch}onOpen={open}me={me}onDelete={delCampaign}/>}
     </div></div>
@@ -3279,8 +3294,8 @@ function FinalDesignUpload({c,d,patch,me}){
   };
   const isImg=finalFile&&(finalFile.type||"").startsWith("image/");
   return<div style={{marginTop:10,paddingTop:12,borderTop:`1px solid ${C.line}`,background:"#F0FDF4",borderRadius:10,padding:"14px 16px"}}>
-    <div style={{fontSize:12,fontWeight:700,color:"#15803D",marginBottom:6,display:"flex",alignItems:"center",gap:6}}><UploadIcon size={13}/>Upload the final design file</div>
-    <div style={{fontSize:12,color:"#166534",marginBottom:10}}>Attach the finished Canva/design export (image or PDF, up to 4 MB) or paste a link. You can only mark this done once a file or link is added.</div>
+    <div style={{fontSize:12,fontWeight:700,color:"#15803D",marginBottom:6,display:"flex",alignItems:"center",gap:6}}><UploadIcon size={13}/>Or upload your own design</div>
+    <div style={{fontSize:12,color:"#166534",marginBottom:10}}>Prefer to design outside the composer? Attach your finished export (image or PDF, up to 4 MB) or paste a Canva / Drive link. Either the composer or an upload finishes the asset — you only need one.</div>
 
     {/* Current upload preview */}
     {finalFile&&<div style={{display:"flex",alignItems:"center",gap:10,background:"#fff",border:`1px solid ${C.line}`,borderRadius:10,padding:"8px 12px",marginBottom:10}}>
@@ -3346,6 +3361,8 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
 
   const[sizeIdx,setSizeIdx]=useState(0);
   const[template,setTemplate]=useState("");
+  const[editorOpen,setEditorOpen]=useState(false);
+  const[zoom,setZoom]=useState(1);
   const[linkSizes,setLinkSizes]=useState(true); // sub-headline size scales with headline unless unlinked
   const[autoFit,setAutoFit]=useState(true); // auto-place/scale products into free space (no overlap)
   const sz=COMPOSER_SIZES[sizeIdx];
@@ -3505,7 +3522,9 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
       ctx.textAlign=prev;
     };
     const H=wrapFit(ctx,hl,maxW,sz.w*0.085,4);
-    const S=wrapFit(ctx,sh,maxW,sz.w*0.042,5);
+    const priceActive=template==="service"&&(oldPrice.text||"").trim();
+    const shEff=priceActive?{...sh,text:("~"+oldPrice.text.trim()+"~ "+(sh.text||"")).trim()}:sh;
+    const S=wrapFit(ctx,shEff,maxW,sz.w*0.042,5);
     const hLineH=H.px*1.12, sLineH=S.px*1.32, gap=H.px*0.55;
     const hBlock=H.lines.length*hLineH;
     const sBlock=S.lines.length? gap+S.lines.length*sLineH : 0;
@@ -3571,7 +3590,6 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
       const cAnchorX=anchorX+Cdx*sz.w;
       let bx = hAlign==="left"? cAnchorX : hAlign==="right"? cAnchorX-bw : cAnchorX-bw/2;
       const by=topY+hBlock+sBlock+H.px*0.35+Cdy*sz.h;
-      if(oldPrice.text){const opx=Math.round(sz.w*0.045*(oldPrice.size||1));ctx.save();ctx.font="700 "+opx+"px '"+sh.font+"'";try{ctx.letterSpacing="0px";}catch(e){}drawCopyLine("~"+oldPrice.text+"~",cAnchorX,by-opx*1.35,hAlign,opx,oldPrice.color,false);ctx.restore();}
       ctx.fillStyle=ctaBg;
       if(ctx.roundRect){ctx.beginPath();ctx.roundRect(bx,by,bw,bh,bh/2);ctx.fill();}else ctx.fillRect(bx,by,bw,bh);
       ctx.fillStyle=ct.color||"#FFFFFF";ctx.textAlign="left";ctx.textBaseline="middle";
@@ -3610,7 +3628,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
         ctx.drawImage(limg,lx,ly,lw,lh);
       }
     }
-  },[sz,bgMode,bgColor,bgImg,genImg,products,prodImgs,shadow,hl,sh,anchor,ct,ctaBg,logoImg,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,huftReady,divider,autoFit,textShadow,textAlign,oldPrice]);
+  },[sz,bgMode,bgColor,bgImg,genImg,products,prodImgs,shadow,hl,sh,anchor,ct,ctaBg,logoImg,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,huftReady,divider,autoFit,textShadow,textAlign,oldPrice,editorOpen]);
 
   React.useEffect(()=>{draw();},[draw]);
 
@@ -3682,29 +3700,48 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
     </div>;
   };
 
-  return<div style={{marginTop:14,border:`1px solid ${C.line}`,borderRadius:12,overflow:"hidden"}}>
-    <div style={{padding:"11px 16px",background:C.paper,borderBottom:`1px solid ${C.line}`,display:"flex",alignItems:"center",gap:8}}>
+  if(!editorOpen)return<div style={{marginTop:14,border:`1px solid ${C.line}`,borderRadius:12,overflow:"hidden",background:"#fff"}}>
+    <div style={{padding:"11px 16px",background:C.paper,borderBottom:`1px solid ${C.line}`,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
       <ImageIcon size={15}color={C.coral}/><span style={{fontWeight:800,fontSize:13.5,color:C.ink}}>Creative Composer</span>
       <span style={{fontSize:11.5,color:C.sub}}>Real products + image copy · exact export</span>
+      <div style={{marginLeft:"auto"}}><Btn small onClick={()=>setEditorOpen(true)}><PenLine size={13}/>Open editor</Btn></div>
     </div>
-    <div style={{padding:"12px 16px",borderBottom:`1px solid ${C.line}`,background:C.paper}}>
-      <div style={{fontSize:11.5,fontWeight:800,color:C.ink,marginBottom:7}}>Start from a template <span style={{fontWeight:500,color:C.sub}}>· lays out logo, copy & colours — tweak after</span></div>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        {[["","Blank"],["bigOffer","Big-% Offer"],["multiPack","Multi-pack Cluster"],["service","Service / Price-drop"]].map(([k,lbl])=>
-          <button key={k}onClick={()=>applyTemplate(k)}style={{padding:"8px 14px",fontSize:12.5,fontWeight:700,borderRadius:9,cursor:"pointer",border:`1.5px solid ${template===k?C.coral:C.line}`,background:template===k?C.coral:"#fff",color:template===k?"#fff":C.ink}}>{lbl}</button>)}
-      </div>
-    </div>
-    <div style={{display:"flex",gap:16,padding:16,flexWrap:"wrap"}}>
-      <div style={{flex:"0 0 auto"}}>
-        <canvas ref={ref}style={{width:Math.min(380,sz.w/2.4),maxWidth:380,height:"auto",borderRadius:8,border:`1px solid ${C.line}`,boxShadow:"0 4px 14px rgba(0,0,0,.12)",display:"block",background:"#fff"}}/>
-        <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap"}}>
-          <Btn small onClick={exportPng}>Download PNG</Btn>
-          <Btn small variant="ghost"onClick={()=>{const cv=ref.current;if(!cv)return;const u=cv.toDataURL("image/png");const w=window.open("");if(w){w.document.write('<title>Preview</title><body style="margin:0;background:#111;display:flex;align-items:center;justify-content:center;min-height:100vh"><img src="'+u+'" style="max-width:96vw;max-height:96vh;box-shadow:0 8px 40px rgba(0,0,0,.5)"></body>');}}}>↗ Full size</Btn>
-          <Btn small variant="ghost"disabled={saving}onClick={saveToLib}>{saving?"Saving…":"Save to library"}</Btn>
+    <div style={{display:"flex",gap:16,padding:16,alignItems:"center",flexWrap:"wrap"}}>
+      <canvas ref={ref}onClick={()=>setEditorOpen(true)}title="Open editor"style={{width:Math.min(240,sz.w/4),maxWidth:240,height:"auto",borderRadius:8,border:`1px solid ${C.line}`,boxShadow:"0 4px 14px rgba(0,0,0,.12)",display:"block",background:"#fff",cursor:"pointer"}}/>
+      <div style={{flex:"1 1 220px",minWidth:200}}>
+        <div style={{fontSize:13.5,color:C.sub,lineHeight:1.5,marginBottom:12}}>Open the full-screen editor — large canvas in the centre, tools on both sides, zoom, and one-click export.</div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          <Btn small onClick={()=>setEditorOpen(true)}><PenLine size={13}/>Open editor</Btn>
+          <Btn small variant="ghost"onClick={exportPng}><Download size={13}/>Download PNG</Btn>
+          {patch&&<Btn small variant="dark"disabled={finalSaving}onClick={useAsFinal}><CheckCircle2 size={13}/>{finalSaving?"Setting…":"Use as final"}</Btn>}
         </div>
-        {patch&&<div style={{marginTop:8}}><Btn small variant="dark"disabled={finalSaving}onClick={useAsFinal}><CheckCircle2 size={13}/>{finalSaving?"Setting…":"Use as final design"}</Btn></div>}
       </div>
-      <div style={{flex:1,minWidth:260,display:"grid",gridTemplateColumns:"1fr 1fr",gap:11,alignContent:"start"}}>
+    </div>
+  </div>;
+
+  return<div style={{position:"fixed",inset:0,zIndex:200,background:"#F4F5F7",display:"flex",flexDirection:"column"}}>
+    <div style={{padding:"10px 16px",background:"#fff",borderBottom:`1px solid ${C.line}`,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+      <ImageIcon size={16}color={C.coral}/><span style={{fontWeight:800,fontSize:14,color:C.ink}}>Creative Composer</span>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+        {[["","Blank"],["bigOffer","Big-% Offer"],["multiPack","Multi-pack"],["service","Price-drop"]].map(([k,lbl])=>
+          <button key={k}onClick={()=>applyTemplate(k)}style={{padding:"6px 11px",fontSize:12,fontWeight:700,borderRadius:8,cursor:"pointer",border:`1.5px solid ${template===k?C.coral:C.line}`,background:template===k?C.coral:"#fff",color:template===k?"#fff":C.ink}}>{lbl}</button>)}
+      </div>
+      <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        <div style={{display:"flex",alignItems:"center",gap:2,border:`1px solid ${C.line}`,borderRadius:8,padding:"2px 4px",background:"#fff"}}>
+          <button onClick={()=>setZoom(z=>Math.max(.25,+(z-.1).toFixed(2)))}title="Zoom out"style={{border:"none",background:"none",cursor:"pointer",fontSize:16,fontWeight:700,color:C.sub,width:24,lineHeight:1}}>−</button>
+          <button onClick={()=>setZoom(1)}title="Fit"style={{border:"none",background:"none",cursor:"pointer",fontSize:11.5,fontWeight:700,color:C.ink,minWidth:44}}>{Math.round(zoom*100)}%</button>
+          <button onClick={()=>setZoom(z=>Math.min(2.5,+(z+.1).toFixed(2)))}title="Zoom in"style={{border:"none",background:"none",cursor:"pointer",fontSize:16,fontWeight:700,color:C.sub,width:24,lineHeight:1}}>+</button>
+        </div>
+        <Btn small variant="ghost"disabled={saving}onClick={saveToLib}>{saving?"Saving…":"Save to library"}</Btn>
+        {patch&&<Btn small variant="dark"disabled={finalSaving}onClick={useAsFinal}><CheckCircle2 size={13}/>{finalSaving?"Setting…":"Use as final"}</Btn>}
+        <Btn small onClick={exportPng}><Download size={13}/>Download PNG</Btn>
+        <button onClick={()=>setEditorOpen(false)}title="Close editor"style={{border:`1px solid ${C.line}`,background:"#fff",borderRadius:8,cursor:"pointer",padding:"6px 10px",display:"flex",alignItems:"center",gap:5,fontSize:12.5,fontWeight:700,color:C.sub}}><X size={14}/>Close</button>
+      </div>
+    </div>
+    <div style={{flex:1,minHeight:0,display:"flex"}}>
+      <div style={{width:300,flexShrink:0,overflowY:"auto",borderRight:`1px solid ${C.line}`,background:"#fff",padding:16}}>
+        <div style={{fontSize:11,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.6,marginBottom:10}}>Canvas &amp; source</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:11,alignContent:"start"}}>
         <div><label style={fieldL}>Size</label><select value={sizeIdx}onChange={e=>setSizeIdx(+e.target.value)}style={ctrl}>{COMPOSER_SIZES.map((s,i)=><option key={i}value={i}>{s.label} ({s.w}×{s.h})</option>)}</select></div>
         <div><label style={fieldL}>Source · keep or switch</label><select value={bgMode}onChange={e=>setBgMode(e.target.value)}style={ctrl}>
           <option value="plain">Plain background + product</option>
@@ -3745,6 +3782,16 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
           {genErr&&<div style={{fontSize:11.5,color:"#DC2626"}}>{genErr}</div>}
         </div>}
 
+        </div>
+      </div>
+      <div style={{flex:1,minWidth:0,overflow:"auto",display:"flex",alignItems:"center",justifyContent:"center",padding:28}}>
+        <div style={{transform:`scale(${zoom})`,transformOrigin:"center center",transition:"transform .08s",flexShrink:0}}>
+          <canvas ref={ref}style={{display:"block",width:"min(72vh,760px)",height:"auto",maxWidth:"82vw",borderRadius:10,boxShadow:"0 10px 44px rgba(0,0,0,.18)",background:"#fff",border:`1px solid ${C.line}`}}/>
+        </div>
+      </div>
+      <div style={{width:340,flexShrink:0,overflowY:"auto",borderLeft:`1px solid ${C.line}`,background:"#fff",padding:16}}>
+        <div style={{fontSize:11,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.6,marginBottom:10}}>Content &amp; styling</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:11,alignContent:"start"}}>
         {/* products / mockups — multi, from library only */}
         <div style={{gridColumn:"1 / -1",borderTop:`1px solid ${C.line}`,paddingTop:11,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <span style={{fontSize:11.5,fontWeight:800,color:C.ink}}>Products / mockups{products.length>1?" · "+products.length:""}</span>
@@ -3779,12 +3826,12 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
         {sect("cta","CTA (optional)",ct,setCt,
           <div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Button colour</label><input type="color"value={ctaBg}onChange={e=>setCtaBg(e.target.value)}style={{...ctrl,padding:2,height:34}}/></div>
         )}
-        {/* price drop: struck old price shown above the CTA */}
-        <div style={{gridColumn:"1 / -1",borderTop:`1px solid ${C.line}`,paddingTop:11,fontSize:11.5,fontWeight:800,color:C.ink}}>Price drop (optional)</div>
-        <div style={{gridColumn:"1 / -1",display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
-          <div style={{flex:"1 1 160px"}}><label style={fieldL}>Old price — shown struck, above the CTA</label><input value={oldPrice.text}onChange={e=>setOldPrice({...oldPrice,text:e.target.value})}placeholder="e.g. ₹3,250"style={ctrl}/></div>
-          <div><label style={fieldL}>Colour</label><input type="color"value={oldPrice.color}onChange={e=>setOldPrice({...oldPrice,color:e.target.value})}style={{...ctrl,padding:2,height:34,width:46}}/></div>
-        </div>
+        {/* price drop: only on the Service / Price-drop template — struck old price flows inline in the sub-headline sentence */}
+        {template==="service"&&<div style={{gridColumn:"1 / -1",borderTop:`1px solid ${C.line}`,paddingTop:11,fontSize:11.5,fontWeight:800,color:C.ink}}>Price drop</div>}
+        {template==="service"&&<div style={{gridColumn:"1 / -1",display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
+          <div style={{flex:"1 1 160px"}}><label style={fieldL}>Old price — struck, placed inline in the sentence</label><input value={oldPrice.text}onChange={e=>setOldPrice({...oldPrice,text:e.target.value})}placeholder="e.g. ₹3,250"style={ctrl}/></div>
+          <div style={{flex:"2 1 220px",fontSize:11.5,color:C.sub,lineHeight:1.4,paddingBottom:8}}>Shows as a struck price at the start of the sub-headline, e.g. <b style={{color:C.ink}}>~~₹3,250~~ now ₹2,499</b>. Put the new price in the sub-headline.</div>
+        </div>}
         <div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Placement (headline · sub-headline follows)</label>
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:5}}>
             {PLACEMENTS.map(p=><button key={p.k}onClick={()=>setAnchor(p.k)}style={{padding:"6px 0",fontSize:11,fontWeight:700,borderRadius:7,cursor:"pointer",border:`1px solid ${anchor===p.k?C.coral:C.line}`,background:anchor===p.k?C.coral+"18":"#fff",color:anchor===p.k?C.coral:C.sub}}>{p.label}</button>)}
@@ -3817,12 +3864,13 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
         <div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Logo image</label><select value={logoId}onChange={e=>setLogoId(e.target.value)}style={ctrl}><option value="">— none —</option>{logoItems.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select>{logoItems.length===0&&<div style={{fontSize:11,color:C.sub,marginTop:4}}>No sub-brand lockups yet — upload them in Image library as “Logo / lockup”. (HUFT master logo is built-in above.)</div>}</div>
         {logoId&&slider("Logo size",Math.round(logoScale*100),8,45,v=>setLogoScale(v/100),v=>v+"%")}
         {logoId&&<div><label style={fieldL}>Logo corner</label><select value={logoCorner}onChange={e=>setLogoCorner(e.target.value)}style={ctrl}><option value="top-left">Top left</option><option value="top-right">Top right</option><option value="bottom-left">Bottom left</option><option value="bottom-right">Bottom right</option></select></div>}
+        </div>
       </div>
     </div>
   </div>;
 }
 
-function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedback,campaigns,onOpen,onDelete}){
+function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedback,campaigns,onOpen,onDelete,onDuplicate}){
   const allDesign=(campaigns||[]).filter(c=>c.stage==="design"&&c.channel!=="Push notification"&&!isArchived(c));
   const[openId,setOpenId]=useState(null);
   const[imageModes,setImageModes]=useState({});
@@ -3896,7 +3944,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
           {approvedPrompt?<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#0F766E",background:"#CCFBF1",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>Prompt approved</span>
           :d.imagePrompts?<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#1D4ED8",background:"#DBEAFE",padding:"3px 9px",borderRadius:999}}>Prompts ready</span>
           :<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#B91C1C",background:"#FEF2F2",padding:"3px 9px",borderRadius:999}}>Needs design</span>}
-          <div onClick={e=>e.stopPropagation()}><RowActions c={c}patch={patch}me={me}onDelete={onDelete}/></div>
+          <div onClick={e=>e.stopPropagation()}><RowActions c={c}patch={patch}me={me}onDelete={onDelete}onDuplicate={onDuplicate}/></div>
           {isOpen?<ChevronDown size={16}color={C.sub}/>:<ChevronRight size={16}color={C.sub}/>}
         </div>
       </div>
@@ -3967,11 +4015,13 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
         {/* Library picker */}
         {imageMode==="library"&&<SmartLibraryPicker d={d}setD={setD}copy={copy}brief={c.data?.brief}product={c.product}campaignId={c.id}/>}
 
-        {/* Compose the final creative in-app (product + image copy) */}
-        {isOpen&&copy&&<CreativeComposer c={c}copy={copy}me={me}patch={patch}d={d}approvedPrompt={approvedPrompt}toast={(typeof toast!=="undefined"?toast:null)}/>}
-
-        {/* Design complete flow — finish via composed file, an upload, or a link */}
-        {(approvedPrompt||d.libraryPick||d.finalFile)&&<FinalDesignUpload c={c}d={d}patch={patch}me={me}/>}
+        {/* Finish the design — design team & admins only. Either compose in-app, or upload your own. */}
+        {["design","admin"].includes(me.role)&&<div>
+          <div style={{marginTop:14,marginBottom:6,fontSize:13,fontWeight:800,color:C.ink}}>Finish the design — two ways</div>
+          <div style={{fontSize:12.5,color:C.sub,marginBottom:4}}>Either build it in the composer below, <b>or</b> upload your own design (file / link) at the bottom. You only need one.</div>
+          {isOpen&&copy&&<CreativeComposer c={c}copy={copy}me={me}patch={patch}d={d}approvedPrompt={approvedPrompt}toast={(typeof toast!=="undefined"?toast:null)}/>}
+          {(approvedPrompt||d.libraryPick||d.finalFile)&&<FinalDesignUpload c={c}d={d}patch={patch}me={me}/>}
+        </div>}
         <FeedbackBar stage="design"by={me.name}onSave={saveFeedback}/>
         {/* Art direction comments — design context, available to everyone */}
         <CommentThread campaignId={c.id}context="design"me={me}/>
@@ -4018,7 +4068,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
 }
 
 
-function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete}){
+function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate}){
   const allDone=(campaigns||[]).filter(c=>c.stage==="done"&&!isArchived(c)).sort((a,b)=>new Date(b.updated_at||b.created_at)-new Date(a.updated_at||a.created_at));
   const[view,setView]=useState("list");
   const[reactivating,setReactivating]=useState(null);
@@ -4120,6 +4170,7 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete}){
         </div>}
         <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginTop:6}}>
           <button onClick={()=>reactivate(c)}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.ink,fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}><RotateCcw size={12}/>Reactivate</button>
+          {["admin","business","design"].includes(me.role)&&onDuplicate&&<button onClick={()=>onDuplicate(c)}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.ink,fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}><Copy size={12}/>Duplicate</button>}
           {canManage&&<button onClick={()=>{if(window.confirm("Archive this asset? It moves to the Archive tab."))patch(c.id,{data:{archived:true}});}}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.sub,fontWeight:600}}>Archive</button>}
           {canManage&&<button onClick={()=>onDelete&&onDelete(c.id)}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:"1px solid #FECACA",background:"#FFF5F5",cursor:"pointer",color:"#B91C1C",fontWeight:600}}>Delete</button>}
         </div>
