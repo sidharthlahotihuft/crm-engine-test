@@ -44,7 +44,7 @@ const db = async (sql, params = []) => {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const uid = () => Math.random().toString(36).slice(2, 11);
 const safeJson = (s) => { try { return JSON.parse(s); } catch (e) { return null; } };
-const SERVER_BUILD = "server-v29.9 · /api/auth/me + login now return approval_slots + sub_brands (fixes slot-aware approvals + sub-brand scoping); best-practice rules; gated pipeline; category routing; notifications";
+const SERVER_BUILD = "server-v29.9.1 · brand-reject (send back to copy) now also clears selectedCopyIdx so the asset returns as a clean editable draft; auth returns approval_slots + sub_brands; gated pipeline; category routing; notifications";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -746,7 +746,7 @@ app.post("/api/campaigns/:id/brand-approve", authMiddleware, roles("brand", "adm
 app.post("/api/campaigns/:id/brand-reject", authMiddleware, roles("brand", "admin"), async (req, res) => {
   try {
     const rows = await db(
-      `UPDATE campaigns SET stage='content', copy_approver=NULL WHERE id=$1 AND stage='brand_review' RETURNING *`,
+      `UPDATE campaigns SET stage='content', copy_approver=NULL, data = COALESCE(data,'{}'::jsonb) || '{"selectedCopyIdx":null}'::jsonb WHERE id=$1 AND stage='brand_review' RETURNING *`,
       [req.params.id]
     );
     if (!rows.length) return res.status(409).json({ error: "Campaign is not awaiting brand review." });
