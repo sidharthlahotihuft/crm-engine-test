@@ -62,7 +62,7 @@ async function callClaude(system,prompt,expectJson){
 // Role-based default tab
 const ROLE_TAB={admin:"dashboard",business:"dashboard",content:"content",design:"design",brand:"dashboard"};
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v26.4 · alignment guides toggle (center + thirds overlay, export-safe) + undo/redo + tighter leading + rail fixes";
+const BUILD="v26.7 · PN shows push format only (tolerant channel detect, no full WhatsApp copy) + click-to-edit + friendly Gemini error";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -608,9 +608,11 @@ function Btn({children,onClick,variant="primary",disabled,small,style}){
 function Card({children,style,onClick}){return<div onClick={onClick}style={{background:C.white,border:`1px solid ${C.line}`,borderRadius:14,padding:18,boxShadow:"0 1px 2px rgba(16,24,40,.04)",...style}}>{children}</div>;}
 function Eyebrow({children,color=C.coral}){return<div style={{color,fontSize:12,fontWeight:700,letterSpacing:1,textTransform:"uppercase"}}>{children}</div>;}
 function StageBadge({stage}){const col={brief:C.coral,content:C.purple,design:C.teal,done:C.green}[stage]||C.sub;return<span style={{background:col+"1A",color:col,fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:999}}>{STAGE_LABEL[stage]}</span>;}
+// Tolerant channel check: matches "Push notification", "Push Notification", "Push", "PN", etc.
+const isPushChannel=(ch)=>{const s=String(ch||"").trim();return /push/i.test(s)||/^pn$/i.test(s);};
 // Small colour-coded tile so rows are scannable by channel at a glance
 function ChannelIcon({channel,size=16}){
-  const isPush=channel==="Push notification";
+  const isPush=isPushChannel(channel);
   const isEmail=channel==="Email";
   const cfg=isPush?{ic:<BellIcon size={size}/>,bg:"#FEF3C7",fg:"#D97706"}
     :isEmail?{ic:<Send size={size}/>,bg:"#E0E7FF",fg:"#4F46E5"}
@@ -642,7 +644,7 @@ function briefBlockFor(c){
   return "Brief\nProduct: "+c.product+"\nAudience: "+(c.audience_label||c.segment)+"\nObjective: "+c.objective+"\nOffer: "+(c.offer||"none")+"\nCRM: "+(c.crm_type||"D2C")+"\nInsight: "+b.strategicInsight+"\nIdea: "+b.idea+"\nPillar: "+(b.pillar||"—")+"\nCopy direction: "+(b.copyDirection||"—")+(rtbsArr.length?"\nRTBs to weave into the body (use these as the proof points): "+rtbsArr.join("; "):"")+(refsArr.length?"\nReference links (honour their tone & direction): "+refsArr.join(" , "):"");
 }
 async function genCopyOptionsFor(c, ruleStr, fb){
-  const isPush=c.channel==="Push notification";
+  const isPush=isPushChannel(c.channel);
   const isEmail=c.channel==="Email"||c.channel==="WhatsApp + Email";
   const channelRules=isPush
     ?`PUSH NOTIFICATION RULES (NON-NEGOTIABLE):\n- Title: MAX 50 chars. Short, punchy.\n- Body: MAX 90 chars. One sentence. No bullets.\n- Max 1 emoji. 2-second read.\n- CTA: 2-3 words.`
@@ -763,7 +765,7 @@ function Login({onAuth}){
 // so it should be "done". Fixes assets created before push-skips-design logic existed.
 function normalizeCampaigns(cs){
   return (cs||[]).map(c=>{
-    if(c.channel==="Push notification"&&c.stage!=="done"&&c.stage!=="brief"
+    if(isPushChannel(c.channel)&&c.stage!=="done"&&c.stage!=="brief"
        &&c.data?.selectedCopyIdx!=null){
       return{...c,stage:"done",design_approver:null,
         went_live_at:c.went_live_at||c.updated_at||new Date().toISOString()};
@@ -2330,11 +2332,11 @@ function BrandReviewTab({campaigns,patch,me,toast,onOpen,setTab}){
     try{
       const r=await api.post(`/api/campaigns/${c.id}/brand-approve`,{});
       // Server moves it to 'design'. For push, no design needed → mark done.
-      if(c.channel==="Push notification"){
+      if(isPushChannel(c.channel)){
         await api.put(`/api/campaigns/${c.id}`,{stage:"done",design_approver:me.name,went_live_at:new Date().toISOString()});
       }
       patch(c.id,{}); // trigger a refresh via parent reload pattern
-      if(toast)toast("Copy approved ✓ — released"+(c.channel==="Push notification"?" to Done":" to Design"),"success");
+      if(toast)toast("Copy approved ✓ — released"+(isPushChannel(c.channel)?" to Done":" to Design"),"success");
       window.location.reload();
     }catch(e){if(toast)toast(e.message||"Approve failed","error");}
     setBusy(false);
@@ -2631,10 +2633,10 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       setBusy(true);setErr("");
       try{
         await api.post(`/api/campaigns/${c.id}/brand-approve`,{});
-        if(c.channel==="Push notification"){
+        if(isPushChannel(c.channel)){
           await api.put(`/api/campaigns/${c.id}`,{stage:"done",design_approver:me.name,went_live_at:new Date().toISOString()});
         }
-        if(toast)toast("Brand approved ✓ — released to "+(c.channel==="Push notification"?"Done":"Design"),"success");
+        if(toast)toast("Brand approved ✓ — released to "+(isPushChannel(c.channel)?"Done":"Design"),"success");
         window.location.reload();
       }catch(e){setErr(e.message||"Approve failed");setBusy(false);}
     };
@@ -2657,7 +2659,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       setErr("");setBusy(true);
       try{
         const fb=recentFeedback("content");
-        const isPush=c.channel==="Push notification";
+        const isPush=isPushChannel(c.channel);
         const isEmail=c.channel==="Email"||c.channel==="WhatsApp + Email";
         const channelRules=isPush
           ?`PUSH NOTIFICATION RULES (NON-NEGOTIABLE):
@@ -2691,7 +2693,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
     const refine=async(idx)=>{setBusy(true);setErr("");
       try{
         const fb=recentFeedback("content");
-        const isPush=c.channel==="Push notification";
+        const isPush=isPushChannel(c.channel);
         const sys="You refine ONE "+(c.channel||"WhatsApp")+" CRM copy for HUFT.\n"+BRAND_CONTEXT+"\nRULEBOOK:\n"+ruleStr+(fb?"\nFeedback:\n"+fb:"")+(isPush?"\nPUSH: title MAX 50, body MAX 90 chars.":"")+"\nReturn ONLY JSON: {direction,header,body,cta}.";
         const usr=briefBlock+"\n\nCurrent:\n"+JSON.stringify(opts[idx])+"\n\nSteer (one-time): "+refineText;
         const j=await callClaude(sys,usr,true);
@@ -2720,7 +2722,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       let newOpts,newSel;
       if(sel!=null){newOpts=base.map((o,i)=>i===sel?{...opt,manual:true}:o);newSel=sel;}
       else{newOpts=[...base,{...opt,manual:true}];newSel=newOpts.length-1;}
-      const isPush=c.channel==="Push notification";
+      const isPush=isPushChannel(c.channel);
       const patchFields={data:{...(c.data||{}),copyOptions:newOpts,selectedCopyIdx:newSel},copy_approver:me.name};
       if(sel==null){patchFields.stage="brand_review";}
       patch(c.id,patchFields);
@@ -2744,7 +2746,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
     if(sel!=null){
       const o=opts?.[sel];
       const tone=c.stage==="brand_review"?{bar:"#9333EA",bg:"#FAF5FF"}:ROW_TONE[c.stage==="done"?"done":"approved"];
-      const isPush=c.channel==="Push notification";
+      const isPush=isPushChannel(c.channel);
       return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`4px solid ${tone.bar}`,background:tone.bg}}>
         {/* Collapsed header — always visible, click to expand */}
         <div onClick={()=>setOpenId(isOpen?null:c.id)}style={{display:"flex",alignItems:"center",gap:12,padding:"12px 18px",cursor:"pointer",userSelect:"none"}}>
@@ -2874,7 +2876,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         </div>}
         {sel!=null&&<div style={{marginTop:12,background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:10,padding:"14px 16px"}}>
           <div style={{fontSize:12,fontWeight:700,color:"#15803D",textTransform:"uppercase",letterSpacing:.5,marginBottom:10,display:"flex",alignItems:"center",gap:6}}><CheckCircle2 size={13}/>Copy approved — next steps</div>
-          {c.channel==="Push notification"
+          {isPushChannel(c.channel)
             ?<><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                 <Btn variant="green"onClick={()=>{setTab("done");onOpen(c.id,"done");}}><CheckCircle2 size={14}/>View in Done</Btn>
               </div>
@@ -2934,7 +2936,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
 
 
 function ManualCopyForm({initial,channel,onSave,onCancel}){
-  const isPush=channel==="Push notification";
+  const isPush=isPushChannel(channel);
   const isEmail=channel==="Email"||channel==="WhatsApp + Email";
   const[h,setH]=useState(initial?.header||"");
   const[b,setB]=useState(initial?.body||"");
@@ -3014,7 +3016,7 @@ function ManualCopyForm({initial,channel,onSave,onCancel}){
 }
 
 function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,busy,onSelect,onRefine,onEditSave,channel}){
-  const isPush=channel==="Push notification";
+  const isPush=isPushChannel(channel);
   const isEmail=channel==="Email"||channel==="WhatsApp + Email";
   const dirColors=[
     {bg:"#FFF3E0",text:"#E65100"},{bg:"#E8F5E9",text:"#2E7D32"},
@@ -3365,6 +3367,8 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
   const[editorOpen,setEditorOpen]=useState(false);
   const[zoom,setZoom]=useState(1);
   const[guides,setGuides]=useState(false);
+  const[editCopy,setEditCopy]=useState(null); // which copy block is being edited inline on the canvas: "hl"|"sh"|"cta"|null
+  const copyHitsRef=React.useRef({}); // {hl:[y0,y1], sh:[y0,y1], cta:[y0,y1]} in canvas (intrinsic) coords
   const[linkSizes,setLinkSizes]=useState(true); // sub-headline size scales with headline unless unlinked
   const[autoFit,setAutoFit]=useState(true); // auto-place/scale products into free space (no overlap)
   const sz=COMPOSER_SIZES[sizeIdx];
@@ -3408,7 +3412,8 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
 
   const[ct,setCt]=useState({text:(copy&&copy.cta)||"",font:"Rubik",size:1,kern:0,dx:0,dy:0,bold:true,color:"#FFFFFF"});
   const[ctaBg,setCtaBg]=useState(C.coral);
-  const[textShadow,setTextShadow]=useState("soft"); // none | soft | drop
+  const[textShadow,setTextShadow]=useState("none"); // none | soft | drop
+  const[copyScale,setCopyScale]=useState(1); // master scale for the whole image-copy block
   const[textAlign,setTextAlign]=useState("");        // "" = follow placement column; else left/center/right
   const[oldPrice,setOldPrice]=useState({text:"",color:"#FFFFFF",size:1}); // struck old price for price-drop
 
@@ -3422,7 +3427,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
   const[finalSaving,setFinalSaving]=useState(false);
 
   // ===== Undo / redo history (snapshots editable state; excludes loaded image bitmaps) =====
-  const snapshot=React.useCallback(()=>({sizeIdx,template,linkSizes,autoFit,bgMode,bgColor,bgId,genPrompt,genNeg,products,shadow,logoId,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,hl,sh,anchor,divider,ct,ctaBg,textShadow,textAlign,oldPrice}),[sizeIdx,template,linkSizes,autoFit,bgMode,bgColor,bgId,genPrompt,genNeg,products,shadow,logoId,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,hl,sh,anchor,divider,ct,ctaBg,textShadow,textAlign,oldPrice]);
+  const snapshot=React.useCallback(()=>({sizeIdx,template,linkSizes,autoFit,bgMode,bgColor,bgId,genPrompt,genNeg,products,shadow,logoId,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,hl,sh,anchor,divider,ct,ctaBg,textShadow,textAlign,oldPrice,copyScale}),[sizeIdx,template,linkSizes,autoFit,bgMode,bgColor,bgId,genPrompt,genNeg,products,shadow,logoId,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,hl,sh,anchor,divider,ct,ctaBg,textShadow,textAlign,oldPrice,copyScale]);
   const histRef=React.useRef({past:[],future:[]});
   const lastSnapRef=React.useRef(null);
   const debRef=React.useRef(null);
@@ -3433,7 +3438,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
     setProducts(s.products);setShadow(s.shadow);setLogoId(s.logoId);setLogoScale(s.logoScale);setLogoCorner(s.logoCorner);
     setHuftMode(s.huftMode);setHuftLockup(s.huftLockup);setHuftCorner(s.huftCorner);setHuftScale(s.huftScale);
     setHl(s.hl);setSh(s.sh);setAnchor(s.anchor);setDivider(s.divider);setCt(s.ct);setCtaBg(s.ctaBg);
-    setTextShadow(s.textShadow);setTextAlign(s.textAlign);setOldPrice(s.oldPrice);
+    setTextShadow(s.textShadow);setTextAlign(s.textAlign);setOldPrice(s.oldPrice);if(s.copyScale!==undefined)setCopyScale(s.copyScale);
     lastSnapRef.current=s; // so the recorder sees no diff and won't log this restore
   };
   React.useEffect(()=>{
@@ -3570,15 +3575,19 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
       segs.forEach((s,idx)=>{if(!s)return;ctx.fillStyle=color;ctx.fillText(s,cx,yy);const w=ctx.measureText(s).width;if(fullStrike||idx%2===1){ctx.save();ctx.strokeStyle=color;ctx.lineWidth=Math.max(2,px*0.08);ctx.beginPath();ctx.moveTo(cx,yy+px*0.52);ctx.lineTo(cx+w,yy+px*0.52);ctx.stroke();ctx.restore();}cx+=w;});
       ctx.textAlign=prev;
     };
-    const H=wrapFit(ctx,hl,maxW,sz.w*0.085,4);
+    const H=wrapFit(ctx,hl,maxW,sz.w*0.085*copyScale,4);
     const priceActive=template==="service"&&(oldPrice.text||"").trim();
-    const shEff=priceActive?{...sh,text:("~"+oldPrice.text.trim()+"~ "+(sh.text||"")).trim()}:sh;
-    const S=wrapFit(ctx,shEff,maxW,sz.w*0.042,5);
+    const priceOwnRow=priceActive&&oldPrice.ownRow;
+    const shEff=(priceActive&&!priceOwnRow)?{...sh,text:("~"+oldPrice.text.trim()+"~ "+(sh.text||"")).trim()}:sh;
+    const S=wrapFit(ctx,shEff,maxW,sz.w*0.042*copyScale,5);
     const hLineH=H.px*0.97, sLineH=S.px*1.18, gap=H.px*0.55;
+    const ppx=Math.round(sz.w*0.042*copyScale*(oldPrice.size||1)); // struck-price own size
+    const pLineH=ppx*1.30;
     const hBlock=H.lines.length*hLineH;
-    const sBlock=S.lines.length? gap+S.lines.length*sLineH : 0;
+    const priceBlockH=priceOwnRow? pLineH : 0;
+    const lowerH=(S.lines.length||priceOwnRow)? gap+priceBlockH+S.lines.length*sLineH : 0;
     const ctaH=ct.text? H.px*1.7 : 0;
-    const blockH=hBlock+sBlock+ctaH;
+    const blockH=hBlock+lowerH+ctaH;
     // reserve vertical space so a top logo never collides with top-anchored copy
     let topReserve=0;
     if(huftMode!=="none"&&huftCorner.indexOf("top")===0){const aspect=huftLockup==="stk"?0.674:0.1745;topReserve=sz.w*huftScale*aspect+sz.h*0.045;}
@@ -3624,21 +3633,31 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
     else if(textShadow==="soft"){ctx.shadowColor="rgba(0,0,0,0.30)";ctx.shadowBlur=16;ctx.shadowOffsetY=0;}
     else{ctx.shadowColor="transparent";ctx.shadowBlur=0;ctx.shadowOffsetY=0;}
     let y=topY+Hdy*sz.h;const hx=anchorX+Hdx*sz.w;
+    copyHitsRef.current={}; // rebuild each draw
+    copyHitsRef.current.hl=[y, y+hBlock];
     for(const ln of H.lines){drawCopyLine(ln,hx,y,hAlign,H.px,hl.color||"#FFFFFF",false);y+=hLineH;}
+    if(priceOwnRow){
+      ctx.fillStyle=oldPrice.color||sh.color||"#FFFFFF";
+      ctx.font=(sh.bold?"700":"400")+" "+ppx+"px '"+sh.font+"'";try{ctx.letterSpacing=(sh.kern||0)+"px";}catch(e){}
+      const py=topY+hBlock+gap+Sdy*sz.h;const px2=anchorX+Sdx*sz.w;
+      drawCopyLine(oldPrice.text.trim(),px2,py,hAlign,ppx,oldPrice.color||sh.color||"#FFFFFF",true);
+    }
     if(S.lines.length){
       ctx.fillStyle=sh.color||"#FFFFFF";
       ctx.font=(sh.bold?"700":"400")+" "+S.px+"px '"+sh.font+"'";try{ctx.letterSpacing=(sh.kern||0)+"px";}catch(e){}
-      let sy=topY+hBlock+gap+Sdy*sz.h;const sx=anchorX+Sdx*sz.w;
+      let sy=topY+hBlock+gap+priceBlockH+Sdy*sz.h;const sx=anchorX+Sdx*sz.w;
+      copyHitsRef.current.sh=[sy, sy+S.lines.length*sLineH];
       for(const ln of S.lines){drawCopyLine(ln,sx,sy,hAlign,S.px,sh.color||"#FFFFFF",false);sy+=sLineH;}
     }
     ctx.shadowColor="transparent";ctx.shadowBlur=0;ctx.shadowOffsetY=0;try{ctx.letterSpacing="0px";}catch(e){}
     if(ct.text){
-      const cpx=Math.round(sz.w*0.04*(ct.size||1));ctx.font=(ct.bold?"700":"400")+" "+cpx+"px '"+ct.font+"'";
+      const cpx=Math.round(sz.w*0.04*(ct.size||1)*copyScale);ctx.font=(ct.bold?"700":"400")+" "+cpx+"px '"+ct.font+"'";
       try{ctx.letterSpacing=(ct.kern||0)+"px";}catch(e){}
       const tw=ctx.measureText(ct.text).width, bw=tw+cpx*1.7, bh=cpx*2.1;
       const cAnchorX=anchorX+Cdx*sz.w;
       let bx = hAlign==="left"? cAnchorX : hAlign==="right"? cAnchorX-bw : cAnchorX-bw/2;
-      const by=topY+hBlock+sBlock+H.px*0.35+Cdy*sz.h;
+      const by=topY+hBlock+lowerH+H.px*0.35+Cdy*sz.h;
+      copyHitsRef.current.cta=[by, by+bh];
       ctx.fillStyle=ctaBg;
       if(ctx.roundRect){ctx.beginPath();ctx.roundRect(bx,by,bw,bh,bh/2);ctx.fill();}else ctx.fillRect(bx,by,bw,bh);
       ctx.fillStyle=ct.color||"#FFFFFF";ctx.textAlign="left";ctx.textBaseline="middle";
@@ -3677,7 +3696,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
         ctx.drawImage(limg,lx,ly,lw,lh);
       }
     }
-  },[sz,bgMode,bgColor,bgImg,genImg,products,prodImgs,shadow,hl,sh,anchor,ct,ctaBg,logoImg,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,huftReady,divider,autoFit,textShadow,textAlign,oldPrice,editorOpen]);
+  },[sz,bgMode,bgColor,bgImg,genImg,products,prodImgs,shadow,hl,sh,anchor,ct,ctaBg,logoImg,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,huftReady,divider,autoFit,textShadow,textAlign,oldPrice,copyScale,editorOpen]);
 
   React.useEffect(()=>{draw();},[draw]);
 
@@ -3833,7 +3852,14 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
             <Btn small disabled={genBusy}onClick={runGenerate}>{genBusy?"Generating…":"Generate image"}</Btn>
             <span style={{fontSize:11,color:C.sub}}>{isBusiness?"One-click":"Products & copy stay on top"}</span>
           </div>
-          {genErr&&<div style={{fontSize:11.5,color:"#DC2626",overflowWrap:"anywhere",wordBreak:"break-word",lineHeight:1.45}}>{genErr}</div>}
+          {genErr&&(()=>{
+            const low=genErr.toLowerCase();
+            const isQuota=low.includes("quota")||low.includes("limit: 0")||low.includes("billing")||low.includes("free_tier");
+            return<div style={{fontSize:12,background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:8,padding:"9px 11px",color:"#991B1B"}}>
+              <div style={{fontWeight:700,marginBottom:isQuota?4:0,display:"flex",gap:6,alignItems:"flex-start"}}><span>⚠️</span><span>{isQuota?"Image generation isn't enabled on this Gemini key yet — it needs billing enabled on the project, and the GA image model (gemini-2.5-flash-image). Once billing is active, try again.":"Couldn't generate the image."}</span></div>
+              <details style={{marginTop:6}}><summary style={{cursor:"pointer",fontSize:11,fontWeight:600,color:"#B91C1C"}}>Technical details</summary><div style={{marginTop:5,fontSize:11,overflowWrap:"anywhere",wordBreak:"break-word",lineHeight:1.45,color:"#7F1D1D"}}>{genErr}</div></details>
+            </div>;
+          })()}
         </div>}
 
         </div>
@@ -3841,7 +3867,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
       <div style={{flex:1,minWidth:0,overflow:"auto",display:"flex",alignItems:"center",justifyContent:"center",padding:28}}>
         <div style={{transform:`scale(${zoom})`,transformOrigin:"center center",transition:"transform .08s",flexShrink:0}}>
           <div style={{position:"relative",display:"block"}}>
-          <canvas ref={ref}style={{display:"block",width:"min(72vh,760px)",height:"auto",maxWidth:"82vw",borderRadius:10,boxShadow:"0 10px 44px rgba(0,0,0,.18)",background:"#fff",border:`1px solid ${C.line}`}}/>
+          <canvas ref={ref}onClick={(e)=>{const cv=ref.current;if(!cv)return;const rect=cv.getBoundingClientRect();const cy=(e.clientY-rect.top)/rect.height*sz.h;const hits=copyHitsRef.current||{};let hit=null;for(const k of ["hl","sh","cta"]){const b=hits[k];if(b&&b[1]>b[0]&&cy>=b[0]-sz.h*0.012&&cy<=b[1]+sz.h*0.012){hit=k;break;}}setEditCopy(hit);}}title="Click the headline, sub-headline or button to edit it here"style={{display:"block",width:"min(72vh,760px)",height:"auto",maxWidth:"82vw",borderRadius:10,boxShadow:"0 10px 44px rgba(0,0,0,.18)",background:"#fff",border:`1px solid ${C.line}`,cursor:"text"}}/>
           {guides&&<div style={{position:"absolute",inset:0,pointerEvents:"none",borderRadius:10,overflow:"hidden"}}>
             <div style={{position:"absolute",left:"33.333%",top:0,bottom:0,width:1,background:"rgba(255,61,141,.22)"}}/>
             <div style={{position:"absolute",left:"66.666%",top:0,bottom:0,width:1,background:"rgba(255,61,141,.22)"}}/>
@@ -3850,6 +3876,19 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
             <div style={{position:"absolute",left:"50%",top:0,bottom:0,borderLeft:"1.5px dashed #FF3D8D",transform:"translateX(-50%)"}}/>
             <div style={{position:"absolute",top:"50%",left:0,right:0,borderTop:"1.5px dashed #FF3D8D",transform:"translateY(-50%)"}}/>
           </div>}
+          {editCopy&&copyHitsRef.current[editCopy]&&(()=>{
+            const b=copyHitsRef.current[editCopy];
+            const top=Math.max(0,(b[0]/sz.h)*100), height=Math.max(7,((b[1]-b[0])/sz.h)*100);
+            const cur=editCopy==="hl"?hl:editCopy==="sh"?sh:ct;
+            const setCur=editCopy==="hl"?setHl:editCopy==="sh"?setSh:setCt;
+            const label=editCopy==="hl"?"headline":editCopy==="sh"?"sub-headline":"button";
+            return<div style={{position:"absolute",left:"3%",width:"94%",top:top+"%",height:height+"%",minHeight:38,zIndex:6}}>
+              <textarea autoFocus value={cur.text}onChange={e=>setCur({...cur,text:e.target.value})}
+                onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();setEditCopy(null);}if(e.key==="Escape"){e.preventDefault();setEditCopy(null);}}}
+                onBlur={()=>setEditCopy(null)}placeholder={"Edit "+label+"…"}
+                style={{width:"100%",height:"100%",resize:"none",border:`2px solid ${C.coral}`,borderRadius:8,background:"rgba(255,255,255,.97)",padding:"6px 9px",fontSize:15,fontWeight:700,color:C.ink,boxShadow:"0 8px 24px rgba(0,0,0,.20)",textAlign:"center",fontFamily:"inherit",outline:"none",boxSizing:"border-box",lineHeight:1.2}}/>
+            </div>;
+          })()}
           </div>
         </div>
       </div>
@@ -3870,7 +3909,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
         {products.map((p,idx)=><div key={p.pid}style={{gridColumn:"1 / -1",border:`1px solid ${C.line}`,borderRadius:8,padding:"10px 12px",display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:10}}>
           <div style={{gridColumn:"1 / -1",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <span style={{fontSize:10.5,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.4}}>Product {idx+1}</span>
-            {products.length>1&&<button onClick={()=>rmProduct(p.pid)}style={{border:"none",background:"none",color:"#B91C1C",fontSize:11,fontWeight:700,cursor:"pointer",padding:0}}>Remove</button>}
+            <button onClick={()=>rmProduct(p.pid)}title="Remove this product"style={{border:"none",background:"none",color:"#B91C1C",fontSize:11,fontWeight:700,cursor:"pointer",padding:0}}>Remove</button>
           </div>
           <div style={{gridColumn:"1 / -1"}}><select value={p.id}onChange={e=>updProduct(p.pid,{id:e.target.value})}style={ctrl}><option value="">— pick from library —</option>{productItems.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select></div>
           {!autoFit&&slider("Size",Math.round(p.scale*100),15,100,v=>updProduct(p.pid,{scale:v/100}),v=>v+"%")}
@@ -3883,6 +3922,14 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
 
         {/* image copy */}
         <div style={{gridColumn:"1 / -1",borderTop:`1px solid ${C.line}`,paddingTop:11,fontSize:11.5,fontWeight:800,color:C.ink}}>Image copy</div>
+        <div style={{gridColumn:"1 / -1",display:"flex",alignItems:"center",gap:10}}>
+          <label style={{...fieldL,margin:0,whiteSpace:"nowrap"}}>Scale all copy</label>
+          <input type="range"min={50}max={160}value={Math.round(copyScale*100)}onChange={e=>setCopyScale(+e.target.value/100)}style={{flex:1,minWidth:0}}/>
+          <input type="number"min={50}max={160}value={Math.round(copyScale*100)}onChange={e=>{let v=e.target.value===""?100:+e.target.value;if(isNaN(v))return;v=Math.max(50,Math.min(160,v));setCopyScale(v/100);}}style={{width:52,border:`1px solid ${C.line}`,borderRadius:6,padding:"3px 5px",fontSize:12,textAlign:"right"}}/>
+          <span style={{fontSize:11,color:C.sub}}>%</span>
+          {copyScale!==1&&<button onClick={()=>setCopyScale(1)}title="Reset"style={{fontSize:11.5,fontWeight:700,color:C.coral,background:C.coral+"14",border:`1px solid ${C.coral}55`,borderRadius:7,padding:"3px 8px",cursor:"pointer"}}>↺</button>}
+        </div>
+        <div style={{gridColumn:"1 / -1",fontSize:10.5,color:C.sub,marginTop:-4}}>Scales headline, sub-headline & CTA together. Each can still be fine-tuned below.</div>
         {sect("hl","Headline",hl,setHl,
           <label style={{gridColumn:"1 / -1",display:"flex",alignItems:"center",gap:8,fontSize:12,color:C.ink,cursor:"pointer"}}><input type="checkbox"checked={linkSizes}onChange={e=>setLinkSizes(e.target.checked)}/>Link sub-headline size to headline (scale together)</label>,
           setHlSize)}
@@ -3893,8 +3940,17 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
         {/* price drop: only on the Service / Price-drop template — struck old price flows inline in the sub-headline sentence */}
         {template==="service"&&<div style={{gridColumn:"1 / -1",borderTop:`1px solid ${C.line}`,paddingTop:11,fontSize:11.5,fontWeight:800,color:C.ink}}>Price drop</div>}
         {template==="service"&&<div style={{gridColumn:"1 / -1",display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
-          <div style={{flex:"1 1 160px"}}><label style={fieldL}>Old price — struck, placed inline in the sentence</label><input value={oldPrice.text}onChange={e=>setOldPrice({...oldPrice,text:e.target.value})}placeholder="e.g. ₹3,250"style={ctrl}/></div>
-          <div style={{flex:"2 1 220px",fontSize:11.5,color:C.sub,lineHeight:1.4,paddingBottom:8}}>Shows as a struck price at the start of the sub-headline, e.g. <b style={{color:C.ink}}>~~₹3,250~~ now ₹2,499</b>. Put the new price in the sub-headline.</div>
+          <div style={{flex:"1 1 160px"}}><label style={fieldL}>Old price — struck</label><input value={oldPrice.text}onChange={e=>setOldPrice({...oldPrice,text:e.target.value})}placeholder="e.g. ₹3,250 off"style={ctrl}/></div>
+          <div style={{flex:"2 1 220px",fontSize:11.5,color:C.sub,lineHeight:1.4,paddingBottom:8}}>{oldPrice.ownRow?<>Shown struck on its <b style={{color:C.ink}}>own row</b> above the sub-headline. Put the new price in the sub-headline.</>:<>Shown struck <b style={{color:C.ink}}>inline</b> at the start of the sub-headline. Put the new price in the sub-headline.</>}</div>
+        </div>}
+        {template==="service"&&oldPrice.text.trim()&&<div style={{gridColumn:"1 / -1",display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
+          <label style={{display:"flex",alignItems:"center",gap:7,fontSize:12.5,fontWeight:600,color:C.ink,cursor:"pointer"}}><input type="checkbox"checked={!!oldPrice.ownRow}onChange={e=>setOldPrice({...oldPrice,ownRow:e.target.checked})}/>Break onto its own row</label>
+          {oldPrice.ownRow&&<div style={{display:"flex",alignItems:"center",gap:8,flex:"1 1 200px",minWidth:0}}>
+            <label style={{...fieldL,margin:0,whiteSpace:"nowrap"}}>Struck price size</label>
+            <input type="range"min={60}max={260}value={Math.round((oldPrice.size||1)*100)}onChange={e=>setOldPrice({...oldPrice,size:+e.target.value/100})}style={{flex:1,minWidth:0}}/>
+            <input type="number"min={60}max={260}value={Math.round((oldPrice.size||1)*100)}onChange={e=>{let v=e.target.value===""?100:+e.target.value;if(isNaN(v))return;v=Math.max(60,Math.min(260,v));setOldPrice({...oldPrice,size:v/100});}}style={{width:52,border:`1px solid ${C.line}`,borderRadius:6,padding:"3px 5px",fontSize:12,textAlign:"right"}}/>
+            <span style={{fontSize:11,color:C.sub}}>%</span>
+          </div>}
         </div>}
         <div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Placement (headline · sub-headline follows)</label>
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:5}}>
