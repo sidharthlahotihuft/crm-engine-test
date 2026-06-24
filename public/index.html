@@ -62,7 +62,7 @@ async function callClaude(system,prompt,expectJson){
 // Role-based default tab
 const ROLE_TAB={admin:"dashboard",business:"dashboard",content:"content",design:"design",brand:"dashboard"};
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v11 · composer: multi-product, use-as-final, flow fix";
+const BUILD="v12 · composer: CTA editor + bold per element";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -3299,13 +3299,13 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
 
   // image copy ONLY (copy.header = on-image overlay; never copy.body)
   const headerLines=(((copy&&copy.header)||"").split(/\r?\n/).map(s=>s.trim()).filter(Boolean));
-  const[hl,setHl]=useState({text:headerLines[0]||"",font:"Korolev",size:1,kern:0,dx:0,dy:0});
-  const[sh,setSh]=useState({text:headerLines.slice(1).join(" ")||"",font:"Rubik",size:1,kern:0,dx:0,dy:0});
+  const[hl,setHl]=useState({text:headerLines[0]||"",font:"Korolev",size:1,kern:0,dx:0,dy:0,bold:true});
+  const[sh,setSh]=useState({text:headerLines.slice(1).join(" ")||"",font:"Rubik",size:1,kern:0,dx:0,dy:0,bold:false});
   const[textColor,setTextColor]=useState("#FFFFFF");
   const[anchor,setAnchor]=useState("top-left");
   const[editing,setEditing]=useState("");
 
-  const[cta,setCta]=useState((copy&&copy.cta)||"");
+  const[ct,setCt]=useState({text:(copy&&copy.cta)||"",font:"Rubik",size:1,kern:0,dx:0,dy:0,bold:true});
   const[ctaBg,setCtaBg]=useState(C.coral);
 
   const[items,setItems]=useState([]);
@@ -3329,7 +3329,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
   const wrapFit=(ctx,el,maxW,basePx,maxLines)=>{
     let px=Math.round(basePx*(el.size||1));const fam="'"+el.font+"'";
     while(px>12){
-      ctx.font="700 "+px+"px "+fam;try{ctx.letterSpacing=(el.kern||0)+"px";}catch(e){}
+      ctx.font=(el.bold?"800":"400")+" "+px+"px "+fam;try{ctx.letterSpacing=(el.kern||0)+"px";}catch(e){}
       const words=(el.text||"").split(/\s+/).filter(Boolean);const lines=[];let line="";
       for(const w of words){const t=line?line+" "+w:w;if(ctx.measureText(t).width>maxW&&line){lines.push(line);line=w;}else line=t;}
       if(line)lines.push(line);
@@ -3381,30 +3381,33 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
     const hLineH=H.px*1.12, sLineH=S.px*1.32, gap=H.px*0.55;
     const hBlock=H.lines.length*hLineH;
     const sBlock=S.lines.length? gap+S.lines.length*sLineH : 0;
-    const ctaH=cta? H.px*1.7 : 0;
+    const ctaH=ct.text? H.px*1.7 : 0;
     const blockH=hBlock+sBlock+ctaH;
     let topY = vPos==="top"? sz.h*0.08 : vPos==="bottom"? sz.h*0.92-blockH : (sz.h-blockH)/2;
 
     ctx.fillStyle=textColor;ctx.textAlign=hAlign;
-    ctx.font="700 "+H.px+"px '"+hl.font+"'";try{ctx.letterSpacing=(hl.kern||0)+"px";}catch(e){}
+    ctx.font=(hl.bold?"800":"400")+" "+H.px+"px '"+hl.font+"'";try{ctx.letterSpacing=(hl.kern||0)+"px";}catch(e){}
     ctx.shadowColor="rgba(0,0,0,0.25)";ctx.shadowBlur=6;ctx.shadowOffsetY=2;
     let y=topY+(hl.dy||0)*sz.h;const hx=anchorX+(hl.dx||0)*sz.w;
     for(const ln of H.lines){ctx.fillText(ln,hx,y);y+=hLineH;}
     if(S.lines.length){
-      ctx.font="600 "+S.px+"px '"+sh.font+"'";try{ctx.letterSpacing=(sh.kern||0)+"px";}catch(e){}
+      ctx.font=(sh.bold?"700":"400")+" "+S.px+"px '"+sh.font+"'";try{ctx.letterSpacing=(sh.kern||0)+"px";}catch(e){}
       let sy=topY+hBlock+gap+(sh.dy||0)*sz.h;const sx=anchorX+(sh.dx||0)*sz.w;
       for(const ln of S.lines){ctx.fillText(ln,sx,sy);sy+=sLineH;}
     }
     ctx.shadowColor="transparent";ctx.shadowBlur=0;ctx.shadowOffsetY=0;try{ctx.letterSpacing="0px";}catch(e){}
-    if(cta){
-      const cpx=Math.round(sz.w*0.04);ctx.font="700 "+cpx+"px '"+sh.font+"'";
-      const tw=ctx.measureText(cta).width, bw=tw+cpx*1.7, bh=cpx*2.1;
-      let bx = hAlign==="left"? hx : hAlign==="right"? hx-bw : hx-bw/2;
-      const by=topY+hBlock+sBlock+H.px*0.35;
+    if(ct.text){
+      const cpx=Math.round(sz.w*0.04*(ct.size||1));ctx.font=(ct.bold?"700":"400")+" "+cpx+"px '"+ct.font+"'";
+      try{ctx.letterSpacing=(ct.kern||0)+"px";}catch(e){}
+      const tw=ctx.measureText(ct.text).width, bw=tw+cpx*1.7, bh=cpx*2.1;
+      const cAnchorX=anchorX+(ct.dx||0)*sz.w;
+      let bx = hAlign==="left"? cAnchorX : hAlign==="right"? cAnchorX-bw : cAnchorX-bw/2;
+      const by=topY+hBlock+sBlock+H.px*0.35+(ct.dy||0)*sz.h;
       ctx.fillStyle=ctaBg;
       if(ctx.roundRect){ctx.beginPath();ctx.roundRect(bx,by,bw,bh,bh/2);ctx.fill();}else ctx.fillRect(bx,by,bw,bh);
       ctx.fillStyle="#FFFFFF";ctx.textAlign="left";ctx.textBaseline="middle";
-      ctx.fillText(cta,bx+cpx*0.85,by+bh/2);ctx.textBaseline="top";
+      ctx.fillText(ct.text,bx+cpx*0.85,by+bh/2);ctx.textBaseline="top";
+      try{ctx.letterSpacing="0px";}catch(e){}
     }
 
     // 4) logo
@@ -3414,7 +3417,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
       const lx=lh2==="left"?m:sz.w-lw-m, ly=lv==="top"?m:sz.h-lh-m;
       ctx.drawImage(logoImg,lx,ly,lw,lh);
     }
-  },[sz,bgMode,bgColor,bgImg,genImg,products,prodImgs,shadow,hl,sh,textColor,anchor,cta,ctaBg,logoImg,logoScale,logoCorner]);
+  },[sz,bgMode,bgColor,bgImg,genImg,products,prodImgs,shadow,hl,sh,textColor,anchor,ct,ctaBg,logoImg,logoScale,logoCorner]);
 
   React.useEffect(()=>{draw();},[draw]);
 
@@ -3440,7 +3443,8 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
   const ctrl={width:"100%",border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 9px",fontSize:13,boxSizing:"border-box"};
   const slider=(label,val,min,max,set,fmt)=><div><label style={fieldL}>{label}{fmt?" · "+fmt(val):""}</label><input type="range"min={min}max={max}value={val}onChange={e=>set(+e.target.value)}style={{width:"100%"}}/></div>;
   const editPanel=(el,setEl)=><div style={{gridColumn:"1 / -1",display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,padding:"10px 12px",background:C.paper,border:`1px solid ${C.line}`,borderRadius:8}}>
-    <div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Font</label><select value={el.font}onChange={e=>setEl({...el,font:e.target.value})}style={ctrl}>{COMPOSER_FONTS.map(f=><option key={f}value={f}>{f}</option>)}</select></div>
+    <div><label style={fieldL}>Font</label><select value={el.font}onChange={e=>setEl({...el,font:e.target.value})}style={ctrl}>{COMPOSER_FONTS.map(f=><option key={f}value={f}>{f}</option>)}</select></div>
+    <div><label style={fieldL}>Weight</label><button onClick={()=>setEl({...el,bold:!el.bold})}style={{...ctrl,cursor:"pointer",textAlign:"left",fontWeight:el.bold?800:400,background:el.bold?C.coral+"18":"#fff",borderColor:el.bold?C.coral:C.line,color:el.bold?C.coral:C.sub}}>{el.bold?"Bold ✓":"Regular"}</button></div>
     {slider("Font size",Math.round(el.size*100),50,200,v=>setEl({...el,size:v/100}),v=>v+"%")}
     {slider("Kerning",el.kern,-5,30,v=>setEl({...el,kern:v}),v=>v+"px")}
     {slider("Horizontal",Math.round(el.dx*100),-30,30,v=>setEl({...el,dx:v/100}),v=>v+"%")}
@@ -3549,7 +3553,14 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
           </div>
         </div>
         <div><label style={fieldL}>Text colour</label><input type="color"value={textColor}onChange={e=>setTextColor(e.target.value)}style={{...ctrl,padding:2,height:34}}/></div>
-        <div><label style={fieldL}>CTA (optional)</label><input value={cta}onChange={e=>setCta(e.target.value)}style={ctrl}/></div>
+        <div style={{gridColumn:"1 / -1"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
+            <label style={fieldL}>CTA (optional)</label>
+            <button onClick={()=>setEditing(editing==="cta"?"":"cta")}style={{border:"none",background:"none",color:C.coral,fontSize:11,fontWeight:700,cursor:"pointer",padding:0}}>{editing==="cta"?"Close edit":"Edit"}</button>
+          </div>
+          <input value={ct.text}onChange={e=>setCt({...ct,text:e.target.value})}style={ctrl}/>
+        </div>
+        {editing==="cta"&&editPanel(ct,setCt)}
         <div><label style={fieldL}>CTA colour</label><input type="color"value={ctaBg}onChange={e=>setCtaBg(e.target.value)}style={{...ctrl,padding:2,height:34}}/></div>
 
         {/* logo */}
