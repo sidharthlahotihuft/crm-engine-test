@@ -62,7 +62,7 @@ async function callClaude(system,prompt,expectJson){
 // Role-based default tab
 const ROLE_TAB={admin:"dashboard",business:"dashboard",content:"content",design:"design",brand:"dashboard"};
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v26 · full-screen composer (canvas centred, tools L/R, zoom, prominent download) + duplicate-to-new-asset + price-drop inline (Service only) + compose-or-upload gated to design/admin";
+const BUILD="v26.1 · full-screen composer (portaled above sidebar; canvas centred, tools L/R, zoom, download) + duplicate-to-asset + inline price-drop (Service) + gated finish block";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -3719,7 +3719,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
     </div>
   </div>;
 
-  return<div style={{position:"fixed",inset:0,zIndex:200,background:"#F4F5F7",display:"flex",flexDirection:"column"}}>
+  return ReactDOM.createPortal(<div style={{position:"fixed",inset:0,zIndex:9000,background:"#F4F5F7",display:"flex",flexDirection:"column"}}>
     <div style={{padding:"10px 16px",background:"#fff",borderBottom:`1px solid ${C.line}`,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
       <ImageIcon size={16}color={C.coral}/><span style={{fontWeight:800,fontSize:14,color:C.ink}}>Creative Composer</span>
       <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
@@ -3867,7 +3867,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d}){
         </div>
       </div>
     </div>
-  </div>;
+  </div>,document.body);
 }
 
 function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedback,campaigns,onOpen,onDelete,onDuplicate}){
