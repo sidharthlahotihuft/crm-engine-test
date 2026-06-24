@@ -103,7 +103,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.10.1 · Dashboard time-period selector — defaults to Last 7 days, with Last 30/90, All time, and a Custom date range (filters the overview by asset creation date). Stat cards + activity scope to the window; total-briefs and the dedicated Approvals/My-Tasks tabs stay all-time. Carries v29.10 push preview + sent-back reason/resend gate + comment edit";
+const BUILD="v29.10.2 · send-back reason banner + resend gate now work WITHOUT a server deploy (the brand lead's client writes sentBack/lastRejectReason on reject). Includes dashboard time-period selector, push-notification preview, comment edit/resolve-grey, selected-by, active-only Copy/Design lists";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -3165,7 +3165,11 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
     const brandReject=async()=>{
       setBusy(true);setErr("");
       try{
-        await api.post(`/api/campaigns/${c.id}/brand-reject`,{reason:brandReason.trim()});
+        const reason=brandReason.trim();
+        await api.post(`/api/campaigns/${c.id}/brand-reject`,{reason});
+        // Write the send-back reason + flag client-side too, so the reason banner + resend gate
+        // work even on the older server (server already cleared selectedCopyIdx & set stage=content).
+        await api.put(`/api/campaigns/${c.id}`,{data:{...(c.data||{}),selectedCopyIdx:null,sentBack:true,lastRejectReason:reason,sentBackBy:me.name,sentBackAt:new Date().toISOString()}}).catch(()=>{});
         if(toast)toast("Sent back to the copy team","success");
         if(reload)await reload();setBusy(false);
       }catch(e){setErr(e.message||"Reject failed");setBusy(false);}
