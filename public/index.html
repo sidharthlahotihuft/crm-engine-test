@@ -106,7 +106,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.59 - Design flow: Art direction (both teams, no upload) -> business: library scroller + Canva | design: + Generate an image (prompt/chat/upload). Logos excluded from library suggestions.";
+const BUILD="v29.61 - Download this image button under the library scroller (appears once a scene is picked; saves the file to drop into Canva or share).";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -4420,10 +4420,10 @@ function SmartLibraryPicker({d,setD,copy,brief,product,campaignId}){
     {loading?<Spin label="Finding best matches…"/>
       :all.length===0
       ?<div style={{padding:"14px 16px",background:"#F8FAFC",border:`1px dashed ${C.line}`,borderRadius:10,fontSize:12.5,color:C.sub}}>No library images{searchMode?" match that search":" matched yet"}. Upload images in the Image Library tab — the engine tags them and they'll appear here.</div>
-      :<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+      :<div style={{display:"flex",gap:10,overflowX:"auto",paddingBottom:6,scrollSnapType:"x mandatory",WebkitOverflowScrolling:"touch"}}>
       {all.map(l=>{
         const picked=d.libraryPick===l.id;
-        return<div key={l.id}style={{border:`2px solid ${picked?C.teal:C.line}`,borderRadius:10,overflow:"hidden",background:picked?C.tealSoft:"#fff"}}>
+        return<div key={l.id}style={{flexShrink:0,width:230,scrollSnapAlign:"start",border:`2px solid ${picked?C.teal:C.line}`,borderRadius:10,overflow:"hidden",background:picked?C.tealSoft:"#fff"}}>
           <div onClick={()=>setD({libraryPick:l.id,libraryPickMeta:{label:l.product||l.file_name||"Library image",desc:l.description||"",tags:l.tags||[]}})}style={{cursor:"pointer"}}>
             <div style={{aspectRatio:"4/3",background:"#F3F4F6",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}><ImageThumb id={l.id}alt={l.description}/></div>
             <div style={{padding:"8px 11px"}}>
@@ -4499,20 +4499,6 @@ function RefImagePicker({d,setD,campaignId,product}){
     </div>
     {note&&<div style={{fontSize:11,color:C.sub,marginTop:6}}>{note}</div>}
     {refs.length>0&&<div style={{fontSize:11,color:C.sub,marginTop:6}}>Sent with “Generate image” to steer the output.</div>}
-    <div style={{marginTop:10}}>
-      <div style={{fontSize:11,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.4,marginBottom:6,display:"flex",alignItems:"center",gap:5}}><Wand2 size={11}/>Suggested from library{product?" · matched to "+product:""}</div>
-      {sugg===null?<Spin label="Finding matches…"/>
-        :sugg.length===0?<div style={{fontSize:11.5,color:C.sub,fontStyle:"italic"}}>No library matches yet. Upload tagged images in the Brand Assets tab and they'll show here.</div>
-        :<div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4}}>
-          {sugg.slice(0,12).map(l=><div key={l.id}style={{flexShrink:0,width:72,cursor:adding===l.id?"wait":"pointer",opacity:adding===l.id?.5:1}}onClick={()=>adding||addFromLib(l.id)}title={(l.product||l.file_name||"")+(l.description?" — "+l.description:"")}>
-            <div style={{width:72,height:72,borderRadius:8,overflow:"hidden",border:`1px solid ${C.line}`,background:"#F3F4F6",display:"flex",alignItems:"center",justifyContent:"center",position:"relative"}}>
-              <ImageThumb id={l.id}alt={l.description}/>
-              <div style={{position:"absolute",bottom:3,right:3,width:18,height:18,borderRadius:999,background:C.teal,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center"}}><Plus size={12}/></div>
-            </div>
-            {l.product&&<div style={{fontSize:9.5,color:C.sub,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{l.product}</div>}
-          </div>)}
-        </div>}
-    </div>
   </div>;
 }
 
@@ -5935,14 +5921,14 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
         {!isPushChannel(c.channel)&&<ArtNotes d={d}setD={setD}busy={busy}genNotes={genNotes}/>}
 
         {/* Reference images — upload or pull from library to steer generation */}
-        {!isPushChannel(c.channel)&&["design_team","design_lead","super_admin"].includes(_r(me))&&<RefImagePicker d={d}setD={setD}campaignId={c.id}product={c.product}/>}
 
         {/* Image prompts */}
         {!isPushChannel(c.channel)&&["design_team","design_lead","super_admin"].includes(_r(me))&&<div style={{marginBottom:12}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
             <div style={{fontSize:12,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5}}>Generate an image</div>
-            {busy==="prompts"?<Spin label="Generating…"/>:<Btn small onClick={e=>{e.stopPropagation();genPrompts();}}>{d.imagePrompts?"Regenerate":"Generate art direction"}</Btn>}
+            {busy==="prompts"?<Spin label="Generating…"/>:<Btn small onClick={e=>{e.stopPropagation();genPrompts();}}>{d.imagePrompts?"Regenerate prompt":"Generate prompt"}</Btn>}
           </div>
+          <RefImagePicker d={d}setD={setD}campaignId={c.id}product={c.product}/>
           {err&&<div style={{color:C.coral,fontSize:13,marginBottom:8}}>{err}</div>}
           {d.imagePrompts&&d.imagePrompts.map((p,i)=><div key={i}style={{border:`2px solid ${d.approvedPromptIdx===i?C.teal:C.line}`,borderRadius:10,padding:12,marginBottom:10,background:d.approvedPromptIdx===i?C.tealSoft:"#fff"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
@@ -6002,6 +5988,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
 
           <div style={{fontSize:12,fontWeight:800,color:C.ink,margin:"4px 0 6px"}}>Image from the library</div>
           <SmartLibraryPicker d={d}setD={setD}copy={copy}brief={c.data?.brief}product={c.product}campaignId={c.id}/>
+          {d.libraryPick&&<div style={{marginTop:8}}><Btn small variant="ghost"onClick={async()=>{try{const r=await api.get("/api/image-library/"+d.libraryPick);const url=r&&r.file_data;if(!url)return;const ext=(url.match(/^data:image\/(\w+)/)||[])[1]||"png";const base=((d.libraryPickMeta&&d.libraryPickMeta.label)||c.product||"huft-image").toString().replace(/[^\w.-]+/g,"_").slice(0,60);const a=document.createElement("a");a.href=url;a.download=base+"."+ext;document.body.appendChild(a);a.click();a.remove();}catch(e){}}}><Download size={13}/>Download this image</Btn><span style={{fontSize:11,color:C.sub,marginLeft:8}}>Saves the picked scene so you can drop it into Canva or share it.</span></div>}
           <div style={{fontSize:12,fontWeight:800,color:C.ink,margin:"16px 0 6px"}}>Or make it on Canva</div>
           <CanvaMaker c={c}copy={copy}/>
           <FinalDesignUpload c={c}d={d}patch={patch}me={me}/>
