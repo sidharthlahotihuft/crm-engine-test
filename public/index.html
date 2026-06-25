@@ -103,7 +103,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.25 · Brand/category quick-picks expanded from headsupfortails.com — added missing HUFT own brands (NutriWag, DashDog), the main categories (Dog/Cat Food, Treats, Toys, Beds, Collars, Apparel, Litter, Bowls, Health), and the top partner brands HUFT runs CRM for (Royal Canin, Pedigree, Farmina, Sheba, Whiskas, Drools, Orijen, Trixie, KONG, Himalaya); anything else can still be typed. New Discovery pillar added (curious & revealing). Made by business team is now hidden from the brand team and design team views in Copy.";
+const BUILD="v29.26 · Copy generation tightened: per-channel length discipline (push title ≤40/hard-50 + body capped at 2 short flowing lines; WhatsApp/Email body ceilings), copy now reads as complete flowing sentences not fragments, image copy must be a crisp flowing line with the offer surfaced when present, crystal-clarity rule for offers/deadlines, and tasteful emojis encouraged. Shared COPY_SHAPE helper keeps the bulk + per-card generators in sync; refine/fix flows now apply the same best-practices + forbidden-token rules. Stronger M-hash/placeholder stripping (now catches unicode-dash variants + empty brackets). Image copy / Body copy labels standardised everywhere. Analytics is channel-aware: Push shows CTR only, WhatsApp/Email show all. Business users see a clean in-progress state after generating instead of the full editor.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -140,25 +140,30 @@ const COPY_BEST_PRACTICES=`HIGH-ENGAGEMENT COPY PRINCIPLES (apply to every optio
 - EMOTION + PROOF: lead with the pet-parent feeling, then back it with a reason to believe. HUFT is warm AND credible — never one without the other.
 - VOICE: a knowledgeable, kind friend who loves pets — premium, honest, never pushy, never salesy, never clickbait.
 - SCANNABLE: short sentences, one idea per line, generous whitespace. No walls of text, no repetition, no fluff.
+- LENGTH DISCIPLINE: shorter is stronger. Stay WELL within each channel's limits — treat them as ceilings to beat, not targets to fill. If a line can be cut without losing meaning, cut it. Every word must earn its place.
+- COMPLETE THOUGHTS, NOT FRAGMENTS: write in full, natural sentences with real flow — never clipped, broken-up word fragments, telegraphic stubs, or a pile of phrases jammed together. Even a single very short line must read like a person said it out loud, with a clear subject and verb. Read it back: if it sounds chopped or robotic, rewrite it so it flows.
+- IMAGE COPY MUST FLOW: the image/overlay copy (the "header" field) is the on-creative line(s) a pet parent reads at a glance. Keep it short and crisp, but it MUST be a clean, flowing line (or two) with natural rhythm — NOT individual words broken onto separate lines and NOT a fragment. Short does not mean choppy. One confident, readable line beats three stray words.
+- SURFACE THE OFFER: when the brief gives a real offer/discount/deal, work it naturally into the image copy/overlay so it is visible at a glance (e.g. "₹500 off your first box"), and echo it in the body. If there is no offer in the brief, never invent one.
+- CRYSTAL CLARITY: every line must be instantly understandable on first read — no ambiguous phrasing, no confusing constructions, no maths the reader has to do. State plainly WHO gets WHAT and WHEN. (Ambiguous: "For the next 3 days, your first visit is Rs.500 off." Clear: "Get ₹500 off your first visit — offer ends in 3 days.") Spell out exactly what the discount applies to and any deadline in plain words.
 - VARY OPENINGS across the set — no two options should open the same way, and a name-greeting is NEVER the default (at most one option may use it, only if earned).
 - CLEAR NEXT STEP: the CTA is a pictureable action tied to the store/app ("Switch to fresh", "Book a spa day", "Shop the litter") — not "click here".
-- CLEAN FORMATTING: no ALL-CAPS words, no exclamation spam (no "!!!"), no "free!!!/buy now". Max ~1–2 purposeful emojis, only where they add warmth or meaning.
+- CLEAN FORMATTING: no ALL-CAPS words, no exclamation spam (no "!!!"), no "free!!!/buy now". EMOJIS: use 1-2 tasteful, purposeful emojis where they add warmth or meaning (a relevant 🐾 🐶 🐱 🎉 ✨, or a ✓ for proof points) — they lift engagement; never force them, never use more than 2, and never let an emoji replace a word.
 - FOR EDIBLES: always state the FORMAT explicitly (Chews / Fresh / Kibble / Wet / Gravy / Treats).
 - HONEST & INCLUSIVE: no health/medical overclaims, no fear-mongering; "family isn't defined by species". Stay true to the brief's objective and emotional pillar — cut anything off-objective.`;
 // Channel-specific engagement rules (shared by every generator).
 const PUSH_RULES=`PUSH NOTIFICATION RULES — win the tap in under 2 seconds on a crowded lock screen:
 - TITLE ≤ 40 chars (hard max 50): the single most tappable promise — a benefit, a curiosity gap, or a timely trigger. Front-load the most important word; the first ~3 words must carry the hook because previews truncate.
-- BODY ≤ 90 chars: ONE sentence that pays off the title and points to the action. No bullets, no line breaks, no second idea.
+- BODY ≤ 90 chars (aim for ~60–75): AT MOST two short, complete sentences/lines — ideally just one. Each line is a full, natural thought, never a fragment. The body pays off the title and points to the action. No bullets, no third line, no second idea.
 - Exactly ONE idea and ONE CTA. CTA is 2–3 words or implied ("Shop now", "Tap to save", "Book today").
 - Lead with value or curiosity, NOT the brand name. Personalise with the pet/parent only when it adds real relevance.
 - Use urgency/timeliness only when genuine (new drop, ends tonight, today only) — never fake scarcity.
-- Sentence case. Max 1 emoji, only if it earns its place. No ALL-CAPS, no "!!!".
+- Sentence case. One tasteful emoji is welcome if it earns its place (max 1). No ALL-CAPS, no "!!!".
 - Sound like a helpful nudge from someone who knows their pet — not an ad.`;
 const EMAIL_RULES=`EMAIL RULES — most opens are on mobile, so write mobile-first, front-loaded and scannable:
 - SUBJECT (the "subject" field) 30–50 chars: ONE benefit or curiosity hook with the key word front-loaded. No spam words, no ALL-CAPS, no excess punctuation. Specific and personal beats clever-but-vague.
 - PREVIEW/PREHEADER (the "header" field) ~40–90 chars: EXTEND the subject with a second reason to open — never repeat the subject.
 - ONE primary message + ONE primary CTA, placed high ("above the fold"). Any secondary link stays subordinate.
-- BODY structure: a warm 1-line opener that earns the scroll → the core value/offer in 1–2 tight lines → 2–3 ✓ proof points (RTBs; for edibles use ingredient/format/quality/vet proof) → a friendly sign-off.
+- BODY structure: a warm 1-line opener that earns the scroll → the core value/offer in 1–2 tight lines → 2–3 ✓ proof points (RTBs; for edibles use ingredient/format/quality/vet proof) → a friendly sign-off. Keep the whole body short and scannable (aim ~50–80 words). The preview/hero image overlay (the "header" field) is 1–2 short, flowing lines — crisp, never broken-up word fragments.
 - Short paragraphs (1–2 lines), lots of whitespace, no dense blocks.
 - CTA copy = action + outcome ("Start fresh feeding", "Claim my offer"), never "Click here".
 - Warm, conversational, premium — a trusted expert friend writing to ONE pet parent. Reference the audience moment when given (first-time, lapsed, festive, post-grooming).`;
@@ -167,25 +172,38 @@ const WHATSAPP_RULES=`WHATSAPP RULES — follow this three-part anatomy:
 2) PAYOFF (first thing seen after "read more"): completes the hook's thought and lands the core tension/insight.
 3) BODY: RTB/USP proof points (especially for edibles), the switch/offer line, and a clear store/app CTA. Tight and scannable.
 - State the food FORMAT explicitly (Chews / Fresh / Kibble / Wet / Gravy / Treats). Relevant over clever.
+- LENGTH: keep the whole body tight — aim for ~45–60 words across about 4–6 short lines (hard ceiling ~75 words). Cut anything that does not add value. The image overlay (the "header" field) is just 1–2 short, flowing lines — crisp and readable, never broken-up word fragments.
 - Keep a light opt-out line at the very end.
 STRUCTURE REFERENCE (shape only — do NOT reuse this wording): warm open → an intriguing hook that breaks before "read more" → payoff sentences → product switch line → 2–3 proof bullets → store/app CTA → opt-out line. Hook + payoff lead the body; RTBs and CTA follow.`;
 // HARD: copy must never contain leftover merge tokens / placeholders. \"M-hash\" must never appear.
-const FORBIDDEN_TOKENS_RULE="FORBIDDEN — never output any of these anywhere in the copy: the literal text \"M-hash\" (or \"M#\", \"#M\", \"mhash\"), any merge placeholders like {{1}}, {name}, #VAR#, [VARIABLE], or unfilled template tags. Write the real words instead. If you don't have a real value (e.g. a name), write a natural greeting without a placeholder.";
+const FORBIDDEN_TOKENS_RULE="FORBIDDEN — never output any of these anywhere in the copy: the literal text \"M-hash\" in ANY form (M-hash, M hash, mhash, M#, #M, or with any dash), any merge placeholders like {{1}}, {name}, #VAR#, #MOBILE#, [VARIABLE], <NAME>, or any unfilled template/merge tag. These are system artifacts, NOT words — they must never appear. Write the real words instead. If you don't have a real value (e.g. a customer's name), write a natural greeting with no placeholder at all (\"Hi there\", or just open on the message).";
 // Strip any forbidden placeholder tokens that slip through, across all copy fields.
 const stripForbidden=(s)=>{
   if(typeof s!=="string")return s;
   let out=s;
-  out=out.replace(/\bm[\s\-_]?hash\b/gi,"");        // M-hash / m hash / mhash
-  out=out.replace(/#\s*m\b|\bm\s*#/gi,"");           // M# / #M
-  out=out.replace(/\{\{[^}]*\}\}/g,"");               // {{1}}, {{name}}
-  out=out.replace(/\{[A-Za-z0-9_ ]{1,30}\}/g,"");     // {name}
-  out=out.replace(/#[A-Z0-9_]{2,30}#/g,"");           // #VAR#
-  out=out.replace(/\[[A-Z][A-Z0-9_ ]{1,30}\]/g,"");   // [VARIABLE]
-  out=out.replace(/[ \t]{2,}/g," ").replace(/ +([,.!?])/g,"$1").replace(/\n{3,}/g,"\n\n").trim();
+  // separator class covers space, ASCII hyphen, underscore, dot, and unicode dashes (– — ‑ ‐ −)
+  const SEP="[\\s\\-_.\\u2010\\u2011\\u2012\\u2013\\u2014\\u2212]?";
+  out=out.replace(new RegExp("\\bm"+SEP+"hash\\b","gi"),"");   // M-hash / m hash / mhash / M–hash / M—hash
+  out=out.replace(new RegExp("\\bm"+SEP+"#","gi"),"");          // M# / M-# (merge prefix)
+  out=out.replace(/#\s*m\b/gi,"");                              // #M
+  out=out.replace(/\{\{[^}]*\}\}/g,"");                          // {{1}}, {{name}}
+  out=out.replace(/\{[A-Za-z0-9_ .#-]{1,30}\}/g,"");            // {name}, {M-hash}
+  out=out.replace(/#[A-Z0-9_]{2,30}#/gi,"");                     // #VAR#, #MOBILE#
+  out=out.replace(/\[[A-Za-z][A-Za-z0-9_ .#-]{1,30}\]/g,"");    // [VARIABLE], [M-hash]
+  out=out.replace(/[<\u2039][A-Za-z][A-Za-z0-9_ .#-]{1,30}[>\u203A]/g,""); // <VAR>, ‹VAR›
+  out=out.replace(/[(\[\{][\s,.;:–—-]*[)\]\}]/g,"");            // empty () [] {} left behind
+  out=out.replace(/[ \t]{2,}/g," ").replace(/ +([,.!?])/g,"$1").replace(/\s+([,.])/g,"$1").replace(/^[\s,;:]+/gm,"").replace(/\n{3,}/g,"\n\n").trim();
   return out;
 };
 const sanitizeOption=(o)=>{if(!o||typeof o!=="object")return o;const f={...o};["subject","header","body","cta","direction"].forEach(k=>{if(typeof f[k]==="string")f[k]=stripForbidden(f[k]);});return f;};
 const sanitizeOptions=(arr)=>Array.isArray(arr)?arr.map(sanitizeOption):arr;
+// Shared shape/format spec for copy generation — used by BOTH the bulk generator and the per-card generator so they never drift.
+// header = the IMAGE COPY / on-creative overlay: must be a short, crisp, FLOWING line (or two) — never broken-up word fragments. Surface the offer here when the brief has one.
+const COPY_SHAPE=(isPush,isEmail)=>isPush
+  ?"each: {direction,header,body,cta}. header=push TITLE, max 40 chars (hard 50), one crisp flowing line. body=max 90 chars, at most TWO short complete sentences (one is better), natural flow not fragments. cta=2-3 words. If the brief has an offer, put it in the title or body in plain words."
+  :isEmail
+  ?"each: {direction,subject,header,body,cta}. subject=email subject line under 50 chars. header=IMAGE COPY / hero overlay: 1-2 short FLOWING lines (crisp, never broken-up word fragments); surface the offer here if the brief has one. body=short scannable email (~50-80 words): warm 1-line opener, core value/offer in 1-2 lines, 2-3 proof points, friendly sign-off. cta=action phrase."
+  :"each: {direction,header,body,cta}. header=IMAGE COPY / on-image overlay: 1-2 short FLOWING lines (crisp and readable, never individual words broken onto separate lines, never a fragment); surface the offer here if the brief has one. body=tight WhatsApp message (~45-60 words): hook line that breaks before 'read more', payoff, 2-3 proof bullets, switch/offer line, store CTA, light opt-out. cta=action phrase.";
 // ── Shared task / approval computation (used by Dashboard + standalone pages + nav counts) ──
 const _today0=()=>{const d=new Date();d.setHours(0,0,0,0);return d;};
 const dueForCampaign=(c)=>c.stage==="brief"?c.tat_brief_due:c.stage==="content"?c.tat_content_due:c.stage==="design"?c.tat_design_due:c.go_live_date;
@@ -890,11 +908,7 @@ async function genCopyOptionsFor(c, ruleStr, fb){
   const isEmail=c.channel==="Email"||c.channel==="WhatsApp + Email";
   const channelRules=isPush?PUSH_RULES:isEmail?EMAIL_RULES:WHATSAPP_RULES;
   const nOpts=copyOptionCount(c.channel);
-  const shape=isPush
-    ?"each: {direction,header,body,cta}. header=push title MAX 50 chars, body=MAX 90 chars one sentence, cta=2-3 words"
-    :isEmail
-    ?"each: {direction,subject,header,body,cta}. subject=email subject line under 50 chars, header=image copy/overlay 2-3 short lines, body=email opener+✓ bullets+sign-off, cta=action phrase"
-    :"each: {direction,header,body,cta}. header=image overlay 2-3 short punchy lines, body=WhatsApp opener+bullets+sign-off, cta=action phrase";
+  const shape=COPY_SHAPE(isPush,isEmail);
   const sys="You write "+(c.channel||"WhatsApp")+" CRM copy for HUFT.\n"+BRAND_CONTEXT+"\n"+channelRules+"\n"+COPY_BEST_PRACTICES+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nTeam feedback:\n"+fb:"")+"\nReturn ONLY JSON array of "+nOpts+" options, "+shape;
   return sanitizeOptions(await callClaude(sys, briefBlockFor(c), true));
 }
@@ -3511,11 +3525,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         const isEmail=c.channel==="Email"||c.channel==="WhatsApp + Email";
         const channelRules=isPush?PUSH_RULES:isEmail?EMAIL_RULES:WHATSAPP_RULES;
         const nOpts=copyOptionCount(c.channel);
-        const shape=isPush
-          ?"each: {direction,header,body,cta}. header=push title MAX 50 chars, body=MAX 90 chars one sentence, cta=2-3 words"
-          :isEmail
-          ?"each: {direction,subject,header,body,cta}. subject=email subject line under 50 chars, header=image copy/overlay 2-3 short lines, body=email opener+✓ bullets+sign-off, cta=action phrase"
-          :"each: {direction,header,body,cta}. header=image overlay 2-3 short punchy lines, body=WhatsApp opener+bullets+sign-off, cta=action phrase";
+        const shape=COPY_SHAPE(isPush,isEmail);
         const sys="You write "+(c.channel||"WhatsApp")+" CRM copy for HUFT.\n"+BRAND_CONTEXT+"\n"+channelRules+"\n"+COPY_BEST_PRACTICES+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nTeam feedback:\n"+fb:"")+`\nReturn ONLY JSON array of ${nOpts} options, `+shape;
         const j=sanitizeOptions(await callClaude(sys,briefBlock,true));
         patch(c.id,{data:{...(c.data||{}),copyOptions:j,selectedCopyIdx:null,sentBack:false},copy_approver:null,stage:"content"});
@@ -3527,7 +3537,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       try{
         const fb=recentFeedback("content");
         const isPush=isPushChannel(c.channel);
-        const sys="You refine ONE "+(c.channel||"WhatsApp")+" CRM copy for HUFT.\n"+BRAND_CONTEXT+"\nRULEBOOK:\n"+ruleStr+(fb?"\nFeedback:\n"+fb:"")+(isPush?"\nPUSH: title MAX 50, body MAX 90 chars.":"")+"\nReturn ONLY JSON: {direction,header,body,cta}.";
+        const sys="You refine ONE "+(c.channel||"WhatsApp")+" CRM copy for HUFT.\n"+BRAND_CONTEXT+"\n"+COPY_BEST_PRACTICES+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nFeedback:\n"+fb:"")+(isPush?"\nPUSH: title max 40 (hard 50); body max 90 chars, at most two short flowing lines.":"")+"\nThe header is the IMAGE COPY / overlay — keep it a short, crisp, FLOWING line, never broken-up word fragments. Return ONLY JSON: {direction,header,body,cta}.";
         const usr=briefBlock+"\n\nCurrent:\n"+JSON.stringify(opts[idx])+"\n\nSteer (one-time): "+refineText;
         const j=sanitizeOption(await callClaude(sys,usr,true));
         const wasSelected=sel===idx;
@@ -3543,7 +3553,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         const reason=(c.data?.lastRejectReason||"").trim();
         const fb=recentFeedback("content");
         const isPush=isPushChannel(c.channel);
-        const sys="You revise ONE "+(c.channel||"WhatsApp")+" CRM copy for HUFT to address a reviewer's send-back.\n"+BRAND_CONTEXT+"\nRULEBOOK:\n"+ruleStr+(fb?"\nFeedback:\n"+fb:"")+(isPush?"\nPUSH: title MAX 50, body MAX 90 chars.":"")+"\nReturn ONLY JSON: {direction,header,body,cta}.";
+        const sys="You revise ONE "+(c.channel||"WhatsApp")+" CRM copy for HUFT to address a reviewer's send-back.\n"+BRAND_CONTEXT+"\n"+COPY_BEST_PRACTICES+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nFeedback:\n"+fb:"")+(isPush?"\nPUSH: title max 40 (hard 50); body max 90 chars, at most two short flowing lines.":"")+"\nThe header is the IMAGE COPY / overlay — keep it a short, crisp, FLOWING line, never broken-up word fragments. Return ONLY JSON: {direction,header,body,cta}.";
         const usr=briefBlock+"\n\nCurrent copy:\n"+JSON.stringify(opts[idx])+"\n\nThe reviewer sent this back for changes. Revise the copy to fully address this feedback while staying true to the brief and rulebook:\n"+(reason||"Improve clarity, brand fit, and impact.");
         const j=sanitizeOption(await callClaude(sys,usr,true));
         const newData={...(c.data||{}),copyOptions:opts.map((o,i)=>i===idx?j:o),sentBack:false};
@@ -3719,12 +3729,23 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         <BriefSummaryCard active={c}activeBrief={activeBrief}copyRules={copyRules}busy={busy}refineFor={refineFor}gen={gen}opts={opts}patch={patch}/>
         {c.copy_approver&&<div style={{marginBottom:10,display:"flex",alignItems:"center",gap:8}}><ApproverChip name={`Copy approved · ${c.copy_approver}`}at={c.copy_approved_at}color={C.purple}/>{sel!=null&&<span style={{fontSize:12,color:C.sub}}>· {opts[sel]?.direction}</span>}</div>}
         {err&&<div style={{color:C.coral,fontSize:13,marginBottom:8}}>{err}</div>}
-        <div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}>
+        {!isBusiness(me)&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}>
           <Btn small variant="ghost"onClick={()=>setManualMode(manualMode==="add"?null:"add")}><PenLine size={12}/>Add manually</Btn>
-        </div>
-        {manualMode==="add"&&<ManualCopyForm initial={null}channel={c.channel}onSave={saveManual}onCancel={()=>setManualMode(null)}/>}
-        {!opts&&!busy&&!manualMode&&<div style={{background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:10,padding:"12px 16px",marginBottom:10,display:"flex",alignItems:"center",gap:10}}><MessageSquare size={18}color="#B91C1C"/><div><div style={{fontSize:13,fontWeight:700,color:"#B91C1C"}}>No copy generated yet</div><div style={{fontSize:12,color:"#7F1D1D",marginTop:2}}>Hit "Generate options" in the brief panel above, or add copy manually.</div></div></div>}
-        {opts&&<div>
+        </div>}
+        {!isBusiness(me)&&manualMode==="add"&&<ManualCopyForm initial={null}channel={c.channel}onSave={saveManual}onCancel={()=>setManualMode(null)}/>}
+        {!opts&&!busy&&!manualMode&&<div style={{background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:10,padding:"12px 16px",marginBottom:10,display:"flex",alignItems:"center",gap:10}}><MessageSquare size={18}color="#B91C1C"/><div><div style={{fontSize:13,fontWeight:700,color:"#B91C1C"}}>No copy generated yet</div><div style={{fontSize:12,color:"#7F1D1D",marginTop:2}}>{isBusiness(me)?"Hit \"Generate options\" in the brief panel above and the team takes it from there.":"Hit \"Generate options\" in the brief panel above, or add copy manually."}</div></div></div>}
+        {opts&&isBusiness(me)&&<div style={{background:"#F0FDFA",border:`1.5px solid ${C.teal}`,borderRadius:12,padding:"18px 20px",marginBottom:10,display:"flex",alignItems:"flex-start",gap:13}}>
+          <div style={{width:38,height:38,borderRadius:11,background:C.teal,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><ClockIcon size={20}/></div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontWeight:800,fontSize:15,color:"#0F766E"}}>Copy generated — in progress</div>
+            <div style={{fontSize:13,color:"#115E59",marginTop:3,lineHeight:1.5}}>Your copy has been written and is being reviewed and finalised by the brand and design teams. You don't need to do anything else here — finalised assets show up in <b>Done</b> when they're ready.</div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:11}}>
+              <Btn variant="ghost"onClick={()=>{setTab&&setTab("done");}}><CheckCircle2 size={14}/>View Done</Btn>
+              {busy?<Spin label="Working…"/>:<Btn variant="ghost"onClick={gen}><RefreshCw size={13}/>Regenerate</Btn>}
+            </div>
+          </div>
+        </div>}
+        {opts&&!isBusiness(me)&&<div>
           {sel!=null&&<div style={{marginBottom:10}}>
             <div style={{fontSize:11,fontWeight:700,color:"#5B21B6",textTransform:"uppercase",letterSpacing:.5,marginBottom:6,display:"flex",alignItems:"center",gap:4}}><CheckCircle2 size={11}/>Approved copy</div>
             <ContentCard o={opts[sel]}idx={sel}sel={true}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}onFixFeedback={fixPerFeedback}onEditSave={editDirectly}channel={c.channel}anySelected={sel!=null}sentBack={c.data?.sentBack}isResend={!!c.data?.lastRejectReason}image={mockImage}/>
@@ -3840,7 +3861,7 @@ function ManualCopyForm({initial,channel,onSave,onCancel}){
     <Field label="Direction / label"value={dir}onChange={setDir}placeholder="e.g. Team-written, Warm reminder"/>
     {isEmail&&<><Field label="Subject line (under 50 chars)"value={subj}onChange={setSubj}placeholder="e.g. Your dog's dinner just got an upgrade"/>
     <div style={{display:"flex",gap:10,fontSize:10.5,color:C.sub,marginTop:-6,marginBottom:10}}><span style={{color:subj.length>50?"#DC2626":C.sub}}>Subject {subj.length}/50</span></div></>}
-    <Field label={isPush?"Title (keep under 50 chars)":isEmail?"Image copy / overlay text":"Image copy / overlay text"}value={h}onChange={setH}textarea rows={2}/>
+    <Field label={isPush?"Title (keep under 50 chars)":"Image copy"}value={h}onChange={setH}textarea rows={2}/>
     <Field label={isPush?"Body (keep under 90 chars)":isEmail?"Body copy":"Body copy"}value={b}onChange={setB}textarea rows={isPush?2:5}/>
     {isPush&&<div style={{display:"flex",gap:10,fontSize:10.5,color:C.sub,marginTop:-6,marginBottom:10}}><span style={{color:h.length>50?"#DC2626":C.sub}}>Title {h.length}/50</span><span style={{color:b.length>90?"#DC2626":C.sub}}>Body {b.length}/90</span></div>}
     <Field label="CTA"value={cta}onChange={setCta}placeholder="e.g. Shop now"/>
@@ -3892,12 +3913,12 @@ function ApprovedCopyCard({copy,channel,product,image}){
     </div>
     {/* Image copy — on-image overlay text */}
     {copy.header&&<div style={{marginBottom:8}}>
-      <div style={{fontSize:9,fontWeight:800,color:"#7C3AED",textTransform:"uppercase",letterSpacing:.6,marginBottom:3}}>Image copy (overlay text)</div>
+      <div style={{fontSize:9,fontWeight:800,color:"#7C3AED",textTransform:"uppercase",letterSpacing:.6,marginBottom:3}}>Image copy</div>
       <div style={{fontWeight:700,fontSize:13.5,lineHeight:1.4,color:"#1E1B4B",whiteSpace:"pre-line"}}>{copy.header}</div>
     </div>}
     {/* Body copy — the message caption */}
     {copy.body&&<div>
-      <div style={{fontSize:9,fontWeight:800,color:"#0F766E",textTransform:"uppercase",letterSpacing:.6,marginBottom:3}}>Caption (message body)</div>
+      <div style={{fontSize:9,fontWeight:800,color:"#0F766E",textTransform:"uppercase",letterSpacing:.6,marginBottom:3}}>Body copy</div>
       <div style={{fontSize:12,color:"#4C1D95",lineHeight:1.5,whiteSpace:"pre-line"}}>{copy.body}</div>
     </div>}
     {copy.cta&&<div style={{marginTop:8,fontSize:11,fontWeight:700,color:"#5B21B6"}}>{copy.cta} →</div>}
@@ -3930,7 +3951,7 @@ function WhatsAppMockup({o,image,product,onClose}){
             {image
               ?<img src={image}alt=""style={{width:"100%",display:"block"}}/>
               :<div style={{width:"100%",aspectRatio:"1/1",background:"linear-gradient(135deg,#2a3942,#202c33)"}}/>}
-            {/* Image copy (overlay text) — what sits ON the creative */}
+            {/* Image copy — what sits ON the creative */}
             {header
               ?<div style={{position:"absolute",inset:0,padding:"14px 14px",display:"flex",flexDirection:"column",justifyContent:"flex-start",background:"linear-gradient(180deg,rgba(0,0,0,.45),rgba(0,0,0,0) 55%)"}}>
                   <div style={{color:"#fff",fontWeight:800,fontSize:17,lineHeight:1.22,whiteSpace:"pre-line",textShadow:"0 1px 6px rgba(0,0,0,.55)"}}>{header}</div>
@@ -4033,8 +4054,8 @@ function ShareFinalModal({c,copy,image,onClose}){
   const ImgBlock=()=>image?<div style={{borderRadius:10,overflow:"hidden",border:`1px solid ${C.line}`}}><img src={image}alt="final creative"style={{width:"100%",display:"block"}}/></div>:<div style={{borderRadius:10,border:`1px dashed ${C.line}`,padding:"22px",textAlign:"center",color:C.sub,fontSize:12.5}}><ImageIcon size={22}/><div style={{marginTop:4}}>No final image on this asset yet.</div></div>;
   const CopyBlock=()=><div style={{background:"#F8FAFC",border:`1px solid ${C.line}`,borderRadius:10,padding:"12px 14px"}}>
     {copy?.subject&&isEmail&&<div style={{marginBottom:6}}><div style={{fontSize:9,fontWeight:800,color:C.sub,textTransform:"uppercase"}}>Subject</div><div style={{fontSize:13.5,fontWeight:700,color:C.ink}}>{copy.subject}</div></div>}
-    {copy?.header&&<div style={{marginBottom:6}}><div style={{fontSize:9,fontWeight:800,color:C.sub,textTransform:"uppercase"}}>{isEmail?"Preview / hero":isPush?"Title":"Image copy"}</div><div style={{fontSize:13.5,fontWeight:700,color:C.ink,whiteSpace:"pre-line"}}>{copy.header}</div></div>}
-    {copy?.body&&<div style={{marginBottom:6}}><div style={{fontSize:9,fontWeight:800,color:C.sub,textTransform:"uppercase"}}>{isEmail?"Body":isPush?"Message":"Caption"}</div><div style={{fontSize:12.5,color:"#374151",lineHeight:1.5,whiteSpace:"pre-line"}}>{copy.body}</div></div>}
+    {copy?.header&&<div style={{marginBottom:6}}><div style={{fontSize:9,fontWeight:800,color:C.sub,textTransform:"uppercase"}}>{isPush?"Title":"Image copy"}</div><div style={{fontSize:13.5,fontWeight:700,color:C.ink,whiteSpace:"pre-line"}}>{copy.header}</div></div>}
+    {copy?.body&&<div style={{marginBottom:6}}><div style={{fontSize:9,fontWeight:800,color:C.sub,textTransform:"uppercase"}}>{isPush?"Message":"Body copy"}</div><div style={{fontSize:12.5,color:"#374151",lineHeight:1.5,whiteSpace:"pre-line"}}>{copy.body}</div></div>}
     {copy?.cta&&<div style={{fontSize:12,fontWeight:700,color:C.purple}}>{copy.cta} →</div>}
   </div>;
   const DownloadImg=()=>image?<a href={image}download={fname}style={{fontSize:12,fontWeight:700,color:C.ink,textDecoration:"none",border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 12px",display:"inline-flex",alignItems:"center",gap:5,background:"#fff"}}><Download size={13}/>Download image</a>:null;
@@ -4141,7 +4162,7 @@ function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,
             {o.subject&&<div style={{marginTop:4,fontSize:10,color:(o.subject||"").length>50?"#DC2626":C.sub}}>{(o.subject||"").length}/50 chars</div>}
           </div>
           <div style={{background:"#1a2940",padding:"10px 14px"}}>
-            <div style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,.4)",textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Image copy (overlay text)</div>
+            <div style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,.4)",textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Image copy</div>
             <div style={{fontWeight:800,whiteSpace:"pre-line",color:"#fff",fontSize:14,lineHeight:1.35}}>{o.header}</div>
           </div>
           <div style={{background:"#F8FAFC",padding:"10px 14px"}}>
@@ -4153,11 +4174,11 @@ function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,
         /* WhatsApp preview */
         :<div style={{borderRadius:10,overflow:"hidden",border:"1px solid #d1fae5"}}>
           <div style={{background:"#1a2940",padding:"10px 14px"}}>
-            <div style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,.4)",textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Image copy (overlay text)</div>
+            <div style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,.4)",textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Image copy</div>
             <div style={{fontWeight:800,whiteSpace:"pre-line",color:"#fff",fontSize:14,lineHeight:1.35}}>{o.header}</div>
           </div>
           <div style={{background:"#E7F6E9",padding:"10px 14px"}}>
-            <div style={{fontSize:9.5,fontWeight:700,color:"#166534",textTransform:"uppercase",letterSpacing:.5,marginBottom:5}}>Caption (message body)</div>
+            <div style={{fontSize:9.5,fontWeight:700,color:"#166534",textTransform:"uppercase",letterSpacing:.5,marginBottom:5}}>Body copy</div>
             {(()=>{const{hook,rest}=waPreviewSplit(o.body||"");return<><div style={{whiteSpace:"pre-line",color:"#1f3326",fontSize:13,lineHeight:1.55,fontWeight:600}}>{hook}{rest&&<span style={{color:"#16A34A",fontWeight:700}}> … read more</span>}</div>{rest&&<div style={{whiteSpace:"pre-line",color:"#1f3326",fontSize:13,lineHeight:1.55,marginTop:2,opacity:.85}}>{rest}</div>}</>;})()}
             <div style={{marginTop:10,display:"inline-block",background:C.navy,color:"#fff",fontSize:11.5,fontWeight:700,padding:"5px 12px",borderRadius:7}}>{o.cta}</div>
           </div>
@@ -5931,23 +5952,27 @@ function AnalyticsTab({campaigns,patch,onOpen,me}){
         </div>
         {pool.map(c=>{
           const a=A(c);const open=editId===c.id;
-          const dRate=a?pct(a.delivered,a.sent):null,rRate=a?pct(a.read,a.delivered):null,ctr=a?pct(a.clicks,a.delivered):null;
+          const isPushC=isPushChannel(c.channel);
+          const dRate=a?pct(a.delivered,a.sent):null,rRate=a?pct(a.read,a.delivered):null;
+          const ctr=a?pct(a.clicks,(a.delivered||a.sent)):null;
           return<div key={c.id}style={{borderBottom:`1px solid ${C.line}`}}>
             <div style={{display:"flex",alignItems:"center",gap:8,padding:"12px 16px"}}>
               <div style={{flex:2,minWidth:0}}>
                 <div style={{fontWeight:700,fontSize:13.5,color:C.ink,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.product||parseName(c.name).product||c.name}</div>
                 <div style={{fontSize:11.5,color:C.sub}}>{normCrmType(c.crm_type)} · {c.channel||"WhatsApp"}{c.stage==="done"?"":" · "+(STAGE_LABEL[c.stage]||c.stage)}</div>
               </div>
-              <span style={{flex:1,textAlign:"right",fontSize:13,color:a?C.ink:C.sub}}>{a?nf(a.sent):"—"}</span>
-              <span style={{flex:1,textAlign:"right",fontSize:13,color:dRate!=null?C.ink:C.sub}}>{pf(dRate)}</span>
-              <span style={{flex:1,textAlign:"right",fontSize:13,color:rRate!=null?C.ink:C.sub}}>{pf(rRate)}</span>
-              <span style={{flex:1,textAlign:"right",fontSize:13,color:ctr!=null?C.ink:C.sub}}>{pf(ctr)}</span>
-              <span style={{flex:1,textAlign:"right",fontSize:13,color:a?C.ink:C.sub}}>{a?nf(a.orders):"—"}</span>
+              <span style={{flex:1,textAlign:"right",fontSize:13,color:(!isPushC&&a)?C.ink:C.sub}}>{isPushC?"—":(a?nf(a.sent):"—")}</span>
+              <span style={{flex:1,textAlign:"right",fontSize:13,color:(!isPushC&&dRate!=null)?C.ink:C.sub}}>{isPushC?"—":pf(dRate)}</span>
+              <span style={{flex:1,textAlign:"right",fontSize:13,color:(!isPushC&&rRate!=null)?C.ink:C.sub}}>{isPushC?"—":pf(rRate)}</span>
+              <span style={{flex:1,textAlign:"right",fontSize:13,fontWeight:isPushC?800:400,color:ctr!=null?C.ink:C.sub}}>{pf(ctr)}</span>
+              <span style={{flex:1,textAlign:"right",fontSize:13,color:(!isPushC&&a)?C.ink:C.sub}}>{isPushC?"—":(a?nf(a.orders):"—")}</span>
               <div style={{width:90,textAlign:"right"}}><button onClick={()=>open?setEditId(null):startEdit(c)}style={{fontSize:12,fontWeight:700,padding:"5px 11px",borderRadius:8,border:"none",cursor:"pointer",background:a?C.coralSoft:C.coral,color:a?C.coral:"#fff"}}>{a?"Edit":"Add"}</button></div>
             </div>
             {open&&<div style={{padding:"4px 16px 16px",background:C.paper}}>
               <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-                {num("Sent","sent")}{num("Delivered","delivered")}{num("Read","read")}{num("Clicks","clicks")}{num("Orders","orders")}{num("Revenue (₹)","revenue")}
+                {isPushC
+                  ?<>{num("Delivered / sent","delivered")}{num("Clicks","clicks")}<div style={{flex:1,minWidth:120,alignSelf:"flex-end",fontSize:11.5,color:C.sub,paddingBottom:9}}>Push tracks CTR only — clicks ÷ delivered.</div></>
+                  :<>{num("Sent","sent")}{num("Delivered","delivered")}{num("Read","read")}{num("Clicks","clicks")}{num("Orders","orders")}{num("Revenue (₹)","revenue")}</>}
               </div>
               <div style={{marginTop:10}}><div style={{fontSize:11,fontWeight:700,color:C.sub,marginBottom:4}}>Notes</div><input value={form.notes}onChange={e=>setForm(f=>({...f,notes:e.target.value}))}placeholder="What worked, what to try next…"style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:8,padding:"8px 10px",fontSize:14,boxSizing:"border-box"}}/></div>
               <div style={{display:"flex",gap:8,marginTop:12}}>
