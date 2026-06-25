@@ -46,7 +46,7 @@ const db = async (sql, params = []) => {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const uid = () => Math.random().toString(36).slice(2, 11);
 const safeJson = (s) => { try { return JSON.parse(s); } catch (e) { return null; } };
-const SERVER_BUILD = "v29.43s · Added /api/campaigns/:id/design-reject — the design lead (Anmol) can send a design back to the design team with a reason (mirrors brand-reject for copy): sets design.sentBack + lastRejectReason, clears pendingApproval, keeps it in the design stage, and notifies the design team. Content generation still defaults to Gemini (GEMINI_API_KEY); set LLM_PROVIDER=claude to force Anthropic.";
+const SERVER_BUILD = "v29.45s · Per-content-type LLM routing on /api/generate: requests tagged kind='copy' use Anthropic (Claude), kind='brief' use Gemini, anything else uses the env default (LLM_PROVIDER or Gemini). Images always use Gemini. If a chosen provider's key is missing, it falls back to the other available provider. Needs a valid ANTHROPIC_API_KEY for copy. Also includes the design-reject endpoint (design lead sends a design back to the team with a reason).";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -135,8 +135,15 @@ async function generateImageFromPrompt(prompt, aspectRatio = "1:1", productImage
   return `data:${mime};base64,${inline.data}`;
 }
 
-async function generate(system, prompt) {
-  if (PROVIDER === "gemini") {
+function pickProvider(want){
+  let p = (want === "claude" || want === "gemini") ? want : PROVIDER;
+  if (p === "claude" && !CLAUDE_KEY) p = GEMINI_KEY ? "gemini" : "mock";
+  if (p === "gemini" && !GEMINI_KEY) p = CLAUDE_KEY ? "claude" : "mock";
+  return p;
+}
+async function generate(system, prompt, providerOverride) {
+  const PV = pickProvider(providerOverride);
+  if (PV === "gemini") {
     // Support both AIza (v1beta) and AQ. (newer) key formats
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_KEY}`;
     const r = await fetch(url, {
@@ -159,7 +166,7 @@ async function generate(system, prompt) {
     }
     return (data.candidates?.[0]?.content?.parts || []).map(p => p.text || "").join("").trim();
   }
-  if (PROVIDER === "claude") {
+  if (PV === "claude") {
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -1487,9 +1494,11 @@ app.delete("/api/reports/:id", authMiddleware, roles("admin","business"), async 
 // ── GENERATE ──────────────────────────────────────────────────────────────────
 
 app.post("/api/generate", authMiddleware, async (req, res) => {
-  const { system = "", prompt = "" } = req.body;
+  const { system = "", prompt = "", kind = "" } = req.body;
+  // Per-content-type routing: copy → Anthropic (Claude), brief → Gemini, everything else → env default.
+  const want = kind === "copy" ? "claude" : kind === "brief" ? "gemini" : undefined;
   try {
-    const text = await generate(system, prompt);
+    const text = await generate(system, prompt, want);
     res.json({ text });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
