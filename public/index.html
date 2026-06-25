@@ -106,7 +106,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.46 · New copy rule in the rulebook: funnel-stage urgency. The lower the funnel, the higher the urgency to buy — top of funnel invites/intrigues at low pressure, bottom of funnel (cart-abandon, repeat-intent, lapsed/win-back) pushes hardest with a real reason. It also frames the ask by stage: a lapsed buyer is RE-conversion (welcome back), not a cold first-time pitch. Applies to all copy generation. Builds on v29.45 (copy→Anthropic, brief→Gemini), v29.44 (per-channel option counts), v29.43 (design approval loop).";
+const BUILD="v29.48 · Products stay pixel-exact. Root problem: image generators (Gemini/Claude) REDRAW any product you feed them, distorting the packshot. Fix in the Composer: (1) 'Keep my product exact' (on by default) generates an EMPTY, product-ready scene — the model never draws the product — then your real PNG composites on top untouched; (2) the composite is now grounded with a cast shadow built from the product's own silhouette + a tight contact shadow + a 'light from' direction, so the exact packshot looks planted in the scene, not pasted on. Builds on v29.47 (brief maker flow), v29.45 (copy→Anthropic/brief→Gemini).";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -2050,7 +2050,9 @@ function BriefFastForm({campaignId,patch,onBriefReady,me,recentFeedback,product}
   const[err,setErr]=useState("");
   const[customRtb,setCustomRtb]=useState("");
   const[linkInput,setLinkInput]=useState("");
-  const[maker,setMaker]=useState("team"); // "team" = creative team · "self" = make it myself
+  const[maker,setMaker]=useState("team"); // "team" = creative team · "self" = make it myself (templatized)
+  const[unusedImgs,setUnusedImgs]=useState(null);
+  useEffect(()=>{let on=true;api.get("/api/image-library").then(all=>{if(!on)return;setUnusedImgs((Array.isArray(all)?all:[]).filter(x=>!x.last_used_at).slice(0,8));}).catch(()=>{if(on)setUnusedImgs([]);});return()=>{on=false;};},[]);
   const set=(k,v)=>setAnswers(a=>({...a,[k]:v}));
   const toggleMulti=(k,v)=>setAnswers(a=>{const cur=Array.isArray(a[k])?a[k]:[];return{...a,[k]:cur.includes(v)?cur.filter(x=>x!==v):[...cur,v]};});
   const optsFor=(s)=>{
@@ -2129,10 +2131,16 @@ function BriefFastForm({campaignId,patch,onBriefReady,me,recentFeedback,product}
     {err&&<div style={{color:C.coral,fontSize:12.5,fontWeight:600}}>{err}</div>}
     {(isBusiness(me)||isSuper(me))&&<div style={{background:"#fff",border:`1px solid ${C.line}`,borderRadius:11,padding:"11px 13px"}}>
       <div style={{fontSize:13,fontWeight:700,color:C.ink,marginBottom:2}}>How is this asset getting made?<span style={{color:C.coral}}> *</span></div>
-      <div style={{fontSize:11.5,color:C.sub,marginBottom:8,lineHeight:1.4}}>Hand it to the creative team, or take it on yourself. If you make it yourself it skips the brand copy gate and goes to a dual sign-off (Anmol &amp; Ilena) at the end.</div>
+      {unusedImgs&&unusedImgs.length>0&&<div style={{background:"#F0FDFA",border:`1px solid ${C.teal}33`,borderRadius:9,padding:"8px 10px",margin:"8px 0"}}>
+        <div style={{fontSize:11.5,fontWeight:700,color:"#0F766E",marginBottom:6,display:"flex",alignItems:"center",gap:5}}><ImageIcon size={12}/>{unusedImgs.length} image{unusedImgs.length>1?"s":""} in the library you haven't used yet — consider reusing one before making new.</div>
+        <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:2}}>
+          {unusedImgs.map(im=><div key={im.id}title={im.product||im.file_name||"unused"}style={{flexShrink:0,width:54,height:54,borderRadius:7,overflow:"hidden",border:`1px solid ${C.line}`,display:"flex",alignItems:"center",justifyContent:"center",background:"#fff"}}><ImageThumb id={im.id}alt={im.product||"unused"}/></div>)}
+        </div>
+      </div>}
+      <div style={{fontSize:11.5,color:C.sub,marginBottom:8,lineHeight:1.4}}>Is this a <b>templatized</b> post? If yes, you can build it yourself from a template — it skips the brand copy gate and goes to a dual sign-off (Anmol &amp; Ilena). If it needs bespoke creative, hand it to the team.</div>
       <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-        <Chip label="Hand to the creative team" active={maker==="team"} onClick={()=>setMaker("team")}/>
-        <Chip label="I'll make it myself" active={maker==="self"} onClick={()=>setMaker("self")}/>
+        <Chip label="Templatized — I'll make it myself" active={maker==="self"} onClick={()=>setMaker("self")}/>
+        <Chip label="Bespoke — hand to the creative team" active={maker==="team"} onClick={()=>setMaker("team")}/>
       </div>
     </div>}
     <div style={{position:"sticky",bottom:0,background:"#FFFBF7",paddingTop:8,paddingBottom:4,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
@@ -2792,7 +2800,7 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
               </div>
             </>:<>
               <div style={{fontSize:13,fontWeight:800,color:C.ink,marginBottom:3}}>How is this asset getting made?</div>
-              <div style={{fontSize:11.5,color:C.sub,marginBottom:11}}>Hand it to the creative team, or take it on yourself.</div>
+              <div style={{fontSize:11.5,color:C.sub,marginBottom:11}}>Templatized post? Build it yourself from a template. Bespoke creative? Hand it to the team. <button onClick={()=>setTab("library")}style={{background:"none",border:"none",color:C.teal,fontWeight:700,cursor:"pointer",padding:0,fontSize:11.5,textDecoration:"underline"}}>Browse the image library</button> first to reuse an unused image.</div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
                 <Btn onClick={()=>{patch(c.id,{stage:"content",data:{...(c.data||{}),selfMade:false}});setTab("content");onOpen(c.id,"content");}}>Hand to the creative team <ArrowRight size={14}/></Btn>
                 {(isBusiness(me)||isSuper(me))&&<Btn variant="ghost"onClick={()=>{patch(c.id,{stage:"content",data:{...(c.data||{}),selfMade:true}});setTab("content");onOpen(c.id,"content");}}><PenLine size={13}/>I'll make it myself</Btn>}
@@ -4671,6 +4679,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   const[bgId,setBgId]=useState("");
   const[bgImg,setBgImg]=useState(null);
   const[genImg,setGenImg]=useState(null);
+  const[lockProduct,setLockProduct]=useState(true); // true = generate empty scene, composite exact PNG (never let AI redraw the product)
   const[genPrompt,setGenPrompt]=useState((approvedPrompt&&approvedPrompt.prompt)||"");
   const[genNeg,setGenNeg]=useState((approvedPrompt&&approvedPrompt.negativePrompt)||"");
   const[genBusy,setGenBusy]=useState(false);
@@ -4681,6 +4690,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   const[prodImgs,setProdImgs]=useState({});   // id -> Image
   const[elImgs,setElImgs]=useState({});       // element id -> Image (uploaded image elements)
   const[shadow,setShadow]=useState(true);
+  const[shadowDir,setShadowDir]=useState("right"); // direction the cast shadow falls: left | right | back
 
   // logo
   const[logoId,setLogoId]=useState("");
@@ -4743,7 +4753,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   const[finalSaving,setFinalSaving]=useState(false);
 
   // ===== Undo / redo history (snapshots editable state; excludes loaded image bitmaps) =====
-  const snapshot=React.useCallback(()=>({sizeIdx,template,linkSizes,autoFit,bgMode,bgColor,bgId,genPrompt,genNeg,products,shadow,logoId,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,hl,sh,anchor,divider,ct,ctaBg,textShadow,textAlign,oldPrice,copyScale,elements}),[sizeIdx,template,linkSizes,autoFit,bgMode,bgColor,bgId,genPrompt,genNeg,products,shadow,logoId,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,hl,sh,anchor,divider,ct,ctaBg,textShadow,textAlign,oldPrice,copyScale,elements]);
+  const snapshot=React.useCallback(()=>({sizeIdx,template,linkSizes,autoFit,bgMode,bgColor,bgId,genPrompt,genNeg,products,shadow,shadowDir,logoId,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,hl,sh,anchor,divider,ct,ctaBg,textShadow,textAlign,oldPrice,copyScale,elements}),[sizeIdx,template,linkSizes,autoFit,bgMode,bgColor,bgId,genPrompt,genNeg,products,shadow,shadowDir,logoId,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,hl,sh,anchor,divider,ct,ctaBg,textShadow,textAlign,oldPrice,copyScale,elements]);
   const histRef=React.useRef({past:[],future:[]});
   const lastSnapRef=React.useRef(null);
   const debRef=React.useRef(null);
@@ -4751,7 +4761,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   const restoreSnap=(s)=>{
     setSizeIdx(s.sizeIdx);setTemplate(s.template);setLinkSizes(s.linkSizes);setAutoFit(s.autoFit);
     setBgMode(s.bgMode);setBgColor(s.bgColor);setBgId(s.bgId);setGenPrompt(s.genPrompt);setGenNeg(s.genNeg);
-    setProducts(s.products);setShadow(s.shadow);setLogoId(s.logoId);setLogoScale(s.logoScale);setLogoCorner(s.logoCorner);
+    setProducts(s.products);setShadow(s.shadow);if(s.shadowDir!==undefined)setShadowDir(s.shadowDir);setLogoId(s.logoId);setLogoScale(s.logoScale);setLogoCorner(s.logoCorner);
     setHuftMode(s.huftMode);setHuftLockup(s.huftLockup);setHuftCorner(s.huftCorner);setHuftScale(s.huftScale);
     setHl(s.hl);setSh(s.sh);setAnchor(s.anchor);setDivider(s.divider);setCt(s.ct);setCtaBg(s.ctaBg);
     setTextShadow(s.textShadow);setTextAlign(s.textAlign);setOldPrice(s.oldPrice);if(s.copyScale!==undefined)setCopyScale(s.copyScale);if(s.elements!==undefined)setElements(s.elements);
@@ -5022,9 +5032,28 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
       }else{pw=sz.w*p.scale;ph=pw*aspect;cx=sz.w*p.x;cy=sz.h*p.y;}
       const px=cx-pw/2, py=cy-ph/2;
       if(shadow){
-        const scx=px+pw/2, scy=py+ph*0.99, rx=pw*0.42, ry=ph*0.05;
+        // Grounding so the EXACT product PNG reads as planted in the scene (never redrawn).
+        const SD=({left:{sk:0.55,ox:-0.10},right:{sk:-0.55,ox:0.10},back:{sk:0,ox:0}})[shadowDir]||{sk:-0.55,ox:0.10};
+        // (a) cast shadow built from the product's own silhouette, flattened to the floor + skewed by light dir
+        try{
+          const sw=Math.max(2,Math.round(pw)), shh=Math.max(2,Math.round(ph));
+          const soff=document.createElement("canvas");soff.width=sw;soff.height=shh;
+          const sctx=soff.getContext("2d");
+          sctx.drawImage(img,0,0,sw,shh);
+          sctx.globalCompositeOperation="source-in";sctx.fillStyle="#000";sctx.fillRect(0,0,sw,shh);
+          ctx.save();
+          ctx.translate(px+pw/2, py+ph*0.965);
+          ctx.transform(1,0,SD.sk,1,0,0);   // shear toward the light direction
+          ctx.scale(1,0.30);                  // squash onto the floor plane
+          ctx.globalAlpha=0.30;
+          try{ctx.filter="blur("+Math.max(3,pw*0.045)+"px)";}catch(e){}
+          ctx.drawImage(soff, -pw/2+SD.ox*pw, 0, pw, ph);
+          ctx.restore();try{ctx.filter="none";}catch(e){}
+        }catch(e){}
+        // (b) tight contact shadow right where the product meets the surface (anchors it)
+        const scx=px+pw/2, scy=py+ph*0.985, rx=pw*0.40, ry=ph*0.045;
         const g=ctx.createRadialGradient(scx,scy,0,scx,scy,rx);
-        g.addColorStop(0,"rgba(0,0,0,0.36)");g.addColorStop(1,"rgba(0,0,0,0)");
+        g.addColorStop(0,"rgba(0,0,0,0.46)");g.addColorStop(0.65,"rgba(0,0,0,0.18)");g.addColorStop(1,"rgba(0,0,0,0)");
         ctx.save();ctx.translate(scx,scy);ctx.scale(1,ry/rx);ctx.fillStyle=g;
         ctx.beginPath();ctx.arc(0,0,rx,0,Math.PI*2);ctx.fill();ctx.restore();
       }
@@ -5131,7 +5160,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
       }
     });
     ctx.textAlign="left";ctx.textBaseline="top";
-  },[sz,bgMode,bgColor,bgImg,genImg,mockupPreset,products,prodImgs,shadow,hl,sh,anchor,ct,ctaBg,logoImg,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,huftReady,divider,autoFit,textShadow,textAlign,oldPrice,copyScale,autoAvoid,genUsedProduct,editorOpen,elements,elImgs]);
+  },[sz,bgMode,bgColor,bgImg,genImg,mockupPreset,products,prodImgs,shadow,shadowDir,hl,sh,anchor,ct,ctaBg,logoImg,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,huftReady,divider,autoFit,textShadow,textAlign,oldPrice,copyScale,autoAvoid,genUsedProduct,editorOpen,elements,elImgs]);
 
   React.useEffect(()=>{if(!canGenerate&&bgMode==="generate")setBgMode("mockup");},[canGenerate,bgMode]);
   React.useEffect(()=>{draw();},[draw]);
@@ -5140,11 +5169,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
     if(!genPrompt.trim()){setGenErr("No prompt available to generate from.");return;}
     setGenBusy(true);setGenErr("");
     try{
-      const sel=products.filter(p=>p.id);
-      const productImages=[];
-      for(const p of sel){try{const lib=await api.get("/api/image-library/"+p.id);if(lib&&lib.file_data)productImages.push(lib.file_data);}catch(e){}}
       const rulesText=(promptRules&&promptRules.length)?activeRuleText(promptRules):"";
-      const fullPrompt=[genPrompt.trim(),HUFT_VISUAL_GUIDELINES,rulesText&&rulesText!=="(none yet)"?("HUFT DESIGN RULES — also follow:\n"+rulesText):""].filter(Boolean).join("\n\n");
       const [vP,hP]=String(anchor||"mid-center").split("-");
       const hA=(textAlign&&textAlign!=="auto")?textAlign:(hP==="left"?"left":hP==="right"?"right":"center");
       const vWord=vP==="top"?"upper":vP==="bottom"?"lower":"middle";
@@ -5152,12 +5177,25 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
       const textZone=`the ${vWord} ${hWord} part of the frame`;
       const prodV=vP==="top"?"lower":vP==="bottom"?"upper":"lower";
       const productZone=`the ${prodV} part of the frame`;
-      const r=await api.post("/api/generate-image",{prompt:fullPrompt,negativePrompt:genNeg,aspectRatio:sz.ar,productImages,textZone,productZone});
+      const sel=products.filter(p=>p.id);
+      let productImages=[];
+      let basePrompt=genPrompt.trim();
+      let negP=genNeg;
+      if(lockProduct){
+        // Product-locked: generate an EMPTY scene so the model never draws (and never distorts) the product.
+        const lightWord=shadowDir==="back"?"from the top / front":shadowDir==="left"?"from the right side":"from the left side";
+        basePrompt=genPrompt.trim()+"\n\nIMPORTANT: Do NOT draw any product, packaging, bottle, box, pouch, can, jar or item anywhere in the image. Render an EMPTY scene ONLY — a clean, well-lit surface with clear open space in "+productZone+" where a product will be placed afterwards. Use soft, realistic directional lighting coming "+lightWord+", with natural surface shading and ground contact, so a product placed there will sit believably in the scene. Photorealistic.";
+        negP=[genNeg,"product, packaging, bottle, box, pouch, can, jar, label, item"].filter(Boolean).join(", ");
+      }else{
+        for(const p of sel){try{const lib=await api.get("/api/image-library/"+p.id);if(lib&&lib.file_data)productImages.push(lib.file_data);}catch(e){}}
+      }
+      const fullPrompt=[basePrompt,HUFT_VISUAL_GUIDELINES,rulesText&&rulesText!=="(none yet)"?("HUFT DESIGN RULES — also follow:\n"+rulesText):""].filter(Boolean).join("\n\n");
+      const r=await api.post("/api/generate-image",{prompt:fullPrompt,negativePrompt:negP,aspectRatio:sz.ar,productImages,textZone,productZone});
       const im=await loadImage(r.image);setGenImg(im);setBgMode("generate");
-      setGenUsedProduct(productImages.length>0); // product is blended into the scene — don't composite again
-      if(productImages.length&&!r.productsReceived){
+      setGenUsedProduct(!lockProduct&&productImages.length>0); // when locked, composite the exact product on top
+      if(!lockProduct&&productImages.length&&!r.productsReceived){
         if(toast)toast("Scene made, but the product reference didn't reach the server — deploy the latest server.js, then regenerate.","error");
-      }else if(toast)toast(productImages.length?"Scene generated ✓ — product blended in with matched lighting":"Image generated ✓ — copy kept on top","success");
+      }else if(toast)toast(lockProduct?"Empty scene generated ✓ — add your product below; the exact packshot composites on top":(productImages.length?"Scene generated ✓ — product blended in":"Image generated ✓ — copy kept on top"),"success");
     }catch(e){setGenErr(e.message||"Generation failed");}
     setGenBusy(false);
   };
@@ -5338,13 +5376,14 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
         {bgMode==="generate"&&canGenerate&&<div style={{gridColumn:"1 / -1",display:"grid",gap:8,padding:"10px 12px",background:C.paper,border:`1px solid ${C.line}`,borderRadius:8}}>
           <div><label style={fieldL}>Prompt (scene / background)</label><textarea value={genPrompt}onChange={e=>setGenPrompt(e.target.value)}rows={2}style={{...ctrl,resize:"vertical"}}placeholder="e.g. warm rustic kitchen counter, soft morning light"/></div>
           <div><label style={fieldL}>Avoid (optional)</label><input value={genNeg}onChange={e=>setGenNeg(e.target.value)}style={ctrl}placeholder="text, watermarks, other products"/></div>
-          <Btn small disabled={genBusy}onClick={runGenerate}style={{width:"100%",justifyContent:"center"}}>{genBusy?"Generating…":"Generate scene"}</Btn>
+          <label style={{display:"flex",alignItems:"flex-start",gap:7,fontSize:12,color:C.ink,cursor:"pointer",marginBottom:8,lineHeight:1.4}}><input type="checkbox"checked={lockProduct}onChange={e=>setLockProduct(e.target.checked)}style={{marginTop:2}}/><span>Keep my product exact <span style={{fontSize:10.5,color:C.sub}}>— generates an empty scene, then your real packshot composites on top (the AI never redraws it). Uncheck only if you want the AI to blend/restyle the product.</span></span></label>
+          <Btn small disabled={genBusy}onClick={runGenerate}style={{width:"100%",justifyContent:"center"}}>{genBusy?"Generating…":(lockProduct?"Generate empty scene":"Generate scene")}</Btn>
           {<div style={{borderTop:`1px solid ${C.line}`,paddingTop:8}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <span style={{fontSize:11,fontWeight:800,color:C.ink}}>Products in the scene{products.length>1?" · "+products.length:""}</span>
               {products.length<3&&<button onClick={addProduct}style={{border:"none",background:"none",color:C.coral,fontSize:11,fontWeight:700,cursor:"pointer",padding:0}}>+ Add</button>}
             </div>
-            <div style={{fontSize:10.5,color:C.sub,margin:"2px 0 8px"}}>Up to 3. Auto-picks your brief product. The AI blends each product into the scene with matched lighting and a natural shadow — no manual placement needed. Regenerate for a different take.</div>
+            <div style={{fontSize:10.5,color:C.sub,margin:"2px 0 8px"}}>Up to 3. Auto-picks your brief product. With ‘Keep my product exact’ on, your real packshot composites on top of the scene with a natural shadow — the label stays 100% accurate. Set the light direction in the shadow control to match the scene.</div>
             {products.map((p,idx)=><div key={p.pid}style={{display:"flex",gap:6,alignItems:"center",marginBottom:6}}>
               <select value={p.id}onChange={e=>updProduct(p.pid,{id:e.target.value})}style={{...ctrl,flex:1,minWidth:0}}><option value="">— product {idx+1} —</option>{productItems.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select>
               {products.length>1&&<button onClick={()=>rmProduct(p.pid)}title="Remove"style={{border:"none",background:"none",color:"#B91C1C",fontSize:16,fontWeight:700,cursor:"pointer",padding:"0 4px",lineHeight:1}}>×</button>}
@@ -5417,7 +5456,14 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
           {autoFit&&<div style={{gridColumn:"1 / -1",fontSize:11,color:C.sub,fontStyle:"italic"}}>Auto-fit on — size & position are automatic. Turn off Auto-fit below for manual control.</div>}
         </div>)}
         <label style={{gridColumn:"1 / -1",display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.ink,cursor:"pointer"}}><input type="checkbox"checked={autoFit}onChange={e=>setAutoFit(e.target.checked)}/>Auto-fit products into free space <span style={{fontSize:11,color:C.sub}}>(scales & places to avoid overlap — turn off for manual size/position)</span></label>
-        <label style={{gridColumn:"1 / -1",display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.ink,cursor:"pointer"}}><input type="checkbox"checked={shadow}onChange={e=>setShadow(e.target.checked)}/>Contact shadow under products</label>
+        <div style={{gridColumn:"1 / -1"}}>
+          <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.ink,cursor:"pointer"}}><input type="checkbox"checked={shadow}onChange={e=>setShadow(e.target.checked)}/>Ground products with a natural shadow <span style={{fontSize:11,color:C.sub}}>(the packshot label stays exact)</span></label>
+          {shadow&&<div style={{display:"flex",alignItems:"center",gap:6,marginTop:6,marginLeft:24,flexWrap:"wrap"}}>
+            <span style={{fontSize:11,color:C.sub}}>Light from:</span>
+            {[["right","Left"],["left","Right"],["back","Top"]].map(([v,lbl])=><button key={v}onClick={()=>setShadowDir(v)}style={{fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:999,cursor:"pointer",border:`1px solid ${shadowDir===v?C.teal:C.line}`,background:shadowDir===v?C.tealSoft:"#fff",color:shadowDir===v?C.teal:C.ink}}>{lbl}</button>)}
+            <span style={{fontSize:10.5,color:C.sub}}>— match this to the scene's lighting</span>
+          </div>}
+        </div>
         </>}
 
         {/* image copy */}
