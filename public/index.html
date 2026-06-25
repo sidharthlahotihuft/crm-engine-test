@@ -87,6 +87,9 @@ const isBusiness=(me)=>_r(me)==="business";
 const isBrandTeam=(me)=>_r(me)==="brand_team";
 const isDesignTeam=(me)=>_r(me)==="design_team";
 const canManageTeam=(me)=>isSuper(me);                                            // settings = super only
+// True when the user is actively typing in a text field — used to defer background
+// re-renders (notification/count polls) so focus and open editors are never interrupted.
+const isTypingNow=()=>{try{const a=document.activeElement;return !!(a&&(a.tagName==="INPUT"||a.tagName==="TEXTAREA"||a.isContentEditable));}catch(e){return false;}};
 const canCreateBrief=(me)=>["super_admin","brand_lead","design_lead","business","brand_team"].includes(_r(me));
 const canBrandApprove=(me)=>["super_admin","brand_lead"].includes(_r(me));        // copy + full-asset approval (Ilena)
 const canDesignApprove=(me)=>["super_admin","design_lead"].includes(_r(me));      // design approval (Anmol)
@@ -103,7 +106,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.33 · Fixed copy editors/feedback boxes closing on their own: the per-asset Copy row was being remounted on every background refresh (notifications/counts poll every 45–60s), wiping any open Steer/Edit/feedback dialog mid-typing. The row component is now stable across re-renders, so editing is no longer interrupted. Builds on v29.32 (brand team can create briefs), v29.31 (content on Gemini + brief error surfacing), and earlier copy/library/analytics work.";
+const BUILD="v29.34 · Typing is no longer interrupted anywhere in the engine: the background notification (45s) and request-count (60s) polls now skip their refresh while you're typing in a field, so text boxes and editors across every tab stop closing/losing focus mid-typing. Pairs with v29.33 (stable Copy row). Builds on v29.32 (brand team briefs), v29.31 (content on Gemini), and earlier work.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -1100,12 +1103,12 @@ function App(){
   const[reqOpenCount,setReqOpenCount]=useState(0);
   const refreshReqCount=React.useCallback(()=>{
     if(!me||!["admin","design","brand"].includes(me.role))return;
-    api.get("/api/creative-requests/stats").then(r=>setReqOpenCount(r&&r.open||0)).catch(()=>{});
+    api.get("/api/creative-requests/stats").then(r=>{if(isTypingNow())return;setReqOpenCount(r&&r.open||0);}).catch(()=>{});
   },[me]);
   useEffect(()=>{refreshReqCount();const t=setInterval(refreshReqCount,60000);return()=>clearInterval(t);},[refreshReqCount]);
   const[notifs,setNotifs]=useState([]);
   const[notifOpen,setNotifOpen]=useState(false);
-  const loadNotifs=React.useCallback(()=>{if(!me)return;api.get("/api/notifications").then(n=>setNotifs(Array.isArray(n)?n:[])).catch(()=>{});},[me]);
+  const loadNotifs=React.useCallback(()=>{if(!me)return;api.get("/api/notifications").then(n=>{if(isTypingNow())return;setNotifs(Array.isArray(n)?n:[]);}).catch(()=>{});},[me]);
   useEffect(()=>{if(!me)return;loadNotifs();const t=setInterval(loadNotifs,45000);return()=>clearInterval(t);},[me,loadNotifs]);
   const unreadNotifs=notifs.filter(n=>!n.read).length;
   const[catRules,setCatRules]=useState([]);
