@@ -103,7 +103,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.32 · Brand team (copy writers) can now create briefs too — they get the Brief tab and the New asset button; their briefs flow into the copy queue and on to brand review like any other. Builds on v29.31 (content generation on Gemini + brief error surfacing), v29.30 (regenerate progress), v29.29 (send-again after send-back), v29.28 (library kind filter), v29.27 (library at scale), v29.26 (copy length/flow/clarity rules, standardised labels, channel-aware analytics, business in-progress state).";
+const BUILD="v29.33 · Fixed copy editors/feedback boxes closing on their own: the per-asset Copy row was being remounted on every background refresh (notifications/counts poll every 45–60s), wiping any open Steer/Edit/feedback dialog mid-typing. The row component is now stable across re-renders, so editing is no longer interrupted. Builds on v29.32 (brand team can create briefs), v29.31 (content on Gemini + brief error surfacing), and earlier copy/library/analytics work.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -3478,7 +3478,9 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
   const[errMap,setErrMap]=useState({});
   React.useEffect(()=>{if(active?.id)setOpenId(active.id);},[active?.id]);
 
-  const CopyRow=({c})=>{
+  const CopyRowRef=React.useRef(null);
+  if(!CopyRowRef.current)CopyRowRef.current=({c,ctx})=>{
+    const {openId,setOpenId,busyMap,setBusyMap,errMap,setErrMap,setFbPopup,patch,copyRules,me,recentFeedback,saveFeedback,toast,reload,setTab,onOpen,team,onDelete}=ctx;
     const isOpen=openId===c.id;
     const activeBrief=c.data?.brief;
     const opts=c.data?.copyOptions;
@@ -3791,9 +3793,11 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       </div>}
     </div>;
   };
+  const CopyRow=CopyRowRef.current;
 
   const[view,setView]=useState("list");
   const[fbPopup,setFbPopup]=useState(null);
+  const rowCtx={openId,setOpenId,busyMap,setBusyMap,errMap,setErrMap,setFbPopup,patch,copyRules,me,recentFeedback,saveFeedback,toast,reload,setTab,onOpen,team,onDelete};
   return<div>
     {fbPopup&&<FeedbackPopup stage={fbPopup.stage}by={me.name}onSave={saveFeedback}title="How was this copy generation?"onClose={()=>{const a=fbPopup.after;setFbPopup(null);if(a)a();}}/>}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
@@ -3817,16 +3821,16 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
           const approvedSelf=approvedAll.filter(c=>c.data?.selfMade);
           return<>
             {needsCopy.length>0&&<CollapsibleSection title="Needs attention" count={needsCopy.length} color="#92400E" icon={<ClockIcon size={15}/>}>
-              {groupByDate(needsCopy).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.purple}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}/>)}</Card></div>)}
+              {groupByDate(needsCopy).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.purple}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}ctx={rowCtx}/>)}</Card></div>)}
             </CollapsibleSection>}
             {inReview.length>0&&<CollapsibleSection title={"Pending brand approval"+(canBrandApprove(me)?"":" (awaiting Ilena)")} count={inReview.length} color="#9333EA" icon={<Eye size={15}/>}>
-              {groupByDate(inReview).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={"#9333EA"}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}/>)}</Card></div>)}
+              {groupByDate(inReview).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={"#9333EA"}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}ctx={rowCtx}/>)}</Card></div>)}
             </CollapsibleSection>}
             {!isBusiness(me)&&approved.length>0&&<CollapsibleSection title="Brand approved" count={approved.length} color="#5B21B6" icon={<CheckCircle2 size={15}/>}>
-              {groupByDate(approved).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.purple}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}/>)}</Card></div>)}
+              {groupByDate(approved).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.purple}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}ctx={rowCtx}/>)}</Card></div>)}
             </CollapsibleSection>}
             {approvedSelf.length>0&&!isBrandTeam(me)&&!isDesignTeam(me)&&<CollapsibleSection title="Made by business team" count={approvedSelf.length} color="#0F766E" icon={<PenLine size={15}/>}>
-              {groupByDate(approvedSelf).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={"#0F766E"}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}/>)}</Card></div>)}
+              {groupByDate(approvedSelf).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={"#0F766E"}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}ctx={rowCtx}/>)}</Card></div>)}
             </CollapsibleSection>}
           </>;
         })()}
