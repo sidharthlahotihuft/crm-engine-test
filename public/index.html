@@ -106,7 +106,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.51 · Fixed the Composer auto-picking a random product. The matcher split the brief product into words and matched any library item containing one — but it kept the brand word 'huft', which is in every product name, so a service brief like 'HUFT Spa / Grooming' grabbed the first HUFT product it found (e.g. a treats pouch). Now brand + generic words (huft, sara, meowsi, spa, grooming, dog, treat, pack, etc.) are stripped before matching, and if nothing product-specific remains, nothing is auto-picked — so service/offer posts come through clean with no stray product. Builds on v29.50 (composer stays open), v29.48 (product-exact).";
+const BUILD="v29.54 · Design-flow rework (batch). (1) Approval chain: Anmol approves the design → Ilena approves the full asset, and Ilena's approval is now the FINAL gate that takes it live — HMO & CXO are notified for oversight only, no extra sign-off step. (2) Business 'Can't do it? Request the design team' fully hands an asset off to the design team's queue (leaves the business queue). (3) Brief-in-short trimmed and now leads with Product · Channel · Offer. (4) Design page now generates ONE editable art direction (was two prompts) that auto-flows into the composer. (5) Design team gets a 'Create on Canva' button (opens Canva; finish there → upload file/link → send for design review). Builds on v29.53 (composer sources), v29.52 (no-design-needed removed).";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -188,7 +188,7 @@ const stripForbidden=(s)=>{
   if(typeof s!=="string")return s;
   let out=s;
   // separator class covers space, ASCII hyphen, underscore, dot, and unicode dashes (– — ‑ ‐ −)
-  const SEP="[\\s\\-_.\\u2010\\u2011\\u2012\\u2013\\u2014\\u2212]?";
+  const SEP="[\\s\\-_.\\u2010\\u2011\\u2012\\u2013\—\\u2212]?";
   out=out.replace(new RegExp("\\bm"+SEP+"hash\\b","gi"),"");   // M-hash / m hash / mhash / M–hash / M—hash
   out=out.replace(new RegExp("\\bm"+SEP+"#","gi"),"");          // M# / M-# (merge prefix)
   out=out.replace(/#\s*m\b/gi,"");                              // #M
@@ -252,6 +252,7 @@ const computeMyTasks=(campaigns,me)=>{
 const _first=(n)=>((n||"").trim().split(/\s+/)[0]||"");
 const slotHolders=(team,slot)=>(team||[]).filter(u=>Array.isArray(u.approval_slots)&&u.approval_slots.includes(slot)).map(u=>u.name);
 const SLOT_FALLBACK={copy:"brand lead",design:"design lead",asset:"brand lead",final:"Head of Marketing"};
+const CANVA_CREATE_URL="https://www.canva.com/create/instagram-posts/"; // design team "Create on Canva" target (edit to a brand-template link if desired)
 const waitingOn=(c,team)=>{
   if(!c||isArchived(c))return null;
   const named=(slot,fb)=>{const n=slotHolders(team,slot);return n.length?n.join(", "):fb;};
@@ -5330,11 +5331,10 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
         <div style={{fontSize:11,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.6,marginBottom:10}}>Canvas &amp; source</div>
         <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:11,alignContent:"start"}}>
         <div><label style={fieldL}>Size</label><select value={sizeIdx}onChange={e=>setSizeIdx(+e.target.value)}style={ctrl}>{COMPOSER_SIZES.map((s,i)=><option key={i}value={i}>{s.label} ({s.w}×{s.h})</option>)}</select></div>
-        <div><label style={fieldL}>Source · keep or switch</label><select value={bgMode}onChange={e=>setBgMode(e.target.value)}style={ctrl}>
-          <option value="plain">Plain background + product</option>
-          <option value="mockup">Product mockup (clean background)</option>
+        <div><label style={fieldL}>Source · keep or switch</label><select value={(bgMode==="plain"||bgMode==="mockup")?"product":bgMode}onChange={e=>{const v=e.target.value;setBgMode(v==="product"?"mockup":v);}}style={ctrl}>
+          <option value="product">Product on a background</option>
           <option value="library">Image from library</option>
-          {canGenerate&&<option value="generate">Generated image (AI)</option>}
+          {canGenerate&&<option value="generate">Generated AI background + product</option>}
         </select></div>
 
         {restricted&&<div style={{gridColumn:"1 / -1",padding:"10px 12px",background:"#FFF7F2",border:`1px solid ${C.coral}44`,borderRadius:8,display:"grid",gap:7}}>
@@ -5344,38 +5344,37 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
           <Btn small disabled={reqBusy}onClick={sendToDesign}style={{width:"100%",justifyContent:"center"}}>{reqBusy?"Sending…":reqSent?"Sent ✓ — send another?":"Send to design team"}</Btn>
         </div>}
 
-        {bgMode==="plain"&&<div style={{gridColumn:"1 / -1"}}>
-          <label style={fieldL}>Brand colour combinations</label>
-          <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:8}}>
-            {BRAND_PALETTES.map(p=><button key={p.name}title={p.name}onClick={()=>{setBgColor(p.bg);setHl(h=>({...h,color:p.text}));setSh(s=>({...s,color:p.text}));setCt(t=>({...t,color:"#FFFFFF"}));setCtaBg(p.cta);}}
-              style={{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",borderRadius:8,cursor:"pointer",border:`1px solid ${bgColor===p.bg?C.coral:C.line}`,background:"#fff"}}>
-              <span style={{width:16,height:16,borderRadius:4,background:p.bg,border:`1px solid ${C.line}`}}/>
-              <span style={{width:10,height:10,borderRadius:"50%",background:p.text}}/>
-              <span style={{width:10,height:10,borderRadius:"50%",background:p.cta}}/>
-              <span style={{fontSize:11,fontWeight:600,color:C.ink}}>{p.name}</span>
-            </button>)}
-          </div>
-          <div style={{display:"flex",gap:10,alignItems:"center"}}>
-            <label style={{...fieldL,margin:0}}>Custom</label>
-            <input type="color"value={bgColor}onChange={e=>setBgColor(e.target.value)}style={{width:40,height:30,border:`1px solid ${C.line}`,borderRadius:6,padding:2}}/>
-          </div>
-        </div>}
-
-        {bgMode==="library"&&<div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Library image (scene)</label><select value={bgId}onChange={e=>setBgId(e.target.value)}style={ctrl}><option value="">— pick —</option>{assetItems.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select></div>}
-
-        {bgMode==="mockup"&&<div style={{gridColumn:"1 / -1",display:"grid",gap:8,padding:"10px 12px",background:C.paper,border:`1px solid ${C.line}`,borderRadius:8}}>
-          <div><label style={fieldL}>Mockup background</label>
+        {(bgMode==="plain"||bgMode==="mockup")&&<div style={{gridColumn:"1 / -1",display:"grid",gap:10,padding:"10px 12px",background:C.paper,border:`1px solid ${C.line}`,borderRadius:8}}>
+          <div><label style={fieldL}>Studio background</label>
             <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
-              {MOCKUP_PRESETS.map(p=><button key={p.k}title={p.name}onClick={()=>{setMockupPreset(p.k);setBgId("");}}
-                style={{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",borderRadius:8,cursor:"pointer",border:`1px solid ${(!bgId&&mockupPreset===p.k)?C.coral:C.line}`,background:"#fff"}}>
+              {MOCKUP_PRESETS.map(p=><button key={p.k}title={p.name}onClick={()=>{setBgMode("mockup");setMockupPreset(p.k);setBgId("");}}
+                style={{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",borderRadius:8,cursor:"pointer",border:`1px solid ${(bgMode==="mockup"&&!bgId&&mockupPreset===p.k)?C.coral:C.line}`,background:"#fff"}}>
                 <span style={{width:18,height:18,borderRadius:4,border:`1px solid ${C.line}`,background:p.type==="sweep"?`linear-gradient(${p.wall} 55%, ${p.floor} 55%)`:`linear-gradient(${p.from}, ${p.to})`}}/>
                 <span style={{fontSize:11,fontWeight:600,color:C.ink}}>{p.name}</span>
               </button>)}
             </div>
           </div>
-          {mockupItems.length>0&&<div><label style={fieldL}>…or an uploaded mockup</label><select value={bgId}onChange={e=>setBgId(e.target.value)}style={ctrl}><option value="">— use a preset above —</option>{mockupItems.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select></div>}
+          {mockupItems.length>0&&<div><label style={fieldL}>…or an uploaded mockup</label><select value={bgMode==="mockup"?bgId:""}onChange={e=>{setBgMode("mockup");setBgId(e.target.value);}}style={ctrl}><option value="">— use a preset above —</option>{mockupItems.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select></div>}
+          <div><label style={fieldL}>…or a brand colour</label>
+            <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:6}}>
+              {BRAND_PALETTES.map(p=><button key={p.name}title={p.name}onClick={()=>{setBgMode("plain");setBgColor(p.bg);setHl(h=>({...h,color:p.text}));setSh(s=>({...s,color:p.text}));setCt(t=>({...t,color:"#FFFFFF"}));setCtaBg(p.cta);}}
+                style={{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",borderRadius:8,cursor:"pointer",border:`1px solid ${(bgMode==="plain"&&bgColor===p.bg)?C.coral:C.line}`,background:"#fff"}}>
+                <span style={{width:16,height:16,borderRadius:4,background:p.bg,border:`1px solid ${C.line}`}}/>
+                <span style={{width:10,height:10,borderRadius:"50%",background:p.text}}/>
+                <span style={{width:10,height:10,borderRadius:"50%",background:p.cta}}/>
+                <span style={{fontSize:11,fontWeight:600,color:C.ink}}>{p.name}</span>
+              </button>)}
+            </div>
+            <div style={{display:"flex",gap:10,alignItems:"center"}}>
+              <label style={{...fieldL,margin:0}}>Custom</label>
+              <input type="color"value={bgColor}onChange={e=>{setBgMode("plain");setBgColor(e.target.value);}}style={{width:40,height:30,border:`1px solid ${C.line}`,borderRadius:6,cursor:"pointer"}}/>
+            </div>
+          </div>
           <div style={{fontSize:10.5,color:C.sub}}>Your exact product packshot composites on top with a natural shadow — the label stays accurate. Add the product below.</div>
         </div>}
+
+        {bgMode==="library"&&<div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Library image (scene)</label><select value={bgId}onChange={e=>setBgId(e.target.value)}style={ctrl}><option value="">— pick —</option>{assetItems.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select></div>}
+
 
         {bgMode==="generate"&&canGenerate&&<div style={{gridColumn:"1 / -1",display:"grid",gap:8,padding:"10px 12px",background:C.paper,border:`1px solid ${C.line}`,borderRadius:8}}>
           <div><label style={fieldL}>Prompt (scene / background)</label><textarea value={genPrompt}onChange={e=>setGenPrompt(e.target.value)}rows={2}style={{...ctrl,resize:"vertical"}}placeholder="e.g. warm rustic kitchen counter, soft morning light"/></div>
@@ -5576,16 +5575,14 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
 // Compact, read-only brief summary shown to the design team/lead on the Design page.
 function BriefInShort({c}){
   const b=(c&&c.data&&c.data.brief)||{};
-  const meta=[c.objective,c.audience_label||c.segment,b.pillar,c.offer&&("Offer: "+c.offer),c.go_live_date&&("Live "+fmtDate(c.go_live_date))].filter(Boolean);
+  const meta=[c.product&&("Product: "+c.product),c.channel,c.offer?("Offer: "+c.offer):"Offer: none",c.audience_label||c.segment,c.go_live_date&&("Live "+fmtDate(c.go_live_date))].filter(Boolean);
   const rtbs=(Array.isArray(b.proofPoints)&&b.proofPoints.length?b.proofPoints:(Array.isArray(b.rtbs)?b.rtbs:[])).filter(Boolean);
   if(!b.idea&&!b.strategicInsight&&!b.copyDirection&&!meta.length)return null;
   return<div style={{background:"#FFF7ED",border:"1px solid #FED7AA",borderLeft:"3px solid "+C.coral,borderRadius:10,padding:"12px 14px",marginBottom:12}}>
     <div style={{fontSize:10,fontWeight:800,color:"#C2410C",textTransform:"uppercase",letterSpacing:.5,marginBottom:6,display:"flex",alignItems:"center",gap:5}}><BookMarked size={12}/>Brief in short</div>
     {b.idea&&<div style={{fontSize:13.5,fontWeight:700,color:C.ink,lineHeight:1.45,marginBottom:5}}>{b.idea}</div>}
     {meta.length>0&&<div style={{fontSize:11.5,color:C.sub,marginBottom:(b.strategicInsight||b.copyDirection||b.whatsappNote||rtbs.length)?6:0}}>{meta.join("  ·  ")}</div>}
-    {b.strategicInsight&&<div style={{fontSize:12.5,color:"#7C2D12",lineHeight:1.45,marginBottom:5}}><b style={{color:"#9A3412"}}>Insight: </b>{b.strategicInsight}</div>}
     {b.copyDirection&&<div style={{fontSize:12.5,color:"#7C2D12",lineHeight:1.45,marginBottom:5}}><b style={{color:"#9A3412"}}>Direction: </b>{b.copyDirection}</div>}
-    {b.whatsappNote&&<div style={{fontSize:12,color:C.sub,lineHeight:1.4,marginBottom:rtbs.length?4:0}}><b>Channel note: </b>{b.whatsappNote}</div>}
     {rtbs.length>0&&<div style={{fontSize:12,color:C.sub,lineHeight:1.4}}><b>Proof points: </b>{rtbs.join(" · ")}</div>}
   </div>;
 }
@@ -5644,10 +5641,10 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
         const brief=c.data?.brief||{};
         const isWA=/whatsapp/i.test(c.channel||"");
         const arRule=isWA?"\nASPECT RATIO: for WhatsApp the aspectRatio MUST be \"1:1\" (square) — never 4:5 or 9:16.":"";
-        const sys="You write TWO distinct image-generation prompts for HUFT "+c.channel+" CRM.\n"+BRAND_CONTEXT+"\nPROMPT RULES:\n"+ruleStr+(fb?"\nFeedback:\n"+fb:"")+"\nRules: real Indian-breed pet, correct pack proportions, no added text on pack, realistic lighting. All brand logos and sub-brand lockups must sit on TOP of the composition (top corner/area), never covered by product or pet."+arRule+"\nReturn ONLY JSON: {prompts:[{label,tool,aspectRatio,prompt,negativePrompt}]}";
+        const sys="You write ONE strong image-generation prompt (one art direction) for HUFT "+c.channel+" CRM.\n"+BRAND_CONTEXT+"\nPROMPT RULES:\n"+ruleStr+(fb?"\nFeedback:\n"+fb:"")+"\nRules: real Indian-breed pet, correct pack proportions, no added text on pack, realistic lighting. All brand logos and sub-brand lockups must sit on TOP of the composition (top corner/area), never covered by product or pet."+arRule+"\nReturn ONLY JSON: {prompts:[{label,tool,aspectRatio,prompt,negativePrompt}]}";
         const usr="Product: "+c.product+"\nInsight: "+(brief.strategicInsight||"")+"\nIdea: "+(brief.idea||"")+"\nCopy direction: "+copy.direction+"\nHeader: "+copy.header+"\nArt notes: "+(d.notes||[]).join(" | ");
         const j=await callClaude(sys,usr,true);
-        setD({imageSource:"prompt",imagePrompts:j.prompts,approvedPromptIdx:null,libraryPick:null,promptsForCopyDir:copy.direction});
+        setD({imageSource:"prompt",imagePrompts:(j.prompts||[]).slice(0,1),approvedPromptIdx:0,libraryPick:null,promptsForCopyDir:copy.direction});
         setImageMode("prompt");
       }catch(e){console.error("genPrompts error:",e);setErr("Couldn't generate prompts: "+(e.message||"check API key"));}setBusy("");
     };
@@ -5718,6 +5715,14 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
       api.post("/api/notify",{toRole:"brand_lead",campaignId:c.id,kind:"Design submitted",body:(c.product||c.name||"A design")+" — a design was submitted for approval."}).catch(()=>{});
       if(typeof toast!=="undefined"&&toast)toast("Submitted for approval ✓ — Anmol & Ilena notified","success");
     };
+    const requestDesignTeam=()=>{
+      if(!window.confirm("Hand this off to the design team? It leaves your queue — they'll build and finish it."))return;
+      const nd={...d,pendingApproval:false,assetReview:false,finalReview:false,sentBack:false};
+      patch(c.id,{data:{...(c.data||{}),selfMade:false,handedToDesignBy:(me&&me.name)||"business",design:nd}});
+      api.post("/api/notify",{toRole:"design_team",campaignId:c.id,kind:"New design request",body:(c.product||c.name||"An asset")+" — handed to the design team by "+((me&&me.name)||"business")+". Build it in the composer."}).catch(()=>{});
+      api.post("/api/notify",{toRole:"design_lead",campaignId:c.id,kind:"New design request",body:(c.product||c.name||"An asset")+" — handed to the design team."}).catch(()=>{});
+      if(typeof toast!=="undefined"&&toast)toast("Handed to the design team — it's now in their queue","success");
+    };
     const _designReady=isPushChannel(c.channel)||!!(d.finalFile||d.generatedImage||d.libraryPick||d.approvedPromptIdx!=null);
     const[emailing,setEmailing]=useState(false);
     const notifyAssetReady=async()=>{setEmailing(true);
@@ -5774,6 +5779,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
           ?<div style={{display:"flex",alignItems:"center",gap:8,background:"#FAF5FF",border:"1px solid #E9D5FF",borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:12.5,fontWeight:700,color:"#6D28D9"}}><Eye size={14}/>Submitted — pending {d.assetReview?"full-asset":"design"} approval</div>
           :<div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:"#fff",border:`1px solid ${C.line}`,borderRadius:10,padding:"10px 14px",marginBottom:12}}>
             <Btn variant="dark"disabled={!_designReady}onClick={submitForApproval}><Send size={14}/>Send design for approval</Btn>
+            {isBusiness(me)&&c.data?.selfMade&&<Btn variant="ghost"onClick={requestDesignTeam}><ArrowRight size={13}/>Can't do it? Request the design team</Btn>}
             <span style={{fontSize:11.5,color:C.sub}}>{_designReady?"Goes to Anmol (design lead) for approval before it can go live.":"Generate or build the design below first."}</span>
           </div>)}
         {/* Brief in short — context for the design team */}
@@ -5829,8 +5835,8 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
             <div onClick={()=>setImageMode("prompt")}style={{border:`2px solid ${C.line}`,borderRadius:12,padding:14,cursor:"pointer",textAlign:"center"}}>
               <Wand2 size={20}color={C.coral}style={{marginBottom:6}}/>
-              <div style={{fontWeight:700,fontSize:13}}>Generate prompts</div>
-              <div style={{fontSize:12,color:C.sub}}>AI writes image prompts for FLUX/Gemini</div>
+              <div style={{fontWeight:700,fontSize:13}}>Generate art direction</div>
+              <div style={{fontSize:12,color:C.sub}}>One editable art direction for the scene</div>
             </div>
             <div onClick={()=>{setImageMode("library");setD({imageSource:"library"});}}style={{border:`2px solid ${C.line}`,borderRadius:12,padding:14,cursor:"pointer",textAlign:"center"}}>
               <ImageIcon size={20}color={C.teal}style={{marginBottom:6}}/>
@@ -5853,8 +5859,8 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
         {/* Image prompts */}
         {imageMode==="prompt"&&<div style={{marginBottom:12}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-            <div style={{fontSize:12,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5}}>Image prompts</div>
-            {busy==="prompts"?<Spin label="Generating…"/>:<Btn small onClick={e=>{e.stopPropagation();genPrompts();}}>{d.imagePrompts?"Regenerate":"Generate 2 prompts"}</Btn>}
+            <div style={{fontSize:12,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5}}>Art direction</div>
+            {busy==="prompts"?<Spin label="Generating…"/>:<Btn small onClick={e=>{e.stopPropagation();genPrompts();}}>{d.imagePrompts?"Regenerate":"Generate art direction"}</Btn>}
           </div>
           {err&&<div style={{color:C.coral,fontSize:13,marginBottom:8}}>{err}</div>}
           {d.imagePrompts&&d.imagePrompts.map((p,i)=><div key={i}style={{border:`2px solid ${d.approvedPromptIdx===i?C.teal:C.line}`,borderRadius:10,padding:12,marginBottom:10,background:d.approvedPromptIdx===i?C.tealSoft:"#fff"}}>
@@ -5865,7 +5871,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
                 {d.approvedPromptIdx===i&&<span style={{fontSize:11,color:C.teal,fontWeight:700,display:"flex",alignItems:"center",gap:3}}><CheckCircle2 size={12}/>Picked</span>}
               </div>
             </div>
-            <div style={{fontSize:12.5,lineHeight:1.55,color:C.ink,marginBottom:6}}>{p.prompt}</div>
+            <textarea value={p.prompt}onChange={e=>{const v=e.target.value;setD({imagePrompts:(d.imagePrompts||[]).map((x,xi)=>xi===i?{...x,prompt:v}:x)});}}rows={3}style={{width:"100%",boxSizing:"border-box",fontSize:12.5,lineHeight:1.5,color:C.ink,border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 9px",resize:"vertical",fontFamily:"inherit",marginBottom:6,background:"#fff"}}/>
             {p.negativePrompt&&<div style={{fontSize:11,color:C.sub,marginBottom:8}}><b>Avoid:</b> {p.negativePrompt}</div>}
             <div style={{display:"flex",gap:7,alignItems:"center"}}>
               {busy==="img"+i?<Spin label="Generating image…"/>:<><Btn small variant="teal"onClick={()=>genImageFor(p,i)}><ImageIcon size={13}/>Generate image</Btn>{d.approvedPromptIdx!==i&&<Btn small variant="ghost"onClick={()=>approvePrompt(i)}>Just pick (build in composer)</Btn>}</>}
@@ -5911,18 +5917,13 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
 
         {/* Finish the design — design team & admins only. Either compose in-app, or upload your own. */}
         {["design_team","design_lead","super_admin","business"].includes(_r(me))&&<div>
-          <div style={{marginTop:14,marginBottom:6,fontSize:13,fontWeight:800,color:C.ink}}>Finish the design — two ways</div>
-          <div style={{fontSize:12.5,color:C.sub,marginBottom:4}}>Either build it in the composer below, <b>or</b> upload your own design (file / link) at the bottom. You only need one.</div>
-          {!(d.finalFile||d.generatedImage||d.libraryPick||approvedPrompt)&&!d.pendingApproval&&!d.assetReview&&!d.finalReview&&<div style={{margin:"8px 0 4px",background:"#F8F9FA",border:`1px dashed ${C.line}`,borderRadius:10,padding:"10px 13px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-            <div style={{flex:1,minWidth:180,fontSize:12.5,color:C.sub,lineHeight:1.45}}>No image needed for this one? Skip design approval and send the copy straight to <b>final sign-off</b>.</div>
-            <Btn small variant="dark"onClick={()=>{
-              if(!window.confirm("Send to final sign-off with no design asset? This skips design approval."))return;
-              patch(c.id,{data:{...(c.data||{}),design:{...d,pendingApproval:false,assetReview:false,finalReview:true,noDesignNeeded:true}}});
-              api.post("/api/notify",{toRole:"head_marketing",campaignId:c.id,kind:"Final sign-off needed",body:(c.product||c.name||"An asset")+" — copy-only asset (no design needed), awaiting final sign-off."}).catch(()=>{});
-              api.post("/api/notify",{toRole:"cxo",campaignId:c.id,kind:"Final sign-off needed",body:(c.product||c.name||"An asset")+" — copy-only asset (no design needed), awaiting final sign-off."}).catch(()=>{});
-              if(typeof toast!=="undefined"&&toast)toast("Sent to final sign-off — no design needed","success");
-            }}>No design needed — send to final <ArrowRight size={13}/></Btn>
+          <div style={{marginTop:14,marginBottom:6,fontSize:13,fontWeight:800,color:C.ink}}>Finish the design</div>
+          <div style={{fontSize:12.5,color:C.sub,marginBottom:4}}>{["design_team","design_lead","super_admin"].includes(_r(me))?<>Build it in the <b>composer</b> below, <b>create it on Canva</b>, or <b>upload</b> a file / link — then send for design review.</>:<>Build it in the <b>composer</b> below, <b>or</b> upload your own design (file / link) at the bottom. You only need one.</>}</div>
+          {["design_team","design_lead","super_admin"].includes(_r(me))&&<div style={{margin:"4px 0 10px",display:"flex",alignItems:"center",gap:9,flexWrap:"wrap"}}>
+            <Btn small variant="ghost"onClick={()=>window.open(CANVA_CREATE_URL,"_blank","noopener")}>Create on Canva <ArrowRight size={12}/></Btn>
+            <span style={{fontSize:11,color:C.sub}}>Design there, then upload the file or paste the share link below — and send for design review.</span>
           </div>}
+
           {isOpen&&copy&&<CreativeComposer c={c}copy={copy}me={me}patch={patch}d={d}approvedPrompt={approvedPrompt}promptRules={promptRules}toast={(typeof toast!=="undefined"?toast:null)}/>}
           <FinalDesignUpload c={c}d={d}patch={patch}me={me}/>
           {d.finalFile&&<div style={{marginTop:10,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:C.tealSoft,border:`1px solid ${C.teal}55`,borderRadius:10,padding:"10px 13px"}}>
