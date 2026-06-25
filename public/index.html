@@ -103,7 +103,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.24 · Feedback is now a quick thumbs up / thumbs down — 👍 records a positive signal instantly, 👎 asks for a one-line comment. It shows after every generation (Copy and Design) and pops up the moment a copy option is selected, so the engine keeps learning. Design approval is now skippable when there is nothing to approve: if a design-stage asset has no image (no composed file, generated image, library pick or approved prompt), the design team can send the copy-only asset straight to final sign-off, skipping the design and full-asset gates. Assets with an image still go through design approval as before.";
+const BUILD="v29.24a · Self-made work is now labelled Made by business team (was Made in-house) in both Copy and Design. The Brand approved section is hidden from the business team (they only ever see their own self-made assets). The Design tab now splits self-made assets into their own Made by business team section, mirroring Copy, so business users see only their work and leads can tell in-house work apart from creative-team work.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -3780,10 +3780,10 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
             {inReview.length>0&&<CollapsibleSection title={"Pending brand approval"+(canBrandApprove(me)?"":" (awaiting Ilena)")} count={inReview.length} color="#9333EA" icon={<Eye size={15}/>}>
               {groupByDate(inReview).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={"#9333EA"}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}/>)}</Card></div>)}
             </CollapsibleSection>}
-            {approved.length>0&&<CollapsibleSection title="Brand approved" count={approved.length} color="#5B21B6" icon={<CheckCircle2 size={15}/>}>
+            {!isBusiness(me)&&approved.length>0&&<CollapsibleSection title="Brand approved" count={approved.length} color="#5B21B6" icon={<CheckCircle2 size={15}/>}>
               {groupByDate(approved).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.purple}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}/>)}</Card></div>)}
             </CollapsibleSection>}
-            {approvedSelf.length>0&&<CollapsibleSection title="Made in-house" count={approvedSelf.length} color="#0F766E" icon={<PenLine size={15}/>}>
+            {approvedSelf.length>0&&<CollapsibleSection title="Made by business team" count={approvedSelf.length} color="#0F766E" icon={<PenLine size={15}/>}>
               {groupByDate(approvedSelf).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={"#0F766E"}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}/>)}</Card></div>)}
             </CollapsibleSection>}
           </>;
@@ -5697,14 +5697,19 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
       ?<Card><Empty icon={<Palette size={26}color={C.sub}/>}title="No design pending"sub="Assets move here after copy is selected."/></Card>
       :<div>
         {(()=>{
-          const needsDesign=allDesign.filter(c=>!(c.data?.design?.approvedPromptIdx!=null||c.data?.design?.libraryPick));
-          const done=allDesign.filter(c=>c.data?.design?.approvedPromptIdx!=null||c.data?.design?.libraryPick);
+          const selfDesign=allDesign.filter(c=>c.data?.selfMade);
+          const teamDesign=allDesign.filter(c=>!c.data?.selfMade);
+          const needsDesign=teamDesign.filter(c=>!(c.data?.design?.approvedPromptIdx!=null||c.data?.design?.libraryPick));
+          const done=teamDesign.filter(c=>c.data?.design?.approvedPromptIdx!=null||c.data?.design?.libraryPick);
           return<>
             {needsDesign.length>0&&<CollapsibleSection title="Needs attention" count={needsDesign.length} color={C.coral} icon={<ClockIcon size={15}/>}>
               {groupByDate(needsDesign).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.teal}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><DesignRow key={c.id}c={c}/>)}</Card></div>)}
             </CollapsibleSection>}
             {done.length>0&&<CollapsibleSection title="Image selected" count={done.length} color={C.teal} icon={<CheckCircle2 size={15}/>}>
               <div style={{opacity:.75}}>{groupByDate(done).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.teal}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><DesignRow key={c.id}c={c}/>)}</Card></div>)}</div>
+            </CollapsibleSection>}
+            {selfDesign.length>0&&<CollapsibleSection title="Made by business team" count={selfDesign.length} color="#0F766E" icon={<PenLine size={15}/>}>
+              {groupByDate(selfDesign).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={"#0F766E"}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><DesignRow key={c.id}c={c}/>)}</Card></div>)}
             </CollapsibleSection>}
           </>;
         })()}
