@@ -103,7 +103,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.26 · Copy generation tightened: per-channel length discipline (push title ≤40/hard-50 + body capped at 2 short flowing lines; WhatsApp/Email body ceilings), copy now reads as complete flowing sentences not fragments, image copy must be a crisp flowing line with the offer surfaced when present, crystal-clarity rule for offers/deadlines, and tasteful emojis encouraged. Shared COPY_SHAPE helper keeps the bulk + per-card generators in sync; refine/fix flows now apply the same best-practices + forbidden-token rules. Stronger M-hash/placeholder stripping (now catches unicode-dash variants + empty brackets). Image copy / Body copy labels standardised everywhere. Analytics is channel-aware: Push shows CTR only, WhatsApp/Email show all. Business users see a clean in-progress state after generating instead of the full editor.";
+const BUILD="v29.27 · Brand image library now loads reliably at scale: the grid fetches metadata only and lazy-loads each thumbnail on demand, instead of bulk-loading every image's full data in one response (which exceeded the serverless response size cap once the library grew, leaving the grid blank). Includes v29.26 copy changes: per-channel length discipline (push title ≤40/hard-50 + body capped at 2 short flowing lines; WhatsApp/Email body ceilings), copy reads as complete flowing sentences not fragments, image copy is a crisp flowing line with the offer surfaced when present, crystal-clarity rule for offers/deadlines, tasteful emojis encouraged, shared COPY_SHAPE helper keeping both generators in sync, stronger M-hash/placeholder stripping (unicode-dash variants + empty brackets), standardised Image copy / Body copy labels everywhere, channel-aware analytics (Push = CTR only), and a business in-progress state after generating.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -3320,7 +3320,10 @@ function ImageLibraryTab({me,toast}){
   const folderRef=useRef(null);
 
   const load=async(query)=>{
-    try{setItems(await api.get("/api/image-library?withData=1"+(query?`&q=${encodeURIComponent(query)}`:"")));}
+    // Load metadata only — thumbnails lazy-load per-image via ImageThumb. Bulk-loading every
+    // image's base64 in one response blows past the serverless response size cap once the library
+    // grows, which made the whole grid fail to load. Lazy per-image fetch avoids that entirely.
+    try{setItems(await api.get("/api/image-library"+(query?`?q=${encodeURIComponent(query)}`:"")));}
     catch(e){setItems([]);}
   };
   useEffect(()=>{load("");},[]);
