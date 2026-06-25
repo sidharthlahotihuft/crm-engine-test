@@ -103,7 +103,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.20 · Copy options now start collapsed — each option shows a one-line preview (with a Revision needed flag where relevant); the selected option stays open, and you tap any row to expand it. New Fix per feedback button: when copy is sent back, one tap has the AI revise that option to address the reviewer note, then you review and resend. Send-back no longer double-posts the reason — it shows once in the Revision needed banner; the comment thread only gets a breadcrumb when no reason was typed.";
+const BUILD="v29.24 · Feedback is now a quick thumbs up / thumbs down — 👍 records a positive signal instantly, 👎 asks for a one-line comment. It shows after every generation (Copy and Design) and pops up the moment a copy option is selected, so the engine keeps learning. Design approval is now skippable when there is nothing to approve: if a design-stage asset has no image (no composed file, generated image, library pick or approved prompt), the design team can send the copy-only asset straight to final sign-off, skipping the design and full-asset gates. Assets with an image still go through design approval as before.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -824,6 +824,7 @@ const Copy=p=><Svg{...p}><rect x="9"y="9"width="13"height="13"rx="2"/><path d="M
 const Download=p=><Svg{...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></Svg>;
 const Share2=p=><Svg{...p}><circle cx="18"cy="5"r="3"/><circle cx="6"cy="12"r="3"/><circle cx="18"cy="19"r="3"/><path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98"/></Svg>;
 const ThumbsUp=p=><Svg{...p}><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.3a2 2 0 0 0 2-1.7l1.4-9a2 2 0 0 0-2-2.3H14z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></Svg>;
+const ThumbsDown=p=><Svg{...p}><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3z"/><path d="M17 2h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/></Svg>;
 const Star=p=><Svg{...p}><path d="M12 2l3.1 6.3L22 9.3l-5 4.9 1.2 6.9L12 17.8l-6.2 3.3 1.2-6.9L2 9.3l6.9-1z"/></Svg>;
 const Send=p=><Svg{...p}><path d="M22 2L11 13"/><path d="M22 2L15 22l-4-9-9-4 20-7z"/></Svg>;
 const RotateCcw=p=><Svg{...p}><path d="M1 4v6h6"/><path d="M3.5 15A9 9 0 1 0 6 6.3L1 10"/></Svg>;
@@ -926,10 +927,67 @@ function Header({eyebrow,title,right}){return<div style={{display:"flex",justify
 function Step({n,title,done}){return<div style={{display:"flex",alignItems:"center",gap:10}}><span style={{width:24,height:24,borderRadius:999,background:done?C.teal:C.navy,color:"#fff",fontSize:12.5,fontWeight:700,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>{done?<Check size={14}/>:n}</span><span style={{fontWeight:700,fontSize:15.5}}>{title}</span></div>;}
 
 function FeedbackBar({stage,by,onSave}){
-  const[open,setOpen]=useState(false);const[text,setText]=useState("");const[sent,setSent]=useState(false);
-  const send=async()=>{if(!text.trim())return;try{await api.post("/api/feedback",{stage,text:text.trim(),by});}catch(e){}if(onSave)onSave({stage,text:text.trim()});setSent(true);setText("");setTimeout(()=>{setSent(false);setOpen(false);},2000);};
-  if(sent)return<div style={{marginTop:10,display:"flex",alignItems:"center",gap:7,color:C.teal,fontSize:13,fontWeight:600}}><CheckCircle2 size={15}/>Feedback saved — thanks!</div>;
-  return<div style={{marginTop:10,borderTop:`1px solid ${C.line}`,paddingTop:10}}>{!open?<button onClick={()=>setOpen(true)}style={{background:"none",border:"none",cursor:"pointer",color:C.sub,fontSize:12.5,display:"flex",alignItems:"center",gap:6}}><Star size={13}/>Leave feedback on this generation</button>:<div style={{display:"flex",gap:8,alignItems:"flex-end",flexWrap:"wrap"}}><textarea value={text}onChange={e=>setText(e.target.value)}placeholder={`What was good or off about this ${stage} generation?`}rows={2}style={{flex:1,minWidth:200,border:`1px solid ${C.line}`,borderRadius:9,padding:"8px 10px",fontSize:13,resize:"none",boxSizing:"border-box"}}/><div style={{display:"flex",gap:6}}><Btn small variant="softcoral"onClick={send}disabled={!text.trim()}><ThumbsUp size={13}/>Send</Btn><Btn small variant="ghost"onClick={()=>{setOpen(false);setText("");}}>Cancel</Btn></div></div>}</div>;
+  const[mode,setMode]=useState(null); // null | "down"
+  const[text,setText]=useState("");
+  const[sent,setSent]=useState(false);
+  const save=async(sentiment,comment)=>{
+    const txt=sentiment==="up"?`👍 POSITIVE — ${stage} generation looked good.`:`👎 NEEDS WORK — ${(comment||"").trim()}`;
+    try{await api.post("/api/feedback",{stage,text:txt,by});}catch(e){}
+    if(onSave)onSave({stage,text:txt});
+    setSent(true);
+  };
+  if(sent)return<div style={{marginTop:10,display:"flex",alignItems:"center",gap:7,color:C.teal,fontSize:13,fontWeight:600}}><CheckCircle2 size={15}/>Thanks for the feedback!</div>;
+  return<div style={{marginTop:10,borderTop:`1px solid ${C.line}`,paddingTop:10}}>
+    {mode!=="down"
+      ?<div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <span style={{fontSize:12.5,color:C.sub}}>How was this {stage} generation?</span>
+        <button onClick={()=>save("up")}style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12.5,fontWeight:700,color:"#15803D",background:"#DCFCE7",border:"1px solid #BBF7D0",borderRadius:8,padding:"5px 11px",cursor:"pointer"}}><ThumbsUp size={13}/>Good</button>
+        <button onClick={()=>setMode("down")}style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12.5,fontWeight:700,color:"#B91C1C",background:"#FEE2E2",border:"1px solid #FECACA",borderRadius:8,padding:"5px 11px",cursor:"pointer"}}><ThumbsDown size={13}/>Needs work</button>
+      </div>
+      :<div style={{display:"flex",gap:8,alignItems:"flex-end",flexWrap:"wrap"}}>
+        <textarea value={text}onChange={e=>setText(e.target.value)}placeholder={`What was off about this ${stage} generation? (helps the engine improve)`}rows={2}autoFocus style={{flex:1,minWidth:200,border:`1px solid ${C.line}`,borderRadius:9,padding:"8px 10px",fontSize:13,resize:"none",boxSizing:"border-box"}}/>
+        <div style={{display:"flex",gap:6}}>
+          <Btn small variant="softcoral"onClick={()=>save("down",text)}disabled={!text.trim()}><ThumbsDown size={13}/>Send</Btn>
+          <Btn small variant="ghost"onClick={()=>{setMode(null);setText("");}}>Back</Btn>
+        </div>
+      </div>}
+  </div>;
+}
+
+function FeedbackPopup({stage,by,onSave,onClose,title}){
+  const[mode,setMode]=useState(null); // null | "down"
+  const[text,setText]=useState("");
+  const[sent,setSent]=useState(false);
+  const save=async(sentiment,comment)=>{
+    const txt=sentiment==="up"?`👍 POSITIVE — ${stage} generation looked good.`:`👎 NEEDS WORK — ${(comment||"").trim()}`;
+    try{await api.post("/api/feedback",{stage,text:txt,by});}catch(e){}
+    if(onSave)onSave({stage,text:txt});
+    setSent(true);
+    setTimeout(()=>{onClose&&onClose();},1000);
+  };
+  return<div onClick={onClose}style={{position:"fixed",inset:0,background:"rgba(15,23,42,.5)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+    <div onClick={e=>e.stopPropagation()}style={{background:"#fff",borderRadius:16,padding:"20px 22px",maxWidth:420,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,.25)"}}>
+      {sent
+        ?<div style={{display:"flex",alignItems:"center",gap:9,color:C.teal,fontSize:15,fontWeight:700,padding:"6px 0"}}><CheckCircle2 size={20}/>Thanks for the feedback!</div>
+        :<>
+          <div style={{fontSize:15,fontWeight:800,color:C.ink,marginBottom:4}}>{title||`How was this ${stage}?`}</div>
+          <div style={{fontSize:12.5,color:C.sub,marginBottom:16,lineHeight:1.5}}>Your rating trains the engine — 👍 if it was good, 👎 if it needs work.</div>
+          {mode!=="down"
+            ?<div style={{display:"flex",gap:10}}>
+              <button onClick={()=>save("up")}style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:7,padding:"16px 10px",fontSize:13,fontWeight:700,color:"#15803D",background:"#DCFCE7",border:"1.5px solid #BBF7D0",borderRadius:12,cursor:"pointer"}}><ThumbsUp size={24}/>Good</button>
+              <button onClick={()=>setMode("down")}style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:7,padding:"16px 10px",fontSize:13,fontWeight:700,color:"#B91C1C",background:"#FEE2E2",border:"1.5px solid #FECACA",borderRadius:12,cursor:"pointer"}}><ThumbsDown size={24}/>Needs work</button>
+            </div>
+            :<div>
+              <textarea value={text}onChange={e=>setText(e.target.value)}placeholder="What was off? (helps the engine improve next time)"rows={3}autoFocus style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:10,padding:"9px 11px",fontSize:13,resize:"none",boxSizing:"border-box",outline:"none"}}/>
+              <div style={{display:"flex",gap:8,marginTop:12,justifyContent:"flex-end"}}>
+                <Btn small variant="ghost"onClick={()=>setMode(null)}>Back</Btn>
+                <Btn small variant="softcoral"onClick={()=>save("down",text)}disabled={!text.trim()}><ThumbsDown size={13}/>Send feedback</Btn>
+              </div>
+            </div>}
+          {mode!=="down"&&<div style={{marginTop:14,textAlign:"center"}}><button onClick={onClose}style={{background:"none",border:"none",cursor:"pointer",color:C.sub,fontSize:12}}>Skip</button></div>}
+        </>}
+    </div>
+  </div>;
 }
 
 /* ===== Helper export functions (keep out of JSX to avoid spread-in-array parse issues) */
@@ -1233,7 +1291,7 @@ function App(){
 
   // Pending counts per stage (for nav badges)
   const scoped=scopeCampaigns(campaigns,me);
-  const pending={brief:scoped.filter(c=>c.stage==="brief"&&!isArchived(c)).length,content:scoped.filter(c=>c.stage==="content"&&!isArchived(c)).length,brand_review:scoped.filter(c=>c.stage==="brand_review"&&!isArchived(c)).length,design:scoped.filter(c=>c.stage==="design"&&c.channel!=="Push notification"&&!isArchived(c)).length};
+  const pending={brief:scoped.filter(c=>c.stage==="brief"&&!isArchived(c)).length,content:scoped.filter(c=>c.stage==="content"&&!isArchived(c)).length,brand_review:scoped.filter(c=>c.stage==="brand_review"&&!isArchived(c)).length,design:scoped.filter(c=>c.stage==="design"&&(c.channel!=="Push notification"||c.data?.selfMade)&&!isArchived(c)).length};
 
   // Tabs visible per role
   // Action-needed counts per tab (what actually needs someone's attention there)
@@ -1966,6 +2024,7 @@ function BriefFastForm({campaignId,patch,onBriefReady,me,recentFeedback,product}
   const[err,setErr]=useState("");
   const[customRtb,setCustomRtb]=useState("");
   const[linkInput,setLinkInput]=useState("");
+  const[maker,setMaker]=useState("team"); // "team" = creative team · "self" = make it myself
   const set=(k,v)=>setAnswers(a=>({...a,[k]:v}));
   const toggleMulti=(k,v)=>setAnswers(a=>{const cur=Array.isArray(a[k])?a[k]:[];return{...a,[k]:cur.includes(v)?cur.filter(x=>x!==v):[...cur,v]};});
   const optsFor=(s)=>{
@@ -2005,7 +2064,7 @@ function BriefFastForm({campaignId,patch,onBriefReady,me,recentFeedback,product}
         tat_brief_due:briefDue,tat_content_due:contentDue,tat_design_due:designDue,
         brief_started_at:new Date(now).toISOString(),
         rtbs:rtbList,references:refList,
-        data:{brief:{...j,rtbs:rtbList,references:refList,referenceFiles:refFiles,source:"form"}},
+        data:{brief:{...j,rtbs:rtbList,references:refList,referenceFiles:refFiles,source:"form"},selfMade:((isBusiness(me)||isSuper(me))&&maker==="self")},
         stage:"content",
       });
       onBriefReady();
@@ -2042,6 +2101,14 @@ function BriefFastForm({campaignId,patch,onBriefReady,me,recentFeedback,product}
       </div>;
     })}
     {err&&<div style={{color:C.coral,fontSize:12.5,fontWeight:600}}>{err}</div>}
+    {(isBusiness(me)||isSuper(me))&&<div style={{background:"#fff",border:`1px solid ${C.line}`,borderRadius:11,padding:"11px 13px"}}>
+      <div style={{fontSize:13,fontWeight:700,color:C.ink,marginBottom:2}}>How is this asset getting made?<span style={{color:C.coral}}> *</span></div>
+      <div style={{fontSize:11.5,color:C.sub,marginBottom:8,lineHeight:1.4}}>Hand it to the creative team, or take it on yourself. If you make it yourself it skips the brand copy gate and goes to a dual sign-off (Anmol &amp; Ilena) at the end.</div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+        <Chip label="Hand to the creative team" active={maker==="team"} onClick={()=>setMaker("team")}/>
+        <Chip label="I'll make it myself" active={maker==="self"} onClick={()=>setMaker("self")}/>
+      </div>
+    </div>}
     <div style={{position:"sticky",bottom:0,background:"#FFFBF7",paddingTop:8,paddingBottom:4,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
       {generating?<Spin label="Writing your brief…"/>:<Btn onClick={generateBrief}disabled={missing.length>0}><Sparkles size={15}/>Generate brief</Btn>}
       {missing.length>0&&<span style={{fontSize:11.5,color:C.sub}}>Still needed: {missing.length} required field{missing.length>1?"s":""}</span>}
@@ -2687,17 +2754,27 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
             {brief.references&&brief.references.length>0&&<RefLinks links={brief.references}/>}
             {brief.referenceFiles&&brief.referenceFiles.length>0&&<RefFiles files={brief.referenceFiles}/>}
           </div>
-          {/* Actions — who's making this asset? */}
+          {/* Actions — who's making this asset? (choice may already be set from the brief form) */}
+          {(()=>{const decided=c.data?.selfMade!==undefined;const self=!!c.data?.selfMade;return(
           <div style={{background:"#fff",border:`1px solid ${C.line}`,borderRadius:12,padding:"13px 15px"}}>
-            <div style={{fontSize:13,fontWeight:800,color:C.ink,marginBottom:3}}>How is this asset getting made?</div>
-            <div style={{fontSize:11.5,color:C.sub,marginBottom:11}}>Hand it to the creative team, or take it on yourself.</div>
-            <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-              <Btn onClick={()=>{patch(c.id,{stage:"content",data:{...(c.data||{}),selfMade:false}});setTab("content");onOpen(c.id,"content");}}>Hand to the creative team <ArrowRight size={14}/></Btn>
-              {(isBusiness(me)||isSuper(me))&&<Btn variant="ghost"onClick={()=>{patch(c.id,{stage:"content",data:{...(c.data||{}),selfMade:true}});setTab("content");onOpen(c.id,"content");}}><PenLine size={13}/>I'll make it myself</Btn>}
-              <Btn variant="ghost"onClick={()=>setM(c.id,"edit")}><PenLine size={13}/>Edit brief</Btn>
-            </div>
+            {decided?<>
+              <div style={{fontSize:13,fontWeight:800,color:C.ink,marginBottom:3}}>{self?"You're making this one in-house":"Handed to the creative team"}</div>
+              <div style={{fontSize:11.5,color:C.sub,marginBottom:11}}>{self?"Write the copy and build the design — then send it for the dual sign-off (Anmol & Ilena).":"The creative team picks it up in Copy next."}</div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+                <Btn onClick={()=>{setTab("content");onOpen(c.id,"content");}}>Continue to Copy <ArrowRight size={14}/></Btn>
+                <Btn variant="ghost"onClick={()=>setM(c.id,"edit")}><PenLine size={13}/>Edit brief</Btn>
+              </div>
+            </>:<>
+              <div style={{fontSize:13,fontWeight:800,color:C.ink,marginBottom:3}}>How is this asset getting made?</div>
+              <div style={{fontSize:11.5,color:C.sub,marginBottom:11}}>Hand it to the creative team, or take it on yourself.</div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+                <Btn onClick={()=>{patch(c.id,{stage:"content",data:{...(c.data||{}),selfMade:false}});setTab("content");onOpen(c.id,"content");}}>Hand to the creative team <ArrowRight size={14}/></Btn>
+                {(isBusiness(me)||isSuper(me))&&<Btn variant="ghost"onClick={()=>{patch(c.id,{stage:"content",data:{...(c.data||{}),selfMade:true}});setTab("content");onOpen(c.id,"content");}}><PenLine size={13}/>I'll make it myself</Btn>}
+                <Btn variant="ghost"onClick={()=>setM(c.id,"edit")}><PenLine size={13}/>Edit brief</Btn>
+              </div>
+            </>}
             <div style={{fontSize:11.5,color:"#7D3D24",marginTop:11,lineHeight:1.55,background:C.coralSoft,borderRadius:8,padding:"9px 12px"}}>It moves to <b>Copy</b> next either way. Making it yourself? Write the copy and build the design — then <b>once the design is ready, send it for approval.</b></div>
-          </div>
+          </div>);})()}
         </div>}
       </div>}
     </div>;
@@ -3483,15 +3560,18 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         patch(c.id,{data:{...(c.data||{}),selectedCopyIdx:null},stage:"content",copy_approver:null});
         if(toast)toast("Copy unselected — pick another option","success");
       } else if(c.data?.selfMade){
-        // Self-made: skip the brand copy gate — lock the copy and move to the writer's own Design.
+        // Self-made: skip the brand copy gate — lock the copy and move to sign-off.
+        // Push has no design, so it goes straight to the dual sign-off (no design build needed).
+        const isPush=isPushChannel(c.channel);
         patch(c.id,{data:{...(c.data||{}),selectedCopyIdx:idx},stage:"design",copy_author:c.copy_author||me.name});
-        if(toast)toast("Copy locked ✓ — now build the design in the Design tab","success");
-        setTab&&setTab("design");onOpen&&onOpen(c.id,"design");
+        if(toast)toast(isPush?"Copy locked ✓ — push needs no design. Send it for final sign-off in the Design tab.":"Copy locked ✓ — now build the design in the Design tab","success");
+        setFbPopup({stage:"content",after:()=>{setTab&&setTab("design");onOpen&&onOpen(c.id,"design");}});
       } else {
         // Every copy now goes to Ilena (brand) for review before design/done.
         patch(c.id,{data:{...(c.data||{}),selectedCopyIdx:idx},stage:"brand_review",copy_approver:me.name,copy_author:c.copy_author||me.name});
         api.post("/api/notify",{toRole:"brand_lead",campaignId:c.id,kind:"Copy needs approval",body:(c.product||c.name||"An asset")+" — copy submitted by "+((me&&me.name)||"the team")+". Please review/approve."}).catch(()=>{});
         if(toast)toast("Copy selected ✓ — sent to brand review (Ilena)","success");
+        setFbPopup({stage:"content"});
       }
     };
 
@@ -3542,6 +3622,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
                 if(selIdx==null)return<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#92400E",background:"#FBEAD7",padding:"3px 9px",borderRadius:999}}>Pick one of {opts.length}</span>;
                 return<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#92400E",background:"#FBEAD7",padding:"3px 9px",borderRadius:999}}>Revision needed</span>;
               }
+              if(c.data?.selfMade)return<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#0F766E",background:"#CCFBF1",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>{c.stage==="design"?"Designs generated":c.stage==="done"?"Asset ready":"Copies generated"}</span>;
               return<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#5B21B6",background:"#EDE9FE",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>Copy approved</span>;
             })()}
             {c.stage!=="content"&&c.stage!=="brand_review"&&<StageBadge stage={c.stage}/>}
@@ -3601,7 +3682,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
           <div style={{fontSize:12,color:C.sub,display:"flex",gap:6,alignItems:"center"}}><span>{parseName(c.name).date&&<b style={{color:C.ink,marginRight:4}}>{parseName(c.name).date}</b>}{parseName(c.name).hook.replace(/_/g," ")}</span>{c.created_at&&<span style={{marginLeft:"auto",fontSize:11,color:C.sub,background:"#F3F4F6",padding:"2px 7px",borderRadius:5,flexShrink:0}}>{fmtDate(c.created_at)}</span>}</div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-          {sel!=null&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#5B21B6",background:"#EDE9FE",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>Copy approved</span>}
+          {sel!=null&&(c.data?.selfMade?<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#0F766E",background:"#CCFBF1",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>{c.stage==="design"?"Designs generated":c.stage==="done"?"Asset ready":"Copies generated"}</span>:<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#5B21B6",background:"#EDE9FE",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>Copy approved</span>)}
           {sel!=null&&c.stage!=="content"&&<StageBadge stage={c.stage}/>}
           {opts&&sel==null&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#92400E",background:"#FEF3C7",padding:"3px 9px",borderRadius:999}}>{opts.length} options — pick one</span>}
           {!opts&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#B91C1C",background:"#FEF2F2",padding:"3px 9px",borderRadius:999}}>Needs copy</span>}
@@ -3645,12 +3726,12 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         {opts&&<div>
           {sel!=null&&<div style={{marginBottom:10}}>
             <div style={{fontSize:11,fontWeight:700,color:"#5B21B6",textTransform:"uppercase",letterSpacing:.5,marginBottom:6,display:"flex",alignItems:"center",gap:4}}><CheckCircle2 size={11}/>Approved copy</div>
-            <ContentCard o={opts[sel]}idx={sel}sel={true}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}onFixFeedback={fixPerFeedback}onEditSave={editDirectly}channel={c.channel}sentBack={c.data?.sentBack}isResend={!!c.data?.lastRejectReason}image={mockImage}/>
+            <ContentCard o={opts[sel]}idx={sel}sel={true}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}onFixFeedback={fixPerFeedback}onEditSave={editDirectly}channel={c.channel}anySelected={sel!=null}sentBack={c.data?.sentBack}isResend={!!c.data?.lastRejectReason}image={mockImage}/>
           </div>}
           {sel!=null&&<button onClick={()=>setShowAll(v=>!v)}style={{display:"flex",alignItems:"center",gap:5,background:"none",border:"none",cursor:"pointer",color:C.sub,fontSize:12.5,fontWeight:600,marginBottom:8}}>{showAll?<><ChevronDown size={13}/>Hide other options</>:<><Eye size={13}/>See other {opts.length-1} options</>}</button>}
           {sel==null&&opts&&opts.length>1&&<div style={{marginBottom:10,fontSize:12.5,color:C.sub,background:C.paper,border:`1px solid ${C.line}`,borderRadius:10,padding:"9px 13px"}}>Pick <b>one</b> option below — it goes straight to Ilena for approval.</div>}
           {(sel==null||showAll)&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
-            {opts.map((o,i)=>{if(sel!=null&&i===sel)return null;return<ContentCard key={i}o={o}idx={i}sel={false}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}onFixFeedback={fixPerFeedback}onEditSave={editDirectly}channel={c.channel}sentBack={c.data?.sentBack}isResend={!!c.data?.lastRejectReason}image={mockImage}/>;})}</div>}
+            {opts.map((o,i)=>{if(sel!=null&&i===sel)return null;return<ContentCard key={i}o={o}idx={i}sel={false}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}onFixFeedback={fixPerFeedback}onEditSave={editDirectly}channel={c.channel}anySelected={sel!=null}sentBack={c.data?.sentBack}isResend={!!c.data?.lastRejectReason}image={mockImage}/>;})}</div>}
         </div>}
         {sel!=null&&<div style={{marginTop:12,background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:10,padding:"14px 16px"}}>
           <div style={{fontSize:12,fontWeight:700,color:"#15803D",textTransform:"uppercase",letterSpacing:.5,marginBottom:10,display:"flex",alignItems:"center",gap:6}}><CheckCircle2 size={13}/>Copy approved — next steps</div>
@@ -3670,7 +3751,9 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
   };
 
   const[view,setView]=useState("list");
+  const[fbPopup,setFbPopup]=useState(null);
   return<div>
+    {fbPopup&&<FeedbackPopup stage={fbPopup.stage}by={me.name}onSave={saveFeedback}title="How was this copy generation?"onClose={()=>{const a=fbPopup.after;setFbPopup(null);if(a)a();}}/>}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
       <div><Eyebrow>Copy</Eyebrow><h1 style={{margin:"4px 0 0",fontSize:24,fontWeight:800}}>Copy</h1></div>
       <div style={{display:"flex",border:`1px solid ${C.line}`,borderRadius:8,overflow:"hidden"}}>
@@ -3687,7 +3770,9 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
           const needsCopy=allCopy.filter(c=>c.stage==="content");
           const inReview=allCopy.filter(c=>c.stage==="brand_review");
           // "approved" = brand-approved and moved on (design/done), but still listed here
-          const approved=allCopy.filter(c=>c.stage!=="content"&&c.stage!=="brand_review"&&c.data?.selectedCopyIdx!=null&&c.data?.copyOptions);
+          const approvedAll=allCopy.filter(c=>c.stage!=="content"&&c.stage!=="brand_review"&&c.data?.selectedCopyIdx!=null&&c.data?.copyOptions);
+          const approved=approvedAll.filter(c=>!c.data?.selfMade);
+          const approvedSelf=approvedAll.filter(c=>c.data?.selfMade);
           return<>
             {needsCopy.length>0&&<CollapsibleSection title="Needs attention" count={needsCopy.length} color="#92400E" icon={<ClockIcon size={15}/>}>
               {groupByDate(needsCopy).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.purple}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}/>)}</Card></div>)}
@@ -3697,6 +3782,9 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
             </CollapsibleSection>}
             {approved.length>0&&<CollapsibleSection title="Brand approved" count={approved.length} color="#5B21B6" icon={<CheckCircle2 size={15}/>}>
               {groupByDate(approved).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.purple}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}/>)}</Card></div>)}
+            </CollapsibleSection>}
+            {approvedSelf.length>0&&<CollapsibleSection title="Made in-house" count={approvedSelf.length} color="#0F766E" icon={<PenLine size={15}/>}>
+              {groupByDate(approvedSelf).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={"#0F766E"}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}/>)}</Card></div>)}
             </CollapsibleSection>}
           </>;
         })()}
@@ -3984,7 +4072,7 @@ function ShareFinalModal({c,copy,image,onClose}){
     </div>
   </div>;
 }
-function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,busy,onSelect,onRefine,onEditSave,channel,sentBack,isResend,image,onFixFeedback}){
+function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,busy,onSelect,onRefine,onEditSave,channel,sentBack,isResend,image,onFixFeedback,anySelected}){
   const[showWA,setShowWA]=useState(false);
   const[showPush,setShowPush]=useState(false);
   const isWAchan=/whatsapp/i.test(channel||"");
@@ -3997,8 +4085,8 @@ function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,
   ];
   const dc=dirColors[idx%dirColors.length];
   const[editMode,setEditMode]=useState(null); // null | "menu" | "steer" | "text"
-  const[open,setOpen]=useState(!!sel);
-  React.useEffect(()=>{if(sel)setOpen(true);},[sel]);
+  const[open,setOpen]=useState(sel||!anySelected);
+  React.useEffect(()=>{setOpen(sel||!anySelected);},[sel,anySelected]);
 
   return<div style={{
     border:`2px solid ${sel?C.purple:C.line}`,borderRadius:14,overflow:"hidden",
@@ -4011,15 +4099,21 @@ function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,
     </div>}
     {/* Direction tag — colour coded per option · click to expand/collapse */}
     <div onClick={()=>setOpen(v=>!v)}style={{background:sel?C.purple:dc.bg,padding:"8px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",userSelect:"none"}}>
-      <span style={{fontSize:11.5,fontWeight:700,color:sel?"#fff":dc.text,letterSpacing:.2}}>{o.direction}</span>
+      <span style={{fontSize:11.5,fontWeight:700,color:sel?"#fff":dc.text,letterSpacing:.2,flex:1,minWidth:0,...(open?{}:{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"})}}>{o.direction}</span>
       <span style={{display:"flex",alignItems:"center",gap:8}}>
         {sel&&<span style={{color:"#fff",fontSize:11,fontWeight:700,display:"flex",alignItems:"center",gap:4}}><CheckCircle2 size={12}/>Selected</span>}
         {open?<ChevronDown size={15}color={sel?"#fff":dc.text}/>:<ChevronRight size={15}color={sel?"#fff":dc.text}/>}
       </span>
     </div>
-    {!open&&<div onClick={()=>setOpen(true)}style={{padding:"9px 14px",cursor:"pointer",borderTop:`1px solid ${C.line}`,display:"flex",alignItems:"center",gap:8}}>
-      <span style={{fontSize:12.5,color:C.ink,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",flex:1}}>{((o.header||o.body||"").replace(/\s*\n\s*/g," ").trim())||"Tap to view copy"}</span>
-      {sentBack&&<span style={{fontSize:10,fontWeight:800,color:"#C2410C",background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:6,padding:"2px 7px",whiteSpace:"nowrap"}}>Revision needed</span>}
+    {!open&&<div onClick={()=>setOpen(true)}style={{padding:"10px 14px",cursor:"pointer",borderTop:`1px solid ${C.line}`}}>
+      <div style={{display:"flex",alignItems:"flex-start",gap:8}}>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:13,color:C.ink,fontWeight:700,lineHeight:1.35}}>{(o.header||"").trim()||<span style={{color:C.sub,fontWeight:500}}>No headline</span>}</div>
+          {o.body&&<div style={{fontSize:12.5,color:C.sub,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.body.replace(/\s*\n\s*/g," ").trim()}</div>}
+        </div>
+        {sentBack&&<span style={{fontSize:10,fontWeight:800,color:"#C2410C",background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:6,padding:"2px 7px",whiteSpace:"nowrap",flexShrink:0}}>Revision needed</span>}
+      </div>
+      <div style={{fontSize:10.5,color:C.sub,marginTop:5,display:"flex",alignItems:"center",gap:4,opacity:.85}}><ChevronDown size={11}/>Tap to expand full preview &amp; actions</div>
     </div>}
 
     {/* Copy preview */}
@@ -5340,7 +5434,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
 }
 
 function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedback,campaigns,onOpen,onDelete,onDuplicate,team}){
-  const allDesignRaw=(campaigns||[]).filter(c=>c.stage==="design"&&c.channel!=="Push notification"&&!isArchived(c));
+  const allDesignRaw=(campaigns||[]).filter(c=>c.stage==="design"&&(c.channel!=="Push notification"||c.data?.selfMade)&&!isArchived(c));
   const allDesign=isBusiness(me)?allDesignRaw.filter(c=>c.data?.selfMade):isDesignTeam(me)?allDesignRaw.filter(c=>!c.data?.selfMade):allDesignRaw;
   const[openId,setOpenId]=useState(null);
   const[imageModes,setImageModes]=useState({});
@@ -5460,7 +5554,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
         {c.data?.selfMade&&(()=>{
           const sf=d.selfFinal;
           const apr=d.selfApprovals||{};
-          const designReady=!!(d.finalFile||d.generatedImage||d.libraryPick||d.approvedPromptIdx!=null);
+          const designReady=isPushChannel(c.channel)||!!(d.finalFile||d.generatedImage||d.libraryPick||d.approvedPromptIdx!=null);
           const myr=normRole(me.role);
           const canDesignSignoff=myr==="design_lead"||myr==="super_admin"||myr==="admin";
           const canBrandSignoff=myr==="brand_lead"||myr==="super_admin"||myr==="admin";
@@ -5481,7 +5575,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
             <div style={{fontSize:12,fontWeight:800,color:"#6D28D9",textTransform:"uppercase",letterSpacing:.4,marginBottom:8,display:"flex",alignItems:"center",gap:6}}><PenLine size={13}/>Self-made asset · dual sign-off</div>
             {!sf
               ?<div>
-                <div style={{fontSize:12.5,color:C.sub,marginBottom:10,lineHeight:1.5}}>You're making this one yourself. When the design's ready, send it to <b>Anmol (Design Lead)</b> and <b>Ilena (Brand Lead)</b> — both must approve to finalize.</div>
+                <div style={{fontSize:12.5,color:C.sub,marginBottom:10,lineHeight:1.5}}>{isPushChannel(c.channel)?<>You're making this one yourself. A push notification needs no design — send the copy straight to <b>Anmol (Design Lead)</b> and <b>Ilena (Brand Lead)</b>. Both must approve to finalize.</>:<>You're making this one yourself. When the design's ready, send it to <b>Anmol (Design Lead)</b> and <b>Ilena (Brand Lead)</b> — both must approve to finalize.</>}</div>
                 <Btn onClick={sendForSignoff}disabled={!designReady}><CheckCircle2 size={14}/>Send for final sign-off</Btn>
                 {!designReady&&<div style={{fontSize:11.5,color:C.sub,marginTop:6}}>Build or upload the design above first.</div>}
               </div>
@@ -5500,8 +5594,8 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
         })()}
 
         {copyChangedAfterPrompts&&<div style={{display:"flex",alignItems:"center",gap:8,background:"#FEF3C7",border:"1px solid #FDE68A",borderRadius:8,padding:"8px 12px",marginBottom:12,fontSize:12.5,color:"#92400E",fontWeight:600}}><span>⚠️ Copy was updated after prompts were generated — regenerate prompts to match.</span></div>}
-        {/* Image source picker */}
-        {!imageMode&&<div style={{marginBottom:12}}>
+        {/* Image source picker — hidden for push (push needs no design) */}
+        {!isPushChannel(c.channel)&&!imageMode&&<div style={{marginBottom:12}}>
           <div style={{fontSize:12,fontWeight:700,color:C.sub,marginBottom:8}}>Choose image source</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
             <div onClick={()=>setImageMode("prompt")}style={{border:`2px solid ${C.line}`,borderRadius:12,padding:14,cursor:"pointer",textAlign:"center"}}>
@@ -5561,6 +5655,16 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
         {["design","admin"].includes(me.role)&&<div>
           <div style={{marginTop:14,marginBottom:6,fontSize:13,fontWeight:800,color:C.ink}}>Finish the design — two ways</div>
           <div style={{fontSize:12.5,color:C.sub,marginBottom:4}}>Either build it in the composer below, <b>or</b> upload your own design (file / link) at the bottom. You only need one.</div>
+          {!(d.finalFile||d.generatedImage||d.libraryPick||approvedPrompt)&&!d.pendingApproval&&!d.assetReview&&!d.finalReview&&<div style={{margin:"8px 0 4px",background:"#F8F9FA",border:`1px dashed ${C.line}`,borderRadius:10,padding:"10px 13px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+            <div style={{flex:1,minWidth:180,fontSize:12.5,color:C.sub,lineHeight:1.45}}>No image needed for this one? Skip design approval and send the copy straight to <b>final sign-off</b>.</div>
+            <Btn small variant="dark"onClick={()=>{
+              if(!window.confirm("Send to final sign-off with no design asset? This skips design approval."))return;
+              patch(c.id,{data:{...(c.data||{}),design:{...d,pendingApproval:false,assetReview:false,finalReview:true,noDesignNeeded:true}}});
+              api.post("/api/notify",{toRole:"head_marketing",campaignId:c.id,kind:"Final sign-off needed",body:(c.product||c.name||"An asset")+" — copy-only asset (no design needed), awaiting final sign-off."}).catch(()=>{});
+              api.post("/api/notify",{toRole:"cxo",campaignId:c.id,kind:"Final sign-off needed",body:(c.product||c.name||"An asset")+" — copy-only asset (no design needed), awaiting final sign-off."}).catch(()=>{});
+              if(typeof toast!=="undefined"&&toast)toast("Sent to final sign-off — no design needed","success");
+            }}>No design needed — send to final <ArrowRight size={13}/></Btn>
+          </div>}
           {isOpen&&copy&&<CreativeComposer c={c}copy={copy}me={me}patch={patch}d={d}approvedPrompt={approvedPrompt}promptRules={promptRules}toast={(typeof toast!=="undefined"?toast:null)}/>}
           {(approvedPrompt||d.libraryPick||d.finalFile)&&<FinalDesignUpload c={c}d={d}patch={patch}me={me}/>}
           {d.finalFile&&<div style={{marginTop:10,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:C.tealSoft,border:`1px solid ${C.teal}55`,borderRadius:10,padding:"10px 13px"}}>
