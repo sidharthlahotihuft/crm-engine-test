@@ -103,7 +103,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.27 · Brand image library now loads reliably at scale: the grid fetches metadata only and lazy-loads each thumbnail on demand, instead of bulk-loading every image's full data in one response (which exceeded the serverless response size cap once the library grew, leaving the grid blank). Includes v29.26 copy changes: per-channel length discipline (push title ≤40/hard-50 + body capped at 2 short flowing lines; WhatsApp/Email body ceilings), copy reads as complete flowing sentences not fragments, image copy is a crisp flowing line with the offer surfaced when present, crystal-clarity rule for offers/deadlines, tasteful emojis encouraged, shared COPY_SHAPE helper keeping both generators in sync, stronger M-hash/placeholder stripping (unicode-dash variants + empty brackets), standardised Image copy / Body copy labels everywhere, channel-aware analytics (Push = CTR only), and a business in-progress state after generating.";
+const BUILD="v29.30 · Clicking Generate/Regenerate now shows a clear circular progress state in the copy area (with a 'Regenerating copy…' message) and hides the old options while it runs, so it's obvious something is happening. Builds on v29.29 (send-again-for-approval after a send-back), v29.28 (library kind filter), v29.27 (library loads at scale) and v29.26 (copy length/flow/clarity rules, standardised labels, channel-aware analytics, business in-progress state).";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -1663,7 +1663,7 @@ function ReviewModal({c,me,kind,action,tab,onApprove,onSendBackDone,onEdit,onClo
       const r=reason.trim();
       if(isCopyGate){
         await api.post(`/api/campaigns/${c.id}/brand-reject`,{reason:r});
-        await api.put(`/api/campaigns/${c.id}`,{data:{...(c.data||{}),selectedCopyIdx:null,sentBack:true,lastRejectReason:r,sentBackBy:me.name,sentBackAt:new Date().toISOString()}}).catch(()=>{});
+        await api.put(`/api/campaigns/${c.id}`,{data:{...(c.data||{}),selectedCopyIdx:null,rejectedIdx:selIdx,sentBack:true,lastRejectReason:r,sentBackBy:me.name,sentBackAt:new Date().toISOString()}}).catch(()=>{});
       }else{
         await api.post(`/api/campaigns/${c.id}/comments`,{body:"Sent back: "+(r||"please revise"),context:ctx}).catch(()=>{});
       }
@@ -3315,6 +3315,7 @@ function ImageLibraryTab({me,toast}){
   const[uploading,setUploading]=useState([]); // [{name, status}]
   const[preview,setPreview]=useState(null);
   const[uploadKind,setUploadKind]=useState("product"); // product mockup | asset
+  const[viewKind,setViewKind]=useState("all");          // grid filter by kind
   const[uploadDims,setUploadDims]=useState("");        // optional packaging size, applies to this batch
   const fileRef=useRef(null);
   const folderRef=useRef(null);
@@ -3392,13 +3393,24 @@ function ImageLibraryTab({me,toast}){
       <input value={q}onChange={e=>onSearch(e.target.value)}placeholder="Search by product, tag, mood, category…"style={{width:"100%",border:`1.5px solid ${C.line}`,borderRadius:24,padding:"10px 16px 10px 38px",fontSize:14,boxSizing:"border-box",outline:"none"}}/>
     </div>
 
+    {/* Show / filter by kind */}
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+      <span style={{fontSize:11,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.4}}>Show</span>
+      {(()=>{const counts=(items||[]).reduce((m,i)=>{const k=["product","asset","mockup","logo"].includes(i.kind)?i.kind:"untagged";m[k]=(m[k]||0)+1;return m;},{});const all=(items||[]).length;
+        return [["all","All",all],["product","Product packshot",counts.product||0],["asset","Lifestyle / scene",counts.asset||0],["mockup","Mockup background",counts.mockup||0],["logo","Logo / lockup",counts.logo||0],["untagged","Untagged",counts.untagged||0]]
+          .filter(([k])=>k==="all"||k==="product"||k==="asset"||k==="mockup"||k==="logo"||(counts.untagged||0)>0)
+          .map(([k,lbl,n])=><button key={k}onClick={()=>setViewKind(k)}style={{padding:"6px 12px",fontSize:12,fontWeight:700,borderRadius:999,border:`1px solid ${viewKind===k?C.coral:C.line}`,background:viewKind===k?C.coral:"#fff",color:viewKind===k?"#fff":C.sub,cursor:"pointer"}}>{lbl} <span style={{opacity:.7}}>{n}</span></button>);
+      })()}
+    </div>
+
     {/* Grid */}
-    {items===null
+    {(()=>{const shown=viewKind==="all"?(items||[]):(items||[]).filter(i=>(["product","asset","mockup","logo"].includes(i.kind)?i.kind:"untagged")===viewKind);
+    return items===null
       ?<div style={{textAlign:"center",padding:40,color:C.sub}}><Loader2 size={24}style={{animation:"spin 1s linear infinite"}}/></div>
-      :items.length===0
-      ?<Card><Empty icon={<ImageIcon size={26}color={C.sub}/>}title={q?"No matches":"No images yet"}sub={q?"Try a different search term.":"Upload images and the engine will tag them automatically."}action={!q?<Btn onClick={()=>fileRef.current&&fileRef.current.click()}><UploadIcon size={15}/>Upload images</Btn>:null}/></Card>
+      :shown.length===0
+      ?<Card><Empty icon={<ImageIcon size={26}color={C.sub}/>}title={q?"No matches":viewKind!=="all"?"Nothing in this category":"No images yet"}sub={q?"Try a different search term.":viewKind!=="all"?"Switch to All, or upload images tagged with this kind.":"Upload images and the engine will tag them automatically."}action={!q&&viewKind==="all"?<Btn onClick={()=>fileRef.current&&fileRef.current.click()}><UploadIcon size={15}/>Upload images</Btn>:null}/></Card>
       :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:14}}>
-        {items.map(img=><div key={img.id}style={{border:`1px solid ${C.line}`,borderRadius:12,overflow:"hidden",background:"#fff"}}>
+        {shown.map(img=><div key={img.id}style={{border:`1px solid ${C.line}`,borderRadius:12,overflow:"hidden",background:"#fff"}}>
           <div onClick={()=>setPreview(img)}style={{aspectRatio:"4/3",background:"#F3F4F6",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
             {img.file_data?<img src={img.file_data}alt={img.description||""}style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<ImageThumb id={img.id}alt={img.description}/>}
           </div>
@@ -3415,7 +3427,7 @@ function ImageLibraryTab({me,toast}){
             {seesAll(me)&&<button onClick={()=>del(img.id)}style={{border:"none",background:"none",color:"#DC2626",fontSize:10.5,cursor:"pointer",padding:0,fontWeight:600}}>Delete</button>}
           </div>
         </div>)}
-      </div>}
+      </div>;})()}
 
     {/* Preview modal */}
     {preview&&<div onClick={()=>setPreview(null)}style={{position:"fixed",inset:0,background:"rgba(15,23,42,.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:20}}>
@@ -3508,7 +3520,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         await api.post(`/api/campaigns/${c.id}/brand-reject`,{reason});
         // Write the send-back reason + flag client-side too, so the reason banner + resend gate
         // work even on the older server (server already cleared selectedCopyIdx & set stage=content).
-        await api.put(`/api/campaigns/${c.id}`,{data:{...(c.data||{}),selectedCopyIdx:null,sentBack:true,lastRejectReason:reason,sentBackBy:me.name,sentBackAt:new Date().toISOString()}}).catch(()=>{});
+        await api.put(`/api/campaigns/${c.id}`,{data:{...(c.data||{}),selectedCopyIdx:null,rejectedIdx:sel,sentBack:true,lastRejectReason:reason,sentBackBy:me.name,sentBackAt:new Date().toISOString()}}).catch(()=>{});
         if(toast)toast("Sent back to the copy team","success");
         if(reload)await reload();setBusy(false);
       }catch(e){setErr(e.message||"Reject failed");setBusy(false);}
@@ -3566,10 +3578,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
     };
 
     const select=(idx)=>{
-      if(idx!==null&&c.data?.sentBack){
-        if(toast)toast("This was sent back — revise the copy (Regenerate, Steer, or Edit) before resending.","error");
-        return;
-      }
+      const wasSentBack=!!c.data?.sentBack;
       if(idx===null){
         patch(c.id,{data:{...(c.data||{}),selectedCopyIdx:null},stage:"content",copy_approver:null});
         if(toast)toast("Copy unselected — pick another option","success");
@@ -3577,14 +3586,14 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         // Self-made: skip the brand copy gate — lock the copy and move to sign-off.
         // Push has no design, so it goes straight to the dual sign-off (no design build needed).
         const isPush=isPushChannel(c.channel);
-        patch(c.id,{data:{...(c.data||{}),selectedCopyIdx:idx},stage:"design",copy_author:c.copy_author||me.name});
+        patch(c.id,{data:{...(c.data||{}),selectedCopyIdx:idx,sentBack:false},stage:"design",copy_author:c.copy_author||me.name});
         if(toast)toast(isPush?"Copy locked ✓ — push needs no design. Send it for final sign-off in the Design tab.":"Copy locked ✓ — now build the design in the Design tab","success");
         setFbPopup({stage:"content",after:()=>{setTab&&setTab("design");onOpen&&onOpen(c.id,"design");}});
       } else {
         // Every copy now goes to Ilena (brand) for review before design/done.
-        patch(c.id,{data:{...(c.data||{}),selectedCopyIdx:idx},stage:"brand_review",copy_approver:me.name,copy_author:c.copy_author||me.name});
-        api.post("/api/notify",{toRole:"brand_lead",campaignId:c.id,kind:"Copy needs approval",body:(c.product||c.name||"An asset")+" — copy submitted by "+((me&&me.name)||"the team")+". Please review/approve."}).catch(()=>{});
-        if(toast)toast("Copy selected ✓ — sent to brand review (Ilena)","success");
+        patch(c.id,{data:{...(c.data||{}),selectedCopyIdx:idx,sentBack:false},stage:"brand_review",copy_approver:me.name,copy_author:c.copy_author||me.name});
+        api.post("/api/notify",{toRole:"brand_lead",campaignId:c.id,kind:wasSentBack?"Copy re-submitted":"Copy needs approval",body:(c.product||c.name||"An asset")+" — copy "+(wasSentBack?"revised and re-submitted":"submitted")+" by "+((me&&me.name)||"the team")+". Please review/approve."}).catch(()=>{});
+        if(toast)toast(wasSentBack?"Sent again for approval ✓ — back with brand review (Ilena)":"Copy selected ✓ — sent to brand review (Ilena)","success");
         setFbPopup({stage:"content"});
       }
     };
@@ -3726,7 +3735,10 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
           <div style={{minWidth:0,flex:1}}>
             <div style={{fontSize:11,fontWeight:800,color:"#9A3412",textTransform:"uppercase",letterSpacing:.4}}>Revision needed{c.data.sentBackBy?" · from "+c.data.sentBackBy:""}</div>
             <div style={{fontSize:13.5,color:"#7C2D12",fontWeight:600,marginTop:3,lineHeight:1.45,whiteSpace:"pre-line"}}>{c.data.lastRejectReason||"See the copy comments below for the requested changes."}</div>
-            <div style={{fontSize:11.5,color:"#9A3412",marginTop:5}}>Revise the copy below — <b>Regenerate</b>, <b>Steer with AI</b>, or <b>Edit</b> — then the <b>Resend for approval</b> button unlocks.</div>
+            <div style={{fontSize:11.5,color:"#9A3412",marginTop:5}}>Revise the copy below — <b>Regenerate</b>, <b>Steer with AI</b>, or <b>Edit</b> — then send it again for approval. If you've already handled the feedback, you can send it again as-is.</div>
+            {opts&&opts.length>0&&<div style={{marginTop:10}}>
+              <Btn small onClick={()=>{const t=(c.data?.rejectedIdx!=null&&opts[c.data.rejectedIdx])?c.data.rejectedIdx:(sel!=null?sel:0);select(t);}}><RotateCcw size={13}/>Send again for approval</Btn>
+            </div>}
           </div>
         </div>}
         <BriefSummaryCard active={c}activeBrief={activeBrief}copyRules={copyRules}busy={busy}refineFor={refineFor}gen={gen}opts={opts}patch={patch}/>
@@ -3737,7 +3749,12 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         </div>}
         {!isBusiness(me)&&manualMode==="add"&&<ManualCopyForm initial={null}channel={c.channel}onSave={saveManual}onCancel={()=>setManualMode(null)}/>}
         {!opts&&!busy&&!manualMode&&<div style={{background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:10,padding:"12px 16px",marginBottom:10,display:"flex",alignItems:"center",gap:10}}><MessageSquare size={18}color="#B91C1C"/><div><div style={{fontSize:13,fontWeight:700,color:"#B91C1C"}}>No copy generated yet</div><div style={{fontSize:12,color:"#7F1D1D",marginTop:2}}>{isBusiness(me)?"Hit \"Generate options\" in the brief panel above and the team takes it from there.":"Hit \"Generate options\" in the brief panel above, or add copy manually."}</div></div></div>}
-        {opts&&isBusiness(me)&&<div style={{background:"#F0FDFA",border:`1.5px solid ${C.teal}`,borderRadius:12,padding:"18px 20px",marginBottom:10,display:"flex",alignItems:"flex-start",gap:13}}>
+        {busy&&!refineFor&&<div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12,padding:"44px 20px",background:C.paper,border:`1px solid ${C.line}`,borderRadius:12,marginBottom:10}}>
+          <Loader2 size={46}style={{animation:"spin 1s linear infinite",color:C.coral}}/>
+          <div style={{fontSize:14.5,fontWeight:800,color:C.ink}}>{opts?"Regenerating copy…":"Generating copy…"}</div>
+          <div style={{fontSize:12.5,color:C.sub,textAlign:"center",maxWidth:340,lineHeight:1.5}}>Writing {copyOptionCount(c.channel)} fresh {copyOptionCount(c.channel)===1?"option":"options"} that follow your rulebook. This usually takes a few seconds — please don't close this.</div>
+        </div>}
+        {opts&&isBusiness(me)&&!(busy&&!refineFor)&&<div style={{background:"#F0FDFA",border:`1.5px solid ${C.teal}`,borderRadius:12,padding:"18px 20px",marginBottom:10,display:"flex",alignItems:"flex-start",gap:13}}>
           <div style={{width:38,height:38,borderRadius:11,background:C.teal,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><ClockIcon size={20}/></div>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontWeight:800,fontSize:15,color:"#0F766E"}}>Copy generated — in progress</div>
@@ -3748,7 +3765,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
             </div>
           </div>
         </div>}
-        {opts&&!isBusiness(me)&&<div>
+        {opts&&!isBusiness(me)&&!(busy&&!refineFor)&&<div>
           {sel!=null&&<div style={{marginBottom:10}}>
             <div style={{fontSize:11,fontWeight:700,color:"#5B21B6",textTransform:"uppercase",letterSpacing:.5,marginBottom:6,display:"flex",alignItems:"center",gap:4}}><CheckCircle2 size={11}/>Approved copy</div>
             <ContentCard o={opts[sel]}idx={sel}sel={true}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}onFixFeedback={fixPerFeedback}onEditSave={editDirectly}channel={c.channel}anySelected={sel!=null}sentBack={c.data?.sentBack}isResend={!!c.data?.lastRejectReason}image={mockImage}/>
