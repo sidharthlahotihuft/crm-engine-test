@@ -44,7 +44,7 @@ const db = async (sql, params = []) => {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const uid = () => Math.random().toString(36).slice(2, 11);
 const safeJson = (s) => { try { return JSON.parse(s); } catch (e) { return null; } };
-const SERVER_BUILD = "server-v29.10 · brand-reject stores sentBack + lastRejectReason + sentBackBy in asset data (for the send-back reason banner & resend gate)";
+const SERVER_BUILD = "server-v29.12 · v29.11 alerts fix (admin sees all notifications) + /api/cron/daily-digest endpoint (per-user task email; CRON_SECRET-gated, SMTP-optional)";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -837,10 +837,13 @@ async function notify({ toRole, toUserIds, campaignId, kind, body, url }) {
 }
 app.get("/api/notifications", authMiddleware, async (req, res) => {
   try {
-    const rows = await db(
-      `SELECT * FROM notifications WHERE to_user_id=$1 OR to_role=ANY($2) ORDER BY created_at DESC LIMIT 100`,
-      [req.user.id, roleEquivList(req.user.role)]
-    );
+    const isAdmin = normRole(req.user.role) === "super_admin" || req.user.role === "admin";
+    const rows = isAdmin
+      ? await db(`SELECT * FROM notifications ORDER BY created_at DESC LIMIT 100`)
+      : await db(
+          `SELECT * FROM notifications WHERE to_user_id=$1 OR to_role=ANY($2) ORDER BY created_at DESC LIMIT 100`,
+          [req.user.id, roleEquivList(req.user.role)]
+        );
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -850,7 +853,9 @@ app.post("/api/notifications/:id/read", authMiddleware, async (req, res) => {
 });
 app.post("/api/notifications/read-all", authMiddleware, async (req, res) => {
   try {
-    await db(`UPDATE notifications SET read=true WHERE to_user_id=$1 OR to_role=ANY($2)`,
+    const isAdmin = normRole(req.user.role) === "super_admin" || req.user.role === "admin";
+    if (isAdmin) await db(`UPDATE notifications SET read=true`);
+    else await db(`UPDATE notifications SET read=true WHERE to_user_id=$1 OR to_role=ANY($2)`,
       [req.user.id, roleEquivList(req.user.role)]);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -860,6 +865,56 @@ app.post("/api/notify", authMiddleware, async (req, res) => {
     const { toRole, toUserIds, campaignId, kind, body, url } = req.body || {};
     const made = await notify({ toRole, toUserIds, campaignId, kind, body, url });
     res.json({ ok: true, created: made.length, emailConfigured: !!getMailer() });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Daily team digest (cron) ──────────────────────────────────────────
+// Emails every user the actions still waiting on them. Idempotent & safe to
+// call repeatedly. Schedule once/day via Vercel Cron or Supabase pg_cron.
+// Protect with CRON_SECRET env: header  x-cron-secret: <secret>  (or ?key=<secret>).
+// No-ops silently if SMTP isn't configured. No schema change.
+app.get("/api/cron/daily-digest", async (req, res) => {
+  try {
+    const secret = process.env.CRON_SECRET;
+    const bearer = (req.get("authorization") || "").replace(/^Bearer\s+/i, "");
+    if (secret && req.get("x-cron-secret") !== secret && req.query.key !== secret && bearer !== secret)
+      return res.status(401).json({ error: "unauthorized" });
+    if (!getMailer()) return res.json({ ok: true, sent: 0, note: "SMTP not configured — no emails sent" });
+
+    const users = await db(`SELECT id,name,email,role,approval_slots FROM users WHERE email IS NOT NULL AND email <> ''`);
+    const rawCamps = await db(`SELECT id,name,product,stage,data FROM campaigns`);
+    const camps = rawCamps.map(c => {
+      const d = c.data ? (typeof c.data === "string" ? JSON.parse(c.data) : c.data) : {};
+      return { label: c.product || c.name || "Untitled", stage: c.stage, d };
+    }).filter(c => c.stage !== "done" && !c.d.archived);
+
+    const APP = process.env.APP_URL || "https://crm-engine-test.vercel.app";
+    const CAP = 40;
+    let sent = 0;
+    for (const u of users) {
+      const role = normRole(u.role);
+      const isAdmin = role === "super_admin" || u.role === "admin";
+      const slots = Array.isArray(u.approval_slots) ? u.approval_slots : [];
+      const holds = (s) => isAdmin || slots.includes(s);
+      const tasks = [];
+
+      if (role === "business") camps.filter(c => c.stage === "brief" && !c.d.brief).forEach(c => tasks.push("Write the brief — " + c.label));
+      if (role === "brand_team") camps.filter(c => c.stage === "content" && !(c.d.copyOptions && c.d.selectedCopyIdx != null)).forEach(c => tasks.push("Write copy — " + c.label));
+      if (role === "design_team" || role === "design_lead") camps.filter(c => c.stage === "design" && !(c.d.design && (c.d.design.approvedPromptIdx != null || c.d.design.libraryPick || c.d.design.pendingApproval))).forEach(c => tasks.push("Build the design — " + c.label));
+      if (holds("copy")) camps.filter(c => c.stage === "brand_review").forEach(c => tasks.push("Approve copy — " + c.label));
+      if (holds("design")) camps.filter(c => c.stage === "design" && c.d.design && c.d.design.pendingApproval).forEach(c => tasks.push("Approve design — " + c.label));
+      if (holds("asset")) camps.filter(c => c.stage === "design" && c.d.design && c.d.design.assetReview).forEach(c => tasks.push("Approve full asset — " + c.label));
+      if (holds("final")) camps.filter(c => c.stage === "design" && c.d.design && c.d.design.finalReview).forEach(c => tasks.push("Final sign-off — " + c.label));
+
+      const uniq = [...new Set(tasks)];
+      if (!uniq.length) continue;
+      const shown = uniq.slice(0, CAP);
+      const extra = uniq.length - shown.length;
+      const body = "Hi " + (u.name || "there") + ",\n\nHere's what's waiting on you in the HUFT Creative Engine today:\n\n• " + shown.join("\n• ") + (extra > 0 ? "\n• …and " + extra + " more" : "") + "\n\nOpen the CRM: " + APP + "\n\n— HUFT Creative Engine";
+      try { await sendEmail(u.email, "[HUFT CRM] Your tasks today (" + uniq.length + ")", body); sent++; }
+      catch (e) { console.error("digest email failed for", u.email, e.message); }
+    }
+    res.json({ ok: true, users: users.length, sent });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
