@@ -106,7 +106,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.50 · Fixed the Composer closing on its own. Cause: DesignRow was defined inline inside DesignTab, so every background poll (notifications 45s, and now the Requests count 60s that v29.49 re-enabled) re-rendered DesignTab, gave DesignRow a new identity, and React remounted its whole subtree — including the open Composer — resetting its state. Same fix as the copy editor (v29.33): DesignRow is now a stable ref-created component fed fresh values via a ctx prop, so polls no longer remount it. The Composer (and its editor) now stays open. Builds on v29.49 (role-gate fix), v29.48 (product-exact compositing).";
+const BUILD="v29.51 · Fixed the Composer auto-picking a random product. The matcher split the brief product into words and matched any library item containing one — but it kept the brand word 'huft', which is in every product name, so a service brief like 'HUFT Spa / Grooming' grabbed the first HUFT product it found (e.g. a treats pouch). Now brand + generic words (huft, sara, meowsi, spa, grooming, dog, treat, pack, etc.) are stripped before matching, and if nothing product-specific remains, nothing is auto-picked — so service/offer posts come through clean with no stray product. Builds on v29.50 (composer stays open), v29.48 (product-exact).";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -4744,10 +4744,14 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   React.useEffect(()=>{
     if(autoPickedRef.current||!productItems.length||!(c&&c.product))return;
     if(products.some(p=>p.id))return; // user already picked something
-    const want=String(c.product||"").toLowerCase();
-    const norm=s=>String(s||"").toLowerCase();
-    const match=productItems.find(i=>{const n=norm(i.product);return n&&(want.includes(n)||n.includes(want));})
-              ||productItems.find(i=>{const n=norm(i.product);return n&&want.split(/\s+/).some(w=>w.length>3&&n.includes(w));});
+    const want=String(c.product||"").toLowerCase().trim();
+    const norm=s=>String(s||"").toLowerCase().trim();
+    // Brand + generic words appear in almost every product name — never auto-pick on these alone,
+    // otherwise a service brief like "HUFT Spa / Grooming" matches the first HUFT product it finds.
+    const STOP=new Set(["huft","sara","saras","meowsi","spa","grooming","groom","vet","training","train","walk","walking","boarding","care","consult","session","service","for","the","and","with","your","you","pet","pets","dog","dogs","cat","cats","puppy","kitten","food","foods","treat","treats","family","new","off","sale","combo","pack","kg","gms","gram"]);
+    const words=want.split(/[^a-z0-9]+/).filter(w=>w.length>3&&!STOP.has(w));
+    const match=productItems.find(i=>{const n=norm(i.product);return n&&n.length>2&&(want.includes(n)||n.includes(want));})
+              ||(words.length?productItems.find(i=>{const n=norm(i.product);return n&&words.some(w=>n.includes(w));}):null);
     if(match){autoPickedRef.current=true;setProducts(ps=>{const a=[...ps];a[0]={...(a[0]||{pid:nextPid(),scale:0.5,x:0.5,y:0.62}),id:match.id};return a;});}
   },[productItems,c&&c.product]);
   const[finalSaving,setFinalSaving]=useState(false);
