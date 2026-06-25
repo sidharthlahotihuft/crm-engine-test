@@ -16,6 +16,8 @@ const PORT = process.env.PORT || 8080;
 const JWT_SECRET = process.env.JWT_SECRET || "huft-crm-dev-secret-change-in-prod";
 
 app.use(express.json({ limit: "25mb" }));
+// gzip responses (the image backfill compresses ~70%). Guarded: no-ops until `npm i compression`.
+try { app.use(require("compression")()); } catch (e) { console.warn("compression not installed — run: npm i compression"); }
 app.use(express.static(path.join(__dirname, "public"), {
   setHeaders: (res, filePath) => {
     // Never let the browser/CDN serve a stale index.html after a deploy.
@@ -44,7 +46,7 @@ const db = async (sql, params = []) => {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const uid = () => Math.random().toString(36).slice(2, 11);
 const safeJson = (s) => { try { return JSON.parse(s); } catch (e) { return null; } };
-const SERVER_BUILD = "server-v29.12 · v29.11 alerts fix (admin sees all notifications) + /api/cron/daily-digest endpoint (per-user task email; CRON_SECRET-gated, SMTP-optional)";
+const SERVER_BUILD = "v29.15 · brand-reject no longer inserts a duplicate Sent back comment when a reason is given (the reason already shows in the writer Revision needed banner); a thread breadcrumb is added only when no reason was typed. Notification still includes the reason.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -475,12 +477,45 @@ app.get("/api/campaigns", authMiddleware, async (req, res) => {
         c.updated_at DESC
     `);
     const parse = (v, fb) => v == null ? fb : (typeof v === "string" ? (()=>{try{return JSON.parse(v);}catch{return fb;}})() : v);
+    // Keep the list response light: drop heavy base64 image blobs (they're
+    // backfilled by /api/campaign-images after first paint). Markers tell the UI an image exists.
+    const stripImages = (d) => {
+      if (!d || typeof d !== "object") return d;
+      const out = { ...d };
+      if (out.design && typeof out.design === "object") {
+        const dz = { ...out.design };
+        if (dz.finalFile && dz.finalFile.dataUrl) { dz.finalFile = { ...dz.finalFile, dataUrl: undefined, _stripped: true }; dz._hasFinal = true; }
+        if (dz.generatedImage) { dz.generatedImage = undefined; dz._hasGenerated = true; }
+        if (Array.isArray(dz.refImages) && dz.refImages.length) { dz._refCount = dz.refImages.length; dz.refImages = []; }
+        out.design = dz;
+      }
+      return out;
+    };
     res.json(rows.map(r => ({
       ...r,
-      data: parse(r.data, {}),
+      data: stripImages(parse(r.data, {})),
       rtbs: parse(r.rtbs, []),
       references: parse(r.references, []),
     })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Image backfill — returns only the heavy base64 fields, fetched in the background
+// after the (now slim) campaigns list, so initial load paints fast.
+app.get("/api/campaign-images", authMiddleware, async (req, res) => {
+  try {
+    const rows = await db(`SELECT id, data FROM campaigns`);
+    const parse = (v) => v == null ? {} : (typeof v === "string" ? (()=>{try{return JSON.parse(v);}catch{return {};}})() : v);
+    const out = [];
+    for (const r of rows) {
+      const dz = (parse(r.data).design) || {};
+      const img = {};
+      if (dz.finalFile && dz.finalFile.dataUrl) img.finalFile = dz.finalFile;
+      if (dz.generatedImage) img.generatedImage = dz.generatedImage;
+      if (Array.isArray(dz.refImages) && dz.refImages.length) img.refImages = dz.refImages;
+      if (Object.keys(img).length) out.push({ id: r.id, design: img });
+    }
+    res.json(out);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -755,17 +790,18 @@ app.post("/api/campaigns/:id/brand-reject", authMiddleware, roles("brand", "admi
       [req.params.id, reason, req.user.name || "", new Date().toISOString()]
     );
     if (!rows.length) return res.status(409).json({ error: "Campaign is not awaiting brand review." });
-    // Always log a visible send-back note for the copy team (generic if no reason given)
-    const note = reason
-      ? ("Sent back: " + reason)
-      : "Sent back to copy for changes — see comments above.";
-    await db(
-      `INSERT INTO comments (campaign_id, context, body, author_id, author_name, author_role)
-       VALUES ($1,'copy',$2,$3,$4,$5)`,
-      [req.params.id, note, req.user.id, req.user.name, req.user.role]
-    );
+    // The reason is already surfaced to the writer in the "Revision needed" banner
+    // (stored as lastRejectReason). Only drop a thread breadcrumb when NO reason was
+    // typed, so the same text isn't echoed twice. Notify either way.
+    if (!reason) {
+      await db(
+        `INSERT INTO comments (campaign_id, context, body, author_id, author_name, author_role)
+         VALUES ($1,'copy',$2,$3,$4,$5)`,
+        [req.params.id, "Sent back to copy for changes — see comments above.", req.user.id, req.user.name, req.user.role]
+      );
+    }
     notify({ toRole: "brand_team", campaignId: req.params.id, kind: "Copy sent back",
-      body: (rows[0].product || rows[0].name || "An asset") + " — " + note });
+      body: (rows[0].product || rows[0].name || "An asset") + " — " + (reason ? ("Sent back: " + reason) : "Sent back for changes") });
     res.json(rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -882,11 +918,23 @@ app.get("/api/cron/daily-digest", async (req, res) => {
     if (!getMailer()) return res.json({ ok: true, sent: 0, note: "SMTP not configured — no emails sent" });
 
     const users = await db(`SELECT id,name,email,role,approval_slots FROM users WHERE email IS NOT NULL AND email <> ''`);
-    const rawCamps = await db(`SELECT id,name,product,stage,data FROM campaigns`);
+    const rawCamps = await db(`SELECT id,name,product,stage,data,tat_brief_due,tat_content_due,tat_design_due FROM campaigns`);
     const camps = rawCamps.map(c => {
       const d = c.data ? (typeof c.data === "string" ? JSON.parse(c.data) : c.data) : {};
-      return { label: c.product || c.name || "Untitled", stage: c.stage, d };
+      return { label: c.product || c.name || "Untitled", stage: c.stage, d,
+               tat_brief_due: c.tat_brief_due, tat_content_due: c.tat_content_due, tat_design_due: c.tat_design_due };
     }).filter(c => c.stage !== "done" && !c.d.archived);
+
+    const now = new Date();
+    const startToday = new Date(now); startToday.setHours(0,0,0,0);
+    const endToday = new Date(now); endToday.setHours(23,59,59,999);
+    const dueFlag = (c, field) => {
+      const v = c[field]; const due = v ? new Date(v) : null;
+      if (!due || isNaN(due.getTime())) return { rank: 2, prefix: "" };
+      if (due < startToday) return { rank: 0, prefix: "[OVERDUE] " };
+      if (due <= endToday)  return { rank: 1, prefix: "[TODAY] " };
+      return { rank: 2, prefix: "" };
+    };
 
     const APP = process.env.APP_URL || "https://crm-engine-test.vercel.app";
     const CAP = 40;
@@ -897,21 +945,26 @@ app.get("/api/cron/daily-digest", async (req, res) => {
       const slots = Array.isArray(u.approval_slots) ? u.approval_slots : [];
       const holds = (s) => isAdmin || slots.includes(s);
       const tasks = [];
+      const add = (label, c, field) => { const f = dueFlag(c, field); tasks.push({ rank: f.rank, text: f.prefix + label + " — " + c.label }); };
 
-      if (role === "business") camps.filter(c => c.stage === "brief" && !c.d.brief).forEach(c => tasks.push("Write the brief — " + c.label));
-      if (role === "brand_team") camps.filter(c => c.stage === "content" && !(c.d.copyOptions && c.d.selectedCopyIdx != null)).forEach(c => tasks.push("Write copy — " + c.label));
-      if (role === "design_team" || role === "design_lead") camps.filter(c => c.stage === "design" && !(c.d.design && (c.d.design.approvedPromptIdx != null || c.d.design.libraryPick || c.d.design.pendingApproval))).forEach(c => tasks.push("Build the design — " + c.label));
-      if (holds("copy")) camps.filter(c => c.stage === "brand_review").forEach(c => tasks.push("Approve copy — " + c.label));
-      if (holds("design")) camps.filter(c => c.stage === "design" && c.d.design && c.d.design.pendingApproval).forEach(c => tasks.push("Approve design — " + c.label));
-      if (holds("asset")) camps.filter(c => c.stage === "design" && c.d.design && c.d.design.assetReview).forEach(c => tasks.push("Approve full asset — " + c.label));
-      if (holds("final")) camps.filter(c => c.stage === "design" && c.d.design && c.d.design.finalReview).forEach(c => tasks.push("Final sign-off — " + c.label));
+      if (role === "business") camps.filter(c => c.stage === "brief" && !c.d.brief).forEach(c => add("Write the brief", c, "tat_brief_due"));
+      if (role === "brand_team") camps.filter(c => c.stage === "content" && !(c.d.copyOptions && c.d.selectedCopyIdx != null)).forEach(c => add("Write copy", c, "tat_content_due"));
+      if (role === "design_team" || role === "design_lead") camps.filter(c => c.stage === "design" && !(c.d.design && (c.d.design.approvedPromptIdx != null || c.d.design.libraryPick || c.d.design.pendingApproval))).forEach(c => add("Build the design", c, "tat_design_due"));
+      if (holds("copy")) camps.filter(c => c.stage === "brand_review").forEach(c => add("Approve copy", c, "tat_content_due"));
+      if (holds("design")) camps.filter(c => c.stage === "design" && c.d.design && c.d.design.pendingApproval).forEach(c => add("Approve design", c, "tat_design_due"));
+      if (holds("asset")) camps.filter(c => c.stage === "design" && c.d.design && c.d.design.assetReview).forEach(c => add("Approve full asset", c, "tat_design_due"));
+      if (holds("final")) camps.filter(c => c.stage === "design" && c.d.design && c.d.design.finalReview).forEach(c => add("Final sign-off", c, "tat_design_due"));
 
-      const uniq = [...new Set(tasks)];
+      const seen = new Set();
+      const uniq = tasks.filter(t => (seen.has(t.text) ? false : (seen.add(t.text), true))).sort((a, b) => a.rank - b.rank);
       if (!uniq.length) continue;
-      const shown = uniq.slice(0, CAP);
+      const overdue = uniq.filter(t => t.rank === 0).length;
+      const today = uniq.filter(t => t.rank === 1).length;
+      const shown = uniq.slice(0, CAP).map(t => t.text);
       const extra = uniq.length - shown.length;
-      const body = "Hi " + (u.name || "there") + ",\n\nHere's what's waiting on you in the HUFT Creative Engine today:\n\n• " + shown.join("\n• ") + (extra > 0 ? "\n• …and " + extra + " more" : "") + "\n\nOpen the CRM: " + APP + "\n\n— HUFT Creative Engine";
-      try { await sendEmail(u.email, "[HUFT CRM] Your tasks today (" + uniq.length + ")", body); sent++; }
+      const head = (overdue || today) ? ("You have " + (overdue ? overdue + " overdue" : "") + (overdue && today ? " and " : "") + (today ? today + " due today" : "") + ".\n\n") : "";
+      const body = "Hi " + (u.name || "there") + ",\n\n" + head + "Here's what's waiting on you in the HUFT Creative Engine:\n\n• " + shown.join("\n• ") + (extra > 0 ? "\n• …and " + extra + " more" : "") + "\n\nOpen the CRM: " + APP + "\n\n— HUFT Creative Engine";
+      try { await sendEmail(u.email, "[HUFT CRM] Your tasks today (" + uniq.length + (overdue ? ", " + overdue + " overdue" : "") + ")", body); sent++; }
       catch (e) { console.error("digest email failed for", u.email, e.message); }
     }
     res.json({ ok: true, users: users.length, sent });
