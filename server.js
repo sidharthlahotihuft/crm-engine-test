@@ -46,7 +46,7 @@ const db = async (sql, params = []) => {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const uid = () => Math.random().toString(36).slice(2, 11);
 const safeJson = (s) => { try { return JSON.parse(s); } catch (e) { return null; } };
-const SERVER_BUILD = "v29.45s · Per-content-type LLM routing on /api/generate: requests tagged kind='copy' use Anthropic (Claude), kind='brief' use Gemini, anything else uses the env default (LLM_PROVIDER or Gemini). Images always use Gemini. If a chosen provider's key is missing, it falls back to the other available provider. Needs a valid ANTHROPIC_API_KEY for copy. Also includes the design-reject endpoint (design lead sends a design back to the team with a reason).";
+const SERVER_BUILD = "v29.54s · Approval chain: Ilena's full-asset approval (asset-approve) is now the FINAL gate — it sets the asset live (stage='done', went_live_at) and notifies HMO + CXO + business for oversight, instead of opening a separate final sign-off. design-approve also notifies HMO + CXO for oversight when Anmol approves. (final-approve endpoint kept for any legacy items but is no longer reached in the normal flow.) Also: per-content-type LLM routing on /api/generate (copy→Claude, brief→Gemini, else default; images→Gemini; falls back if a key is missing) and the design-reject endpoint.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -1013,6 +1013,10 @@ app.post("/api/campaigns/:id/design-approve", authMiddleware, async (req, res) =
     const prod = cur[0].product || cur[0].name || "An asset";
     notify({ toRole: "brand_lead", campaignId: req.params.id, kind: "Full asset needs review",
       body: prod + " — design approved by " + req.user.name + ". Ready for full-asset sign-off." });
+    notify({ toRole: "head_marketing", campaignId: req.params.id, kind: "Asset in approval (oversight)",
+      body: prod + " — design approved by " + req.user.name + "; Ilena is finalising the full asset. For your oversight." });
+    notify({ toRole: "cxo", campaignId: req.params.id, kind: "Asset in approval (oversight)",
+      body: prod + " — design approved; full-asset sign-off in progress. For your oversight." });
     res.json(rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1034,20 +1038,22 @@ app.post("/api/campaigns/:id/design-reject", authMiddleware, async (req, res) =>
     res.json(rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
-// Full-asset gate — Ilena (asset slot). → final sign-off (HoM/CXO).
+// Full-asset gate — Ilena (asset slot). Her approval is the final gate → live. HoM/CXO are oversight only.
 app.post("/api/campaigns/:id/asset-approve", authMiddleware, async (req, res) => {
   try {
     if (!(await userHoldsSlot(req.user, "asset"))) return res.status(403).json({ error: "You don't hold the full-asset-approval slot." });
     const cur = await db(`SELECT * FROM campaigns WHERE id=$1`, [req.params.id]);
     if (!cur.length) return res.status(404).json({ error: "Not found" });
     const { data } = mergeGates(cur[0], { asset: { by: req.user.name, at: new Date().toISOString() } });
-    const d2 = { ...data, design: { ...(data.design || {}), assetReview: false, finalReview: true } };
-    const rows = await db(`UPDATE campaigns SET data=$1 WHERE id=$2 RETURNING *`, [JSON.stringify(d2), req.params.id]);
+    const d2 = { ...data, design: { ...(data.design || {}), assetReview: false, finalReview: false } };
+    const rows = await db(`UPDATE campaigns SET data=$1, stage='done', went_live_at=NOW() WHERE id=$2 RETURNING *`, [JSON.stringify(d2), req.params.id]);
     const prod = cur[0].product || cur[0].name || "An asset";
-    notify({ toRole: "head_marketing", campaignId: req.params.id, kind: "Final sign-off needed",
-      body: prod + " — full asset approved by " + req.user.name + ". Awaiting final sign-off." });
-    notify({ toRole: "cxo", campaignId: req.params.id, kind: "Final sign-off needed",
-      body: prod + " — awaiting final sign-off." });
+    notify({ toRole: "head_marketing", campaignId: req.params.id, kind: "Asset live (oversight)",
+      body: prod + " — full asset approved by " + req.user.name + " and now live. For your oversight." });
+    notify({ toRole: "cxo", campaignId: req.params.id, kind: "Asset live (oversight)",
+      body: prod + " — approved by " + req.user.name + " and now live. For your oversight." });
+    notify({ toRole: "business", campaignId: req.params.id, kind: "Asset finalized",
+      body: prod + " — finalized and ready." });
     res.json(rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
