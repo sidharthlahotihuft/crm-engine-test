@@ -103,7 +103,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.11.2 · library images show again (load with data in one request, no per-thumb fetch storm); each of the 5 copy options gets its own WhatsApp/notification Preview; preview mockups now have a clear Close button; Steer-with-AI shows a Steering… overlay on the card so you know it is working. Carries Share→Brand Lead, alerts fix (needs server-v29.11)";
+const BUILD="v29.13 · Brand Lead now notified (in-app + email) the moment copy is sent for approval. Clearer people on every Copy & Design card (Brief / Copy / Design chips — design person from design_approver, falling back to the design lead). Copy & Design groups (Needs attention / Pending brand approval / Brand approved / Image selected) are now big monday.com-style collapsible headers with count pills. Archived assets excluded from dashboard in-progress & pending-report counts (lists already excluded them).";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -240,12 +240,17 @@ function WhoChips({c,me,team}){
   if(!c)return null;
   const raised=c.created_by_name;
   const writer=c.copy_author;
+  const designerActual=c.design_approver;
+  const designLead=slotHolders(team,"design").join(", ");
+  const designer=designerActual||designLead;
+  const designerIsLead=!designerActual&&!!designLead;
   const w=waitingOn(c,team);
   const chip=(bg,fg,icon,txt)=><span style={{display:"inline-flex",alignItems:"center",gap:3,fontSize:10.5,fontWeight:700,color:fg,background:bg,padding:"2px 8px",borderRadius:999,whiteSpace:"nowrap"}}>{icon}{txt}</span>;
-  if(!raised&&!writer&&!w)return null;
+  if(!raised&&!writer&&!designer&&!w)return null;
   return<div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginTop:4}}>
-    {raised&&chip("#F1F5F9","#475569",<Users size={10}/>,"Raised by "+raised)}
-    {writer&&chip("#EDE9FE","#6D28D9",<PenLine size={10}/>,"Writer: "+writer)}
+    {raised&&chip("#F1F5F9","#475569",<Users size={10}/>,"Brief: "+raised)}
+    {writer&&chip("#EDE9FE","#6D28D9",<PenLine size={10}/>,"Copy: "+writer)}
+    {designer&&chip("#E0F2FE","#0369A1",<Palette size={10}/>,"Design: "+designer+(designerIsLead?" (lead)":""))}
     {w&&chip("#FEF3C7","#92400E",<ClockIcon size={10}/>,w.label+(w.by?" · "+w.by:""))}
   </div>;
 }
@@ -292,6 +297,21 @@ const DateGroupHeader=({date,count,color=C.coral})=><div style={{padding:"8px 18
   <span style={{fontSize:11,fontWeight:700,color,textTransform:"uppercase",letterSpacing:.5}}>{date}</span>
   <span style={{fontSize:11,color:C.sub,fontWeight:600}}>{count} asset{count!==1?"s":""}</span>
 </div>;
+
+// monday.com-style big collapsible group header (used by Copy & Design tabs)
+const CollapsibleSection=({title,count,color=C.purple,icon,children,defaultOpen=true})=>{
+  const[open,setOpen]=React.useState(defaultOpen);
+  return<div style={{marginBottom:18}}>
+    <div onClick={()=>setOpen(o=>!o)}
+      style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",userSelect:"none",padding:"11px 14px",borderRadius:11,background:C.white,border:`1px solid ${C.line}`,borderLeft:`4px solid ${color}`,marginBottom:open?12:0,boxShadow:"0 1px 2px rgba(16,24,40,.05)"}}>
+      <span style={{display:"inline-flex",transition:"transform .15s ease",transform:open?"rotate(90deg)":"rotate(0deg)"}}><ChevronRight size={18}color={color}/></span>
+      {icon&&<span style={{display:"inline-flex",color}}>{icon}</span>}
+      <span style={{fontSize:15.5,fontWeight:800,color:C.ink,letterSpacing:.2}}>{title}</span>
+      <span style={{fontSize:12,fontWeight:800,color:C.white,background:color,padding:"2px 11px",borderRadius:999,minWidth:24,textAlign:"center",lineHeight:1.6}}>{count}</span>
+    </div>
+    {open&&<div>{children}</div>}
+  </div>;
+};
 
 /* ===== TAT + Calendar helpers =========================================== */
 const TAT_HOURS={brief:24,content:48,design:48}; // target hours per stage
@@ -1302,7 +1322,7 @@ function MonthlyPrompt({me,campaigns,onClose}){
 
   // Last week — prompt content/design to close out campaigns
   if(isLastWeek&&(isBrandTeam(me)||isDesignTeam(me)||seesAll(me))){
-    const inProgress=campaigns.filter(c=>c.stage!=="done").length;
+    const inProgress=campaigns.filter(c=>c.stage!=="done"&&!isArchived(c)).length;
     if(!inProgress)return null;
     return<div style={{position:"fixed",inset:0,background:"rgba(15,18,30,.5)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}}>
       <div style={{background:"#fff",borderRadius:18,padding:28,maxWidth:420,width:"90%",boxShadow:"0 20px 60px rgba(0,0,0,.25)"}}>
@@ -1323,7 +1343,7 @@ function MonthlyPrompt({me,campaigns,onClose}){
 
   // First week — prompt business team to upload reports
   if(isFirstWeek&&(isBusiness(me)||seesAll(me))){
-    const doneWithoutReport=campaigns.filter(c=>c.stage==="done"&&!c.has_report).length;
+    const doneWithoutReport=campaigns.filter(c=>c.stage==="done"&&!c.has_report&&!isArchived(c)).length;
     if(!doneWithoutReport)return null;
     return<div style={{position:"fixed",inset:0,background:"rgba(15,18,30,.5)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}}>
       <div style={{background:"#fff",borderRadius:18,padding:28,maxWidth:420,width:"90%",boxShadow:"0 20px 60px rgba(0,0,0,.25)"}}>
@@ -1536,17 +1556,108 @@ function CalendarView({campaigns,onOpen,filterStage}){
   </div>;
 }
 
+function ReviewModal({c,me,kind,action,tab,onApprove,onSendBackDone,onEdit,onClose}){
+  const brief=c.data?.brief||{};
+  const opts=c.data?.copyOptions;
+  const selIdx=c.data?.selectedCopyIdx;
+  const copy=opts&&selIdx!=null?opts[selIdx]:(opts&&opts.length?opts[0]:null);
+  const design=c.data?.design||{};
+  const img=design.finalFile?.dataUrl||design.generatedImage||null;
+  const isCopyGate=action==="copy";
+  const ctx=action==="copy"?"copy":action==="design"?"design":"final";
+  const[mode,setMode]=useState(null);
+  const[reason,setReason]=useState("");
+  const[busy,setBusy]=useState("");
+  const[showWA,setShowWA]=useState(false);
+  const[showPush,setShowPush]=useState(false);
+  const isWA=/whatsapp/i.test(c.channel||"");
+  const isPushC=isPushChannel(c.channel);
+  const doApprove=async()=>{setBusy("approve");try{await onApprove();onClose();}catch(e){setBusy("");alert(e.message||"Approve failed");}};
+  const doSendBack=async()=>{
+    setBusy("send");
+    try{
+      const r=reason.trim();
+      if(isCopyGate){
+        await api.post(`/api/campaigns/${c.id}/brand-reject`,{reason:r});
+        await api.put(`/api/campaigns/${c.id}`,{data:{...(c.data||{}),selectedCopyIdx:null,sentBack:true,lastRejectReason:r,sentBackBy:me.name,sentBackAt:new Date().toISOString()}}).catch(()=>{});
+      }else{
+        await api.post(`/api/campaigns/${c.id}/comments`,{body:"Sent back: "+(r||"please revise"),context:ctx}).catch(()=>{});
+      }
+      if(onSendBackDone)await onSendBackDone();
+      onClose();
+    }catch(e){setBusy("");alert(e.message||"Send back failed");}
+  };
+  const Field=({label,children})=>children?<div style={{marginBottom:7}}><div style={{fontSize:9.5,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.4}}>{label}</div><div style={{fontSize:12.5,color:C.ink,lineHeight:1.45,marginTop:1}}>{children}</div></div>:null;
+  return<div onClick={onClose}style={{position:"fixed",inset:0,background:"rgba(15,23,42,.5)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+    <div onClick={e=>e.stopPropagation()}style={{width:560,maxWidth:"96vw",maxHeight:"92vh",display:"flex",flexDirection:"column",background:"#fff",borderRadius:16,boxShadow:"0 24px 70px rgba(0,0,0,.32)"}}>
+      {/* Header with cross to go back */}
+      <div style={{padding:"15px 18px",borderBottom:`1px solid ${C.line}`,display:"flex",alignItems:"center",gap:10}}>
+        <span style={{fontSize:10.5,fontWeight:800,color:"#9333EA",background:"#9333EA18",padding:"2px 9px",borderRadius:999}}>{kind}</span>
+        <div style={{flex:1,minWidth:0}}><div style={{fontWeight:800,fontSize:15.5,color:C.ink,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.product||c.name}</div><div style={{fontSize:11.5,color:C.sub}}>{normCrmType(c.crm_type)} · {c.channel||"WhatsApp"}{categoryOf(c)?" · "+categoryOf(c):""}</div></div>
+        <button onClick={onClose}title="Close"style={{border:`1px solid ${C.line}`,background:"#fff",borderRadius:8,width:30,height:30,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",color:C.sub,flexShrink:0}}><X size={16}/></button>
+      </div>
+      <div style={{padding:"14px 18px",overflowY:"auto"}}>
+        {/* Brief — key things only */}
+        <div style={{background:"#FAFAFB",border:`1px solid ${C.line}`,borderRadius:10,padding:"11px 13px",marginBottom:13}}>
+          <div style={{fontSize:10,fontWeight:800,color:C.coral,textTransform:"uppercase",letterSpacing:.5,marginBottom:6}}>The brief — at a glance</div>
+          <Field label="Objective">{c.objective||brief.objective}</Field>
+          <Field label="Single-minded idea">{brief.idea}</Field>
+          <Field label="Insight">{brief.strategicInsight}</Field>
+          <Field label="Audience">{c.audience_label||c.segment}</Field>
+          <Field label="Offer">{c.offer}</Field>
+          {Array.isArray(brief.proofPoints)&&brief.proofPoints.length>0&&<Field label="Proof points">{brief.proofPoints.slice(0,3).join(" · ")}</Field>}
+        </div>
+        {/* What's under review */}
+        <div style={{fontSize:10,fontWeight:800,color:C.purple,textTransform:"uppercase",letterSpacing:.5,marginBottom:6}}>Under review</div>
+        {copy&&<div style={{background:"#F5F3FF",border:"1px solid #DDD6FE",borderRadius:10,padding:"11px 13px",marginBottom:10}}>
+          {copy.subject&&<div style={{marginBottom:5}}><div style={{fontSize:9,fontWeight:800,color:C.sub,textTransform:"uppercase"}}>Subject</div><div style={{fontSize:13,fontWeight:700,color:C.ink}}>{copy.subject}</div></div>}
+          {copy.header&&<div style={{marginBottom:5}}><div style={{fontSize:9,fontWeight:800,color:C.sub,textTransform:"uppercase"}}>{isPushC?"Title":"Header"}</div><div style={{fontSize:13,fontWeight:700,color:C.ink,whiteSpace:"pre-line"}}>{copy.header}</div></div>}
+          {copy.body&&<div style={{marginBottom:5}}><div style={{fontSize:9,fontWeight:800,color:C.sub,textTransform:"uppercase"}}>{isPushC?"Message":"Body"}</div><div style={{fontSize:12.5,color:"#374151",lineHeight:1.5,whiteSpace:"pre-line"}}>{copy.body}</div></div>}
+          {copy.cta&&<div style={{fontSize:12,fontWeight:700,color:C.purple}}>{copy.cta} →</div>}
+          <div style={{display:"flex",gap:7,marginTop:9,flexWrap:"wrap"}}>
+            {isWA&&<button onClick={()=>setShowWA(true)}style={{fontSize:11.5,fontWeight:700,color:"#0b141a",background:"#25D36622",border:"1px solid #25D36655",borderRadius:7,padding:"5px 10px",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}><MessageSquare size={12}/>Preview on WhatsApp</button>}
+            {isPushC&&<button onClick={()=>setShowPush(true)}style={{fontSize:11.5,fontWeight:700,color:C.navy,background:C.navy+"12",border:`1px solid ${C.navy}40`,borderRadius:7,padding:"5px 10px",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}><BellIcon size={12}/>Preview as notification</button>}
+          </div>
+        </div>}
+        {img&&<div style={{borderRadius:10,overflow:"hidden",border:`1px solid ${C.line}`,marginBottom:10}}><img src={img}alt="creative"style={{width:"100%",display:"block"}}/></div>}
+        {!copy&&!img&&<div style={{fontSize:12.5,color:C.sub,marginBottom:10}}>Open the full asset to see everything under review.</div>}
+        {/* Comments */}
+        <div style={{fontSize:10,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.5,margin:"6px 0"}}>Comments</div>
+        <CommentThread campaignId={c.id}context={ctx}me={me}compact={true}/>
+        {/* Send-back reason */}
+        {mode==="sendback"&&<div style={{marginTop:12,background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:10,padding:"11px 13px"}}>
+          <div style={{fontSize:11.5,fontWeight:800,color:"#9A3412",marginBottom:6}}>Reason for sending back{isCopyGate?" (the writer sees this)":""}</div>
+          <textarea value={reason}onChange={e=>setReason(e.target.value)}rows={3}placeholder="What needs to change?"style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:8,padding:"8px 10px",fontSize:13,resize:"none",boxSizing:"border-box",outline:"none"}}/>
+        </div>}
+      </div>
+      {/* Footer actions */}
+      <div style={{padding:"12px 18px",borderTop:`1px solid ${C.line}`,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+        {isCopyGate&&<button onClick={()=>{onEdit&&onEdit();onClose();}}style={{fontSize:12.5,fontWeight:700,color:C.ink,background:"#fff",border:`1px solid ${C.line}`,borderRadius:8,padding:"8px 13px",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}><PenLine size={13}/>Edit it myself</button>}
+        <div style={{flex:1}}/>
+        {mode==="sendback"
+          ?<>
+            <button onClick={()=>{setMode(null);setReason("");}}style={{fontSize:12.5,fontWeight:700,color:C.sub,background:"none",border:"none",cursor:"pointer"}}>Cancel</button>
+            <button onClick={doSendBack}disabled={busy==="send"}style={{fontSize:12.5,fontWeight:800,color:"#fff",background:"#C2410C",border:"none",borderRadius:8,padding:"8px 13px",cursor:busy?"wait":"pointer",display:"inline-flex",alignItems:"center",gap:5}}><RotateCcw size={13}/>{busy==="send"?"Sending…":"Confirm send back"}</button>
+          </>
+          :<>
+            <button onClick={()=>setMode("sendback")}style={{fontSize:12.5,fontWeight:800,color:"#C2410C",background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:8,padding:"8px 13px",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}><RotateCcw size={13}/>Send back</button>
+            <button onClick={doApprove}disabled={busy==="approve"}style={{fontSize:12.5,fontWeight:800,color:"#fff",background:"#16A34A",border:"none",borderRadius:8,padding:"8px 14px",cursor:busy?"wait":"pointer",display:"inline-flex",alignItems:"center",gap:5}}><CheckCircle2 size={13}/>{busy==="approve"?"Approving…":"Approve"}</button>
+          </>}
+      </div>
+      {showWA&&<WhatsAppMockup o={copy}image={img}product={c.product}onClose={()=>setShowWA(false)}/>}
+      {showPush&&<PushMockup o={copy}image={img}product={c.product}onClose={()=>setShowPush(false)}/>}
+    </div>
+  </div>;
+}
 function ApprovalsTab({campaigns,onOpen,me,team,reload}){
   const[approving,setApproving]=useState("");
+  const[reviewing,setReviewing]=useState(null);
   const approvals=computeApprovals(campaigns,me);
   const mySlots=isSuper(me)?["copy","design","asset","final"]:((me&&me.approval_slots)||[]);
-  const approveGate=async(c,action)=>{setApproving(c.id+action);
-    try{
-      const ep=action==="copy"?"brand-approve":action==="design"?"design-approve":action==="asset"?"asset-approve":"final-approve";
-      await api.post("/api/campaigns/"+c.id+"/"+ep,{});
-      if(reload)await reload();
-      setApproving("");
-    }catch(e){setApproving("");alert(e.message||"Approval failed");}
+  const approveGate=async(c,action)=>{
+    const ep=action==="copy"?"brand-approve":action==="design"?"design-approve":action==="asset"?"asset-approve":"final-approve";
+    await api.post("/api/campaigns/"+c.id+"/"+ep,{});
+    if(reload)await reload();
   };
   const slotLabel={copy:"Copy",design:"Design",asset:"Full asset",final:"Final sign-off"};
   return<div>
@@ -1567,12 +1678,14 @@ function ApprovalsTab({campaigns,onOpen,me,team,reload}){
             <WhoChips c={c}me={me}team={team}/>
           </div>
           {u&&<span style={{fontSize:10.5,fontWeight:800,color:u.col,background:u.bg,padding:"2px 8px",borderRadius:999,flexShrink:0}}>{u.t}</span>}
-          {approving===c.id+action?<span style={{fontSize:12,color:C.sub}}>Working…</span>:<span style={{display:"flex",gap:7,flexShrink:0}}>
-            <button onClick={()=>onOpen(c.id,tab)}style={{fontSize:12,fontWeight:700,color:C.sub,background:"none",border:"none",cursor:"pointer"}}>Review</button>
-            <button onClick={()=>approveGate(c,action)}style={{fontSize:12,fontWeight:800,color:"#fff",background:"#9333EA",border:"none",borderRadius:7,padding:"6px 12px",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4}}><CheckCircle2 size={12}/>Approve</button>
-          </span>}
+          <button onClick={()=>setReviewing({c,kind,action,tab})}style={{fontSize:12,fontWeight:800,color:"#fff",background:"#9333EA",border:"none",borderRadius:7,padding:"6px 14px",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5,flexShrink:0}}><Eye size={13}/>Review</button>
         </div>;})}
       </Card>}
+    {reviewing&&<ReviewModal c={reviewing.c}me={me}kind={reviewing.kind}action={reviewing.action}tab={reviewing.tab}
+      onApprove={()=>approveGate(reviewing.c,reviewing.action)}
+      onSendBackDone={reload}
+      onEdit={()=>onOpen(reviewing.c.id,"content")}
+      onClose={()=>setReviewing(null)}/>}
   </div>;
 }
 function MyTasksTab({campaigns,onOpen,me,team}){
@@ -3251,6 +3364,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       } else {
         // Every copy now goes to Ilena (brand) for review before design/done.
         patch(c.id,{data:{...(c.data||{}),selectedCopyIdx:idx},stage:"brand_review",copy_approver:me.name,copy_author:c.copy_author||me.name});
+        api.post("/api/notify",{toRole:"brand_lead",campaignId:c.id,kind:"Copy needs approval",body:(c.product||c.name||"An asset")+" — copy submitted by "+((me&&me.name)||"the team")+". Please review/approve."}).catch(()=>{});
         if(toast)toast("Copy selected ✓ — sent to brand review (Ilena)","success");
       }
     };
@@ -3449,18 +3563,15 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
           // "approved" = brand-approved and moved on (design/done), but still listed here
           const approved=allCopy.filter(c=>c.stage!=="content"&&c.stage!=="brand_review"&&c.data?.selectedCopyIdx!=null&&c.data?.copyOptions);
           return<>
-            {needsCopy.length>0&&<div style={{marginBottom:16}}>
-              <div style={{fontSize:11,fontWeight:700,color:"#92400E",textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>⬤ Needs attention · {needsCopy.length}</div>
+            {needsCopy.length>0&&<CollapsibleSection title="Needs attention" count={needsCopy.length} color="#92400E" icon={<ClockIcon size={15}/>}>
               {groupByDate(needsCopy).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.purple}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}/>)}</Card></div>)}
-            </div>}
-            {inReview.length>0&&<div style={{marginBottom:16}}>
-              <div style={{fontSize:11,fontWeight:700,color:"#9333EA",textTransform:"uppercase",letterSpacing:.5,marginBottom:8,display:"flex",alignItems:"center",gap:5}}><Eye size={12}/>Pending brand approval · {inReview.length}{canBrandApprove(me)?"":" (awaiting Ilena)"}</div>
+            </CollapsibleSection>}
+            {inReview.length>0&&<CollapsibleSection title={"Pending brand approval"+(canBrandApprove(me)?"":" (awaiting Ilena)")} count={inReview.length} color="#9333EA" icon={<Eye size={15}/>}>
               {groupByDate(inReview).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={"#9333EA"}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}/>)}</Card></div>)}
-            </div>}
-            {approved.length>0&&<div>
-              <div style={{fontSize:11,fontWeight:700,color:"#5B21B6",textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>✓ Brand approved · {approved.length}</div>
-              <div>{groupByDate(approved).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.purple}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}/>)}</Card></div>)}</div>
-            </div>}
+            </CollapsibleSection>}
+            {approved.length>0&&<CollapsibleSection title="Brand approved" count={approved.length} color="#5B21B6" icon={<CheckCircle2 size={15}/>}>
+              {groupByDate(approved).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.purple}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}/>)}</Card></div>)}
+            </CollapsibleSection>}
           </>;
         })()}
       </div>}
@@ -3951,7 +4062,15 @@ function RefImagePicker({d,setD,campaignId,product}){
   const[note,setNote]=useState("");
   const refs=d.refImages||[];
   React.useEffect(()=>{let on=true;(async()=>{
-    try{const res=await api.get("/api/image-library-suggest/"+campaignId);if(on)setSugg((res||[]).filter(i=>i.kind!=="product"));}
+    try{
+      const res=await api.get("/api/image-library-suggest/"+campaignId);
+      let list=(res||[]).filter(i=>i.kind!=="product");
+      // Fallback: if nothing matched this campaign, show recent library images so anything uploaded still appears.
+      if(!list.length){
+        try{const all=await api.get("/api/image-library");list=(all||[]).filter(i=>i.kind!=="product").slice(0,12);}catch(e){}
+      }
+      if(on)setSugg(list);
+    }
     catch(e){if(on)setSugg([]);}
   })();return()=>{on=false;};},[campaignId]);
   // Downscale any image to a max edge so big phone photos still upload + show (and stay light to store).
@@ -5300,14 +5419,12 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
           const needsDesign=allDesign.filter(c=>!(c.data?.design?.approvedPromptIdx!=null||c.data?.design?.libraryPick));
           const done=allDesign.filter(c=>c.data?.design?.approvedPromptIdx!=null||c.data?.design?.libraryPick);
           return<>
-            {needsDesign.length>0&&<div style={{marginBottom:16}}>
-              <div style={{fontSize:11,fontWeight:700,color:C.coral,textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>⬤ Needs attention · {needsDesign.length}</div>
+            {needsDesign.length>0&&<CollapsibleSection title="Needs attention" count={needsDesign.length} color={C.coral} icon={<ClockIcon size={15}/>}>
               {groupByDate(needsDesign).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.teal}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><DesignRow key={c.id}c={c}/>)}</Card></div>)}
-            </div>}
-            {done.length>0&&<div>
-              <div style={{fontSize:11,fontWeight:700,color:C.teal,textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>✓ Image selected · {done.length}</div>
+            </CollapsibleSection>}
+            {done.length>0&&<CollapsibleSection title="Image selected" count={done.length} color={C.teal} icon={<CheckCircle2 size={15}/>}>
               <div style={{opacity:.75}}>{groupByDate(done).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.teal}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><DesignRow key={c.id}c={c}/>)}</Card></div>)}</div>
-            </div>}
+            </CollapsibleSection>}
           </>;
         })()}
       </div>}
