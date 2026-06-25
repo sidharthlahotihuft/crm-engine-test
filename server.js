@@ -46,7 +46,7 @@ const db = async (sql, params = []) => {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const uid = () => Math.random().toString(36).slice(2, 11);
 const safeJson = (s) => { try { return JSON.parse(s); } catch (e) { return null; } };
-const SERVER_BUILD = "v29.54s · Approval chain: Ilena's full-asset approval (asset-approve) is now the FINAL gate — it sets the asset live (stage='done', went_live_at) and notifies HMO + CXO + business for oversight, instead of opening a separate final sign-off. design-approve also notifies HMO + CXO for oversight when Anmol approves. (final-approve endpoint kept for any legacy items but is no longer reached in the normal flow.) Also: per-content-type LLM routing on /api/generate (copy→Claude, brief→Gemini, else default; images→Gemini; falls back if a key is missing) and the design-reject endpoint.";
+const SERVER_BUILD = "v29.55s - image-library-suggest excludes logos (kind not in product,logo).";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -1448,7 +1448,7 @@ app.get("/api/image-library-suggest/:campaignId", authMiddleware, async (req, re
     const c = crows[0];
     const product = (c.product || "").toLowerCase();
     // Pull candidate images: same product first, then broaden
-    const all = await db("SELECT id, file_name, product, category, tags, description, kind, uploaded_at FROM image_library WHERE coalesce(kind,'') <> 'product' AND (last_used_at IS NULL OR last_used_at < NOW() - INTERVAL '45 days') ORDER BY uploaded_at DESC LIMIT 300");
+    const all = await db("SELECT id, file_name, product, category, tags, description, kind, uploaded_at FROM image_library WHERE coalesce(kind,'') NOT IN ('product','logo') AND (last_used_at IS NULL OR last_used_at < NOW() - INTERVAL '45 days') ORDER BY uploaded_at DESC LIMIT 300");
     const norm = (r) => ({ ...r, tags: typeof r.tags === "string" ? (() => { try { return JSON.parse(r.tags); } catch { return []; } })() : (r.tags || []) });
     const scored = all.map(norm).map(img => {
       let score = 0;
