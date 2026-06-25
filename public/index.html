@@ -106,7 +106,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.34 · Typing is no longer interrupted anywhere in the engine: the background notification (45s) and request-count (60s) polls now skip their refresh while you're typing in a field, so text boxes and editors across every tab stop closing/losing focus mid-typing. Pairs with v29.33 (stable Copy row). Builds on v29.32 (brand team briefs), v29.31 (content on Gemini), and earlier work.";
+const BUILD="v29.35 · The design team and design lead now see a compact 'Brief in short' card at the top of each asset on the Design page — the idea, objective/audience/pillar/offer, strategic insight, creative direction, channel note and proof points — so they have the brief context while designing. Builds on v29.34 (typing no longer interrupted engine-wide), v29.33 (stable Copy row), v29.32 (brand team briefs), v29.31 (content on Gemini).";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -5482,6 +5482,22 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   </div>,document.body);
 }
 
+// Compact, read-only brief summary shown to the design team/lead on the Design page.
+function BriefInShort({c}){
+  const b=(c&&c.data&&c.data.brief)||{};
+  const meta=[c.objective,c.audience_label||c.segment,b.pillar,c.offer&&("Offer: "+c.offer),c.go_live_date&&("Live "+fmtDate(c.go_live_date))].filter(Boolean);
+  const rtbs=(Array.isArray(b.proofPoints)&&b.proofPoints.length?b.proofPoints:(Array.isArray(b.rtbs)?b.rtbs:[])).filter(Boolean);
+  if(!b.idea&&!b.strategicInsight&&!b.copyDirection&&!meta.length)return null;
+  return<div style={{background:"#FFF7ED",border:"1px solid #FED7AA",borderLeft:"3px solid "+C.coral,borderRadius:10,padding:"12px 14px",marginBottom:12}}>
+    <div style={{fontSize:10,fontWeight:800,color:"#C2410C",textTransform:"uppercase",letterSpacing:.5,marginBottom:6,display:"flex",alignItems:"center",gap:5}}><BookMarked size={12}/>Brief in short</div>
+    {b.idea&&<div style={{fontSize:13.5,fontWeight:700,color:C.ink,lineHeight:1.45,marginBottom:5}}>{b.idea}</div>}
+    {meta.length>0&&<div style={{fontSize:11.5,color:C.sub,marginBottom:(b.strategicInsight||b.copyDirection||b.whatsappNote||rtbs.length)?6:0}}>{meta.join("  ·  ")}</div>}
+    {b.strategicInsight&&<div style={{fontSize:12.5,color:"#7C2D12",lineHeight:1.45,marginBottom:5}}><b style={{color:"#9A3412"}}>Insight: </b>{b.strategicInsight}</div>}
+    {b.copyDirection&&<div style={{fontSize:12.5,color:"#7C2D12",lineHeight:1.45,marginBottom:5}}><b style={{color:"#9A3412"}}>Direction: </b>{b.copyDirection}</div>}
+    {b.whatsappNote&&<div style={{fontSize:12,color:C.sub,lineHeight:1.4,marginBottom:rtbs.length?4:0}}><b>Channel note: </b>{b.whatsappNote}</div>}
+    {rtbs.length>0&&<div style={{fontSize:12,color:C.sub,lineHeight:1.4}}><b>Proof points: </b>{rtbs.join(" · ")}</div>}
+  </div>;
+}
 function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedback,campaigns,onOpen,onDelete,onDuplicate,team}){
   const allDesignRaw=(campaigns||[]).filter(c=>c.stage==="design"&&(c.channel!=="Push notification"||c.data?.selfMade)&&!isArchived(c));
   const allDesign=isBusiness(me)?allDesignRaw.filter(c=>c.data?.selfMade):isDesignTeam(me)?allDesignRaw.filter(c=>!c.data?.selfMade):allDesignRaw;
@@ -5598,6 +5614,8 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
 
       {/* Expanded */}
       {isOpen&&<div style={{padding:"0 18px 18px",background:"#F8F9FA"}}>
+        {/* Brief in short — context for the design team */}
+        <BriefInShort c={c}/>
         {/* Selected copy context */}
         <ApprovedCopyCard copy={copy}channel={c.channel}product={c.product}image={d.generatedImage||null}/>
         {c.data?.selfMade&&(()=>{
