@@ -46,7 +46,7 @@ const db = async (sql, params = []) => {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const uid = () => Math.random().toString(36).slice(2, 11);
 const safeJson = (s) => { try { return JSON.parse(s); } catch (e) { return null; } };
-const SERVER_BUILD = "v29.31s · Content generation (copy + briefs + image cataloguing) now defaults to Gemini using GEMINI_API_KEY, instead of preferring Anthropic whenever ANTHROPIC_API_KEY was present. Set LLM_PROVIDER=claude to force Anthropic, or LLM_PROVIDER=gemini to force Gemini. Image generation already used Gemini and is unchanged.";
+const SERVER_BUILD = "v29.43s · Added /api/campaigns/:id/design-reject — the design lead (Anmol) can send a design back to the design team with a reason (mirrors brand-reject for copy): sets design.sentBack + lastRejectReason, clears pendingApproval, keeps it in the design stage, and notifies the design team. Content generation still defaults to Gemini (GEMINI_API_KEY); set LLM_PROVIDER=claude to force Anthropic.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -1006,6 +1006,24 @@ app.post("/api/campaigns/:id/design-approve", authMiddleware, async (req, res) =
     const prod = cur[0].product || cur[0].name || "An asset";
     notify({ toRole: "brand_lead", campaignId: req.params.id, kind: "Full asset needs review",
       body: prod + " — design approved by " + req.user.name + ". Ready for full-asset sign-off." });
+    res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Design gate send-back — Anmol returns the design to the design team with feedback (mirrors brand-reject for copy).
+app.post("/api/campaigns/:id/design-reject", authMiddleware, async (req, res) => {
+  try {
+    if (!(await userHoldsSlot(req.user, "design"))) return res.status(403).json({ error: "You don't hold the design-approval slot." });
+    const reason = (req.body.reason && req.body.reason.trim()) ? req.body.reason.trim() : "";
+    const cur = await db(`SELECT * FROM campaigns WHERE id=$1`, [req.params.id]);
+    if (!cur.length) return res.status(404).json({ error: "Not found" });
+    const data = (typeof cur[0].data === "string" ? safeJson(cur[0].data) : cur[0].data) || {};
+    const d2 = { ...data, design: { ...(data.design || {}), pendingApproval: false, assetReview: false, sentBack: true, lastRejectReason: reason, sentBackBy: req.user.name || "", sentBackAt: new Date().toISOString() } };
+    const rows = await db(`UPDATE campaigns SET data=$1, design_approver=NULL, design_approved_at=NULL WHERE id=$2 AND stage='design' RETURNING *`,
+      [JSON.stringify(d2), req.params.id]);
+    if (!rows.length) return res.status(409).json({ error: "Campaign is not in the design stage." });
+    const prod = cur[0].product || cur[0].name || "An asset";
+    notify({ toRole: "design_team", campaignId: req.params.id, kind: "Design sent back",
+      body: prod + " — design sent back by " + (req.user.name || "the design lead") + (reason ? (": " + reason) : ". See the feedback on the design.") });
     res.json(rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
