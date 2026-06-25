@@ -103,7 +103,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.24a · Self-made work is now labelled Made by business team (was Made in-house) in both Copy and Design. The Brand approved section is hidden from the business team (they only ever see their own self-made assets). The Design tab now splits self-made assets into their own Made by business team section, mirroring Copy, so business users see only their work and leads can tell in-house work apart from creative-team work.";
+const BUILD="v29.25 · Brand/category quick-picks expanded from headsupfortails.com — added missing HUFT own brands (NutriWag, DashDog), the main categories (Dog/Cat Food, Treats, Toys, Beds, Collars, Apparel, Litter, Bowls, Health), and the top partner brands HUFT runs CRM for (Royal Canin, Pedigree, Farmina, Sheba, Whiskas, Drools, Orijen, Trixie, KONG, Himalaya); anything else can still be typed. New Discovery pillar added (curious & revealing). Made by business team is now hidden from the brand team and design team views in Copy.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -650,19 +650,20 @@ const BRIEF_STEPS = [
   {
     key:"product",
     question:"Which product, sub-brand, or category?",
-    hint:"Tap a quick option or type a specific variant/SKU. Each sub-brand has a different tone — Sara's is warm and home-style, Meowsi is witty and feline-first, Hearty is bold and energetic.",
+    hint:"Tap a quick option or type any brand/category/SKU from headsupfortails.com. Each HUFT sub-brand has a different tone — Sara's is warm and home-style, Meowsi is witty and feline-first, Hearty is bold and energetic.",
     options:[
-      "Sara's Wholesome Food","Hearty","Meowsi","NutriMeow","Yakies",
-      "HUFT Spa / Grooming","HUFT Stores / Retail","HUFT Originals (Accessories)",
-      "HUFT Foundation","Lifestyle / Beds & Bowls","Clothing & Raincoats",
+      "Sara's Wholesome Food","Hearty","Meowsi","NutriMeow","NutriWag","Yakies","DashDog",
+      "HUFT Originals (Accessories)","HUFT Spa / Grooming","HUFT Foundation","HUFT Stores / Retail",
+      "Dog Food","Cat Food","Treats & Chews","Toys","Beds & Furniture","Collars & Leashes","Apparel & Raincoats","Cat Litter & Hygiene","Bowls & Feeders","Health & Supplements",
+      "Royal Canin","Pedigree","Farmina","Sheba","Whiskas","Drools","Orijen","Trixie","KONG","Himalaya",
     ],
     freeText:true,
     placeholder:"Or type a specific SKU / variant e.g. Sara's Chicken & Rice 150g…",
   },
   {
     key:"pillar", question:"Which HUFT pillar should lead?",
-    hint:"Trust = calm & honest. Importance = personal & warm. Edutainment = joyful & curious. Values = purpose-led. CRM typically leads with Importance (40%).",
-    options:["Importance","Trust","Edutainment","Brand Values"],
+    hint:"Trust = calm & honest. Importance = personal & warm. Edutainment = joyful & curious. Values = purpose-led. Discovery = curious & revealing — surface something new or unexpected about the product. CRM typically leads with Importance (40%).",
+    options:["Importance","Trust","Edutainment","Brand Values","Discovery"],
     suggest:"Importance",
   },
   {
@@ -1259,7 +1260,7 @@ function App(){
       try{
         const isRetail=(r.crmType||"").toLowerCase()==="retail";
         const channel=isRetail?"WhatsApp":(r.channel||"WhatsApp");
-        const sys=`You write tight CRM creative briefs for HUFT.\n${BRAND_CONTEXT}\nReturn ONLY JSON:\n{"campaignName":"MonYY_Product_Hook_AudienceCode","strategicInsight":"1-2 sharp lines","idea":"single-minded message","proofPoints":["3 short proof points"],"pillar":"Trust|Importance|Edutainment|Brand Values","copyDirection":"1-2 lines","whatsappNote":"one line"}`;
+        const sys=`You write tight CRM creative briefs for HUFT.\n${BRAND_CONTEXT}\nReturn ONLY JSON:\n{"campaignName":"MonYY_Product_Hook_AudienceCode","strategicInsight":"1-2 sharp lines","idea":"single-minded message","proofPoints":["3 short proof points"],"pillar":"Trust|Importance|Edutainment|Brand Values|Discovery","copyDirection":"1-2 lines","whatsappNote":"one line"}`;
         const rtbs=(r.rtbs||[]).filter(Boolean),refs=(r.references||[]).filter(Boolean);
         const usr=`CRM type: ${r.crmType||"D2C"}\nChannel: ${channel}\nProduct/Brand: ${r.product||""}\nPillar: ${r.pillar||"Importance"}\nAudience/Trigger: ${r.audience||""}\nObjective: ${r.objective||""}\nOffer: ${r.offer||"none"}\nHook/Angle: ${r.hook||"derive"}\nRTBs to focus on: ${rtbs.length?rtbs.join("; "):"derive"}\nReference links: ${refs.length?refs.join(" , "):"none"}\nGo-live date: ${r.goLive||"not set"}`;
         const j=await callClaude(sys,usr,true);
@@ -2041,7 +2042,7 @@ function BriefFastForm({campaignId,patch,onBriefReady,me,recentFeedback,product}
     setGenerating(true);setErr("");
     try{
       const fb=recentFeedback("brief");
-      const sys=`You write tight WhatsApp CRM creative briefs for HUFT.\n${BRAND_CONTEXT}\n${fb?"Recent team feedback on Brief generations (incorporate):\n"+fb:""}\nReturn ONLY JSON:\n{"campaignName":"MonYY_Product_Hook_AudienceCode e.g. Jun26_Meowsi_Winback_LapsedCat","strategicInsight":"1-2 sharp lines: the consumer truth/trigger","idea":"single-minded message in one line","proofPoints":["3 short proof points"],"pillar":"Trust|Importance|Edutainment|Brand Values","copyDirection":"1-2 lines specific copy direction for WhatsApp CRM","whatsappNote":"one line channel/format direction"}`;
+      const sys=`You write tight WhatsApp CRM creative briefs for HUFT.\n${BRAND_CONTEXT}\n${fb?"Recent team feedback on Brief generations (incorporate):\n"+fb:""}\nReturn ONLY JSON:\n{"campaignName":"MonYY_Product_Hook_AudienceCode e.g. Jun26_Meowsi_Winback_LapsedCat","strategicInsight":"1-2 sharp lines: the consumer truth/trigger","idea":"single-minded message in one line","proofPoints":["3 short proof points"],"pillar":"Trust|Importance|Edutainment|Brand Values|Discovery","copyDirection":"1-2 lines specific copy direction for WhatsApp CRM","whatsappNote":"one line channel/format direction"}`;
       const rtbList=(answers.rtbs||[]).filter(Boolean);
       const refList=(answers.references||[]).filter(Boolean);
       const usr=`CRM type: ${answers.crmType||"D2C"}\nChannel: ${answers.channel||"WhatsApp"}\nProduct/Brand: ${answers.product||product||""}\nPillar: ${answers.pillar||"Importance"}\nAudience/Trigger: ${answers.audience||""}\nObjective: ${answers.objective||""}\nOffer: ${answers.offer||"none"}\nHook/Angle: ${answers.hook||"derive"}\nRTBs to focus on (use these as proof points, weave into copy): ${rtbList.length?rtbList.join("; "):"derive from product"}\nReference links (context for copy & design — honour their tone/direction): ${refList.length?refList.join(" , "):"none"}\nGo-live date: ${answers.go_live_date||"not set"}`;
@@ -2298,7 +2299,7 @@ function BriefChat({campaignId,patch,onBriefReady,me,recentFeedback,product}){
     addBotMsg(<div style={{display:"flex",alignItems:"center",gap:9,color:C.coral,fontWeight:600}}><Loader2 size={15}style={{animation:"spin 1s linear infinite"}}/>Writing your brief…</div>);
     try{
       const fb=recentFeedback("brief");
-      const sys=`You write tight WhatsApp CRM creative briefs for HUFT.\n${BRAND_CONTEXT}\n${fb?"Recent team feedback on Brief generations (incorporate):\n"+fb:""}\nReturn ONLY JSON:\n{"campaignName":"MonYY_Product_Hook_AudienceCode e.g. Jun26_Meowsi_Winback_LapsedCat","strategicInsight":"1-2 sharp lines: the consumer truth/trigger","idea":"single-minded message in one line","proofPoints":["3 short proof points"],"pillar":"Trust|Importance|Edutainment|Brand Values","copyDirection":"1-2 lines specific copy direction for WhatsApp CRM","whatsappNote":"one line channel/format direction"}`;
+      const sys=`You write tight WhatsApp CRM creative briefs for HUFT.\n${BRAND_CONTEXT}\n${fb?"Recent team feedback on Brief generations (incorporate):\n"+fb:""}\nReturn ONLY JSON:\n{"campaignName":"MonYY_Product_Hook_AudienceCode e.g. Jun26_Meowsi_Winback_LapsedCat","strategicInsight":"1-2 sharp lines: the consumer truth/trigger","idea":"single-minded message in one line","proofPoints":["3 short proof points"],"pillar":"Trust|Importance|Edutainment|Brand Values|Discovery","copyDirection":"1-2 lines specific copy direction for WhatsApp CRM","whatsappNote":"one line channel/format direction"}`;
       const rtbList=(answers.rtbs||[]).filter(Boolean);
       const refList=(answers.references||[]).filter(Boolean);
       const usr=`CRM type: ${answers.crmType||"D2C"}\nChannel: ${answers.channel||"WhatsApp"}\nProduct/Brand: ${answers.product||""}\nPillar: ${answers.pillar||"Importance"}\nAudience/Trigger: ${answers.audience||""}\nObjective: ${answers.objective||""}\nOffer: ${answers.offer||"none"}\nHook/Angle: ${answers.hook||"derive"}\nRTBs to focus on (use these as proof points, weave into copy): ${rtbList.length?rtbList.join("; "):"derive from product"}\nReference links (context for copy & design — honour their tone/direction): ${refList.length?refList.join(" , "):"none"}\nGo-live date: ${answers.go_live_date||"not set"}`;
@@ -3783,7 +3784,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
             {!isBusiness(me)&&approved.length>0&&<CollapsibleSection title="Brand approved" count={approved.length} color="#5B21B6" icon={<CheckCircle2 size={15}/>}>
               {groupByDate(approved).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.purple}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}/>)}</Card></div>)}
             </CollapsibleSection>}
-            {approvedSelf.length>0&&<CollapsibleSection title="Made by business team" count={approvedSelf.length} color="#0F766E" icon={<PenLine size={15}/>}>
+            {approvedSelf.length>0&&!isBrandTeam(me)&&!isDesignTeam(me)&&<CollapsibleSection title="Made by business team" count={approvedSelf.length} color="#0F766E" icon={<PenLine size={15}/>}>
               {groupByDate(approvedSelf).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={"#0F766E"}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}/>)}</Card></div>)}
             </CollapsibleSection>}
           </>;
