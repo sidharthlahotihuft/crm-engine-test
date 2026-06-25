@@ -106,7 +106,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.45 · Generation now routes by content type: COPY runs on Anthropic (Claude), BRIEFS run on Gemini, and IMAGES stay on Gemini. Each copy/brief request is tagged so the server picks the right model. (Requires a valid ANTHROPIC_API_KEY on the server for copy — if it's missing the server falls back to Gemini.) Also includes v29.44 per-channel option counts (WhatsApp 3, Push 3, Email 2). Pairs with SERVER v29.45s. Builds on v29.43 (design approval loop).";
+const BUILD="v29.46 · New copy rule in the rulebook: funnel-stage urgency. The lower the funnel, the higher the urgency to buy — top of funnel invites/intrigues at low pressure, bottom of funnel (cart-abandon, repeat-intent, lapsed/win-back) pushes hardest with a real reason. It also frames the ask by stage: a lapsed buyer is RE-conversion (welcome back), not a cold first-time pitch. Applies to all copy generation. Builds on v29.45 (copy→Anthropic, brief→Gemini), v29.44 (per-channel option counts), v29.43 (design approval loop).";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -152,6 +152,7 @@ const COPY_BEST_PRACTICES=`HIGH-ENGAGEMENT COPY PRINCIPLES (apply to every optio
 - CLEAR NEXT STEP: the CTA is a pictureable action tied to the store/app ("Switch to fresh", "Book a spa day", "Shop the litter") — not "click here".
 - CLEAN FORMATTING: no ALL-CAPS words, no exclamation spam (no "!!!"), no "free!!!/buy now". EMOJIS: use 1-2 tasteful, purposeful emojis where they add warmth or meaning (a relevant 🐾 🐶 🐱 🎉 ✨, or a ✓ for proof points) — they lift engagement; never force them, never use more than 2, and never let an emoji replace a word.
 - FOR EDIBLES: always state the FORMAT explicitly (Chews / Fresh / Kibble / Wet / Gravy / Treats).
+- FUNNEL-STAGE URGENCY: match the urgency to where the reader sits in the funnel — the LOWER the funnel, the HIGHER the urgency to buy. Top of funnel (cold / new / awareness) = a warm invitation and intrigue, low pressure. Mid funnel (engaged, considering) = a clear nudge with a reason to act now. Bottom of funnel (cart left behind, repeat-intent, lapsed / win-back) = the strongest push to act now, backed by a real reason (offer, deadline, restock). Read the brief's audience/objective to place the reader, then dial urgency to match. Frame the ASK correctly for the stage: a LAPSED buyer is RE-conversion — welcome them back and acknowledge they've shopped with us before ("come back to…", "your pet's favourite is waiting"), never a cold first-time pitch; a cart-abandoner is a reminder to finish what they started, not a fresh sell; a brand-new audience is first-time conversion, so invite rather than pressure.
 - HONEST & INCLUSIVE: no health/medical overclaims, no fear-mongering; "family isn't defined by species". Stay true to the brief's objective and emotional pillar — cut anything off-objective.`;
 // Channel-specific engagement rules (shared by every generator).
 const PUSH_RULES=`PUSH NOTIFICATION RULES — win the tap in under 2 seconds on a crowded lock screen:
