@@ -106,7 +106,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.58 · Canva-first design flow; composer hidden from the team flows. Design page 'Finish the design' now offers: Image from the library + Make it on Canva (both teams), and Generate an image (design team only, the AI art-direction path). The in-house Composer is removed from the business/design flows and now lives as a 'Composer' tab in the left sidebar visible ONLY to super-admin (pick any asset → full composer). Builds on v29.57 (composer/canva), v29.55 (linear flow).";
+const BUILD="v29.59 - Design flow: Art direction (both teams, no upload) -> business: library scroller + Canva | design: + Generate an image (prompt/chat/upload). Logos excluded from library suggestions.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -4399,7 +4399,7 @@ function SmartLibraryPicker({d,setD,copy,brief,product,campaignId}){
   React.useEffect(()=>{loadSuggested();},[campaignId]);
 
   // Background suggestions = scenes/assets only — never product mockups (those go in the product layer)
-  const all=(items||[]).filter(i=>i.kind!=="product");
+  const all=(items||[]).filter(i=>i.kind!=="product"&&i.kind!=="logo");
 
   return<div style={{marginBottom:12}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:8}}>
@@ -4449,10 +4449,10 @@ function RefImagePicker({d,setD,campaignId,product}){
   React.useEffect(()=>{let on=true;(async()=>{
     try{
       const res=await api.get("/api/image-library-suggest/"+campaignId);
-      let list=(res||[]).filter(i=>i.kind!=="product");
+      let list=(res||[]).filter(i=>i.kind!=="product"&&i.kind!=="logo");
       // Fallback: if nothing matched this campaign, show recent library images so anything uploaded still appears.
       if(!list.length){
-        try{const all=await api.get("/api/image-library");list=(all||[]).filter(i=>i.kind!=="product").slice(0,12);}catch(e){}
+        try{const all=await api.get("/api/image-library");list=(all||[]).filter(i=>i.kind!=="product"&&i.kind!=="logo").slice(0,12);}catch(e){}
       }
       if(on)setSugg(list);
     }
@@ -4546,11 +4546,11 @@ function ArtNotes({d,setD,busy,genNotes}){
   };
   return<div style={{marginBottom:12}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-      <div style={{fontSize:12,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5}}>Art direction notes</div>
+      <div style={{fontSize:12,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5}}>Art direction</div>
       <div style={{display:"flex",gap:6}}>
         {busy==="notes"?<Spin label="Generating…"/>:<>
-          {d.notes&&<Btn small variant="ghost"onClick={e=>{e.stopPropagation();setD({notes:null});genNotes();}}><RefreshCw size={12}/>Fresh notes</Btn>}
-          <Btn small onClick={e=>{e.stopPropagation();genNotes();}}>{d.notes?"Regenerate":"Generate notes"}</Btn>
+          {d.notes&&<Btn small variant="ghost"onClick={e=>{e.stopPropagation();setD({notes:null});genNotes();}}><RefreshCw size={12}/>Fresh direction</Btn>}
+          <Btn small onClick={e=>{e.stopPropagation();genNotes();}}>{d.notes?"Regenerate":"Generate art direction"}</Btn>
         </>}
       </div>
     </div>
@@ -4729,7 +4729,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   const[autoFit,setAutoFit]=useState(true); // auto-place/scale products into free space (no overlap)
   const[mockupPreset,setMockupPreset]=useState("studio-cream"); // clean preset background for product mockups
   const[libSuggest,setLibSuggest]=useState(null); // suggested library scenes for this brief, shown when Source = Image from library
-  React.useEffect(()=>{if(bgMode!=="library"||libSuggest!==null||!c||!c.id)return;api.get("/api/image-library-suggest/"+c.id).then(r=>setLibSuggest((Array.isArray(r)?r:[]).filter(i=>i.kind!=="product").slice(0,8))).catch(()=>setLibSuggest([]));},[bgMode,libSuggest,c&&c.id]);
+  React.useEffect(()=>{if(bgMode!=="library"||libSuggest!==null||!c||!c.id)return;api.get("/api/image-library-suggest/"+c.id).then(r=>setLibSuggest((Array.isArray(r)?r:[]).filter(i=>i.kind!=="product"&&i.kind!=="logo").slice(0,8))).catch(()=>setLibSuggest([]));},[bgMode,libSuggest,c&&c.id]);
   const[reqNote,setReqNote]=useState("");const[reqBusy,setReqBusy]=useState(false);const[reqSent,setReqSent]=useState(false);
   const sz=COMPOSER_SIZES[sizeIdx];
 
@@ -5932,7 +5932,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
         {/* Back to picker */}
 
         {/* Art direction notes */}
-        {!isPushChannel(c.channel)&&["design_team","design_lead","super_admin"].includes(_r(me))&&<ArtNotes d={d}setD={setD}busy={busy}genNotes={genNotes}/>}
+        {!isPushChannel(c.channel)&&<ArtNotes d={d}setD={setD}busy={busy}genNotes={genNotes}/>}
 
         {/* Reference images — upload or pull from library to steer generation */}
         {!isPushChannel(c.channel)&&["design_team","design_lead","super_admin"].includes(_r(me))&&<RefImagePicker d={d}setD={setD}campaignId={c.id}product={c.product}/>}
@@ -5955,7 +5955,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
             <textarea value={p.prompt}onChange={e=>{const v=e.target.value;setD({imagePrompts:(d.imagePrompts||[]).map((x,xi)=>xi===i?{...x,prompt:v}:x)});}}rows={3}style={{width:"100%",boxSizing:"border-box",fontSize:12.5,lineHeight:1.5,color:C.ink,border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 9px",resize:"vertical",fontFamily:"inherit",marginBottom:6,background:"#fff"}}/>
             {p.negativePrompt&&<div style={{fontSize:11,color:C.sub,marginBottom:8}}><b>Avoid:</b> {p.negativePrompt}</div>}
             <div style={{display:"flex",gap:7,alignItems:"center"}}>
-              {busy==="img"+i?<Spin label="Generating image…"/>:<><Btn small variant="teal"onClick={()=>genImageFor(p,i)}><ImageIcon size={13}/>Generate image</Btn>{d.approvedPromptIdx!==i&&<Btn small variant="ghost"onClick={()=>approvePrompt(i)}>Just pick (build in composer)</Btn>}</>}
+              {["design_team","design_lead","super_admin"].includes(_r(me))&&(busy==="img"+i?<Spin label="Generating image…"/>:<Btn small variant="teal"onClick={()=>genImageFor(p,i)}><ImageIcon size={13}/>Generate image</Btn>)}
             </div>
             {d.generatedImage&&d.approvedPromptIdx===i&&<div style={{marginTop:10}}>
               <img src={d.generatedImage}alt="Generated"style={{width:"100%",maxWidth:340,borderRadius:10,border:`1px solid ${C.line}`}}/>
