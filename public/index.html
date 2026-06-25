@@ -51,8 +51,8 @@ const api = {
   get(p){return this.req("GET",p)},post(p,b){return this.req("POST",p,b)},
   put(p,b){return this.req("PUT",p,b)},del(p){return this.req("DELETE",p)},
 };
-async function callClaude(system,prompt,expectJson){
-  const data=await api.post("/api/generate",{system,prompt});
+async function callClaude(system,prompt,expectJson,kind){
+  const data=await api.post("/api/generate",{system,prompt,kind});
   const text=data.text||"";
   if(!expectJson)return text;
   const clean=text.replace(/```json|```/g,"").trim();
@@ -106,7 +106,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.43 · Designs now go through approval instead of straight to live. The design team's button is 'Send design for approval' (top of the tile and on the upload card) — it goes to Anmol (design lead), never directly live. Anmol can approve OR send it back with a reason, and the design team gets the same feedback loop as copy↔brand: a 'Design sent back' banner with Anmol's note, a 'Sent back' pill on the row, and a 'Send again for approval' button to resubmit after fixing. Pairs with SERVER v29.43s (design-reject endpoint). Builds on v29.42 (RTB on the image), v29.41 (image-fix thread/edit + design editor & upload).";
+const BUILD="v29.45 · Generation now routes by content type: COPY runs on Anthropic (Claude), BRIEFS run on Gemini, and IMAGES stay on Gemini. Each copy/brief request is tagged so the server picks the right model. (Requires a valid ANTHROPIC_API_KEY on the server for copy — if it's missing the server falls back to Gemini.) Also includes v29.44 per-channel option counts (WhatsApp 3, Push 3, Email 2). Pairs with SERVER v29.45s. Builds on v29.43 (design approval loop).";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -118,7 +118,7 @@ RULES:
 - If the copy is already correct, return hasIssues:false and leave corrected identical to input.
 Return ONLY JSON: {"hasIssues":boolean,"issues":[{"wrong":"original phrase","right":"corrected phrase","why":"short reason"}],"corrected":{"subject":"","header":"","body":"","cta":""}}. Include only the fields that were provided in corrected.`;
   const usr=`Proofread these fields:\n${fields.subject!=null?`SUBJECT: ${fields.subject}\n`:""}HEADER: ${fields.header||""}\nBODY: ${fields.body||""}\nCTA: ${fields.cta||""}`;
-  return await callClaude(sys,usr,true);
+  return await callClaude(sys,usr,true,"copy");
 }
 const normCrmType=(t)=>(t||"D2C").replace(" (Store-led)","").replace(" (store-led)","");
 const CRM_CATEGORIES=["cat edibles","dog edibles","lifestyle & spa","litter"];
@@ -901,7 +901,7 @@ function ApproverChip({name,at,color=C.teal}){if(!name)return null;return<span s
 // Build a clean, paste-ready text block from an approved copy option
 const copyTextFromOption=(o)=>{if(!o)return"";const rtb=(Array.isArray(o.rtbsSelected)&&o.rtbsSelected.length)?("RTB on image: "+o.rtbsSelected.join(" · ")):undefined;return[o.subject?("Subject: "+o.subject):"",o.subject?"":undefined,o.header,rtb,"",o.body,"",o.cta?("CTA: "+o.cta):""].filter(x=>x!==undefined).join("\n").replace(/\n{3,}/g,"\n\n").trim();};
 // How many copy options to generate per channel — Email gets 2, WhatsApp/Push get 5
-const copyOptionCount=(ch)=>{const c=(ch||"").toLowerCase();return(c.includes("email")&&!c.includes("whatsapp"))?2:5;};
+const copyOptionCount=(ch)=>{const c=(ch||"").toLowerCase();return(c.includes("email")&&!c.includes("whatsapp"))?2:3;};
 
 // Reusable copy generator (shared by the per-card flow and bulk generate).
 function briefBlockFor(c){
@@ -917,7 +917,7 @@ async function genCopyOptionsFor(c, ruleStr, fb){
   const nOpts=copyOptionCount(c.channel);
   const shape=COPY_SHAPE(isPush,isEmail);
   const sys="You write "+(c.channel||"WhatsApp")+" CRM copy for HUFT.\n"+BRAND_CONTEXT+"\n"+channelRules+"\n"+COPY_BEST_PRACTICES+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nTeam feedback:\n"+fb:"")+"\nReturn ONLY JSON array of "+nOpts+" options, "+shape;
-  return sanitizeOptions(await callClaude(sys, briefBlockFor(c), true));
+  return sanitizeOptions(await callClaude(sys, briefBlockFor(c), true, "copy"));
 }
 // One-click "Copy text" button with copied-state feedback
 function CopyBtn({text,label="Copy text",small=true,style}){
@@ -1284,7 +1284,7 @@ function App(){
         const sys=`You write tight CRM creative briefs for HUFT.\n${BRAND_CONTEXT}\nReturn ONLY JSON:\n{"campaignName":"MonYY_Product_Hook_AudienceCode","strategicInsight":"1-2 sharp lines","idea":"single-minded message","proofPoints":["3 short proof points"],"pillar":"Trust|Importance|Edutainment|Brand Values|Discovery","copyDirection":"1-2 lines","whatsappNote":"one line"}`;
         const rtbs=(r.rtbs||[]).filter(Boolean),refs=(r.references||[]).filter(Boolean);
         const usr=`CRM type: ${r.crmType||"D2C"}\nChannel: ${channel}\nProduct/Brand: ${r.product||""}\nPillar: ${r.pillar||"Importance"}\nAudience/Trigger: ${r.audience||""}\nObjective: ${r.objective||""}\nOffer: ${r.offer||"none"}\nHook/Angle: ${r.hook||"derive"}\nRTBs to focus on: ${rtbs.length?rtbs.join("; "):"derive"}\nReference links: ${refs.length?refs.join(" , "):"none"}\nGo-live date: ${r.goLive||"not set"}`;
-        const j=await callClaude(sys,usr,true);
+        const j=await callClaude(sys,usr,true,"brief");
         if(rtbs.length)j.proofPoints=rtbs;
         const now=Date.now();
         const glDate=r.goLive||null;
@@ -2070,7 +2070,7 @@ function BriefFastForm({campaignId,patch,onBriefReady,me,recentFeedback,product}
       const rtbList=(answers.rtbs||[]).filter(Boolean);
       const refList=(answers.references||[]).filter(Boolean);
       const usr=`CRM type: ${answers.crmType||"D2C"}\nChannel: ${answers.channel||"WhatsApp"}\nProduct/Brand: ${answers.product||product||""}\nPillar: ${answers.pillar||"Importance"}\nAudience/Trigger: ${answers.audience||""}\nObjective: ${answers.objective||""}\nOffer: ${answers.offer||"none"}\nHook/Angle: ${answers.hook||"derive"}\nRTBs to focus on (use these as proof points, weave into copy): ${rtbList.length?rtbList.join("; "):"derive from product"}\nReference links (context for copy & design — honour their tone/direction): ${refList.length?refList.join(" , "):"none"}\nGo-live date: ${answers.go_live_date||"not set"}`;
-      const j=await callClaude(sys,usr,true);
+      const j=await callClaude(sys,usr,true,"brief");
       if(rtbList.length)j.proofPoints=rtbList;
       const now=Date.now();
       const briefDue=new Date(now+TAT_HOURS.brief*36e5).toISOString();
@@ -2327,7 +2327,7 @@ function BriefChat({campaignId,patch,onBriefReady,me,recentFeedback,product}){
       const rtbList=(answers.rtbs||[]).filter(Boolean);
       const refList=(answers.references||[]).filter(Boolean);
       const usr=`CRM type: ${answers.crmType||"D2C"}\nChannel: ${answers.channel||"WhatsApp"}\nProduct/Brand: ${answers.product||""}\nPillar: ${answers.pillar||"Importance"}\nAudience/Trigger: ${answers.audience||""}\nObjective: ${answers.objective||""}\nOffer: ${answers.offer||"none"}\nHook/Angle: ${answers.hook||"derive"}\nRTBs to focus on (use these as proof points, weave into copy): ${rtbList.length?rtbList.join("; "):"derive from product"}\nReference links (context for copy & design — honour their tone/direction): ${refList.length?refList.join(" , "):"none"}\nGo-live date: ${answers.go_live_date||"not set"}`;
-      const j=await callClaude(sys,usr,true);
+      const j=await callClaude(sys,usr,true,"brief");
       // If user picked RTBs, prefer them as the proof points
       if(rtbList.length)j.proofPoints=rtbList;
       // Calculate TAT deadlines from now
@@ -3554,7 +3554,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         const nOpts=copyOptionCount(c.channel);
         const shape=COPY_SHAPE(isPush,isEmail);
         const sys="You write "+(c.channel||"WhatsApp")+" CRM copy for HUFT.\n"+BRAND_CONTEXT+"\n"+channelRules+"\n"+COPY_BEST_PRACTICES+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nTeam feedback:\n"+fb:"")+`\nReturn ONLY JSON array of ${nOpts} options, `+shape;
-        const j=sanitizeOptions(await callClaude(sys,briefBlock,true));
+        const j=sanitizeOptions(await callClaude(sys,briefBlock,true,"copy"));
         patch(c.id,{data:{...(c.data||{}),copyOptions:j,selectedCopyIdx:null,sentBack:false},copy_approver:null,stage:"content"});
         setShowAll(false);
       }catch(e){console.error("Gen error:",e);setErr("Generation failed: "+(e.message||"unknown error — check Vercel logs"));}setBusy(false);
@@ -3568,7 +3568,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         const channelRules=isPush?PUSH_RULES:isEmail?EMAIL_RULES:WHATSAPP_RULES;
         const sys="You refine ONE "+(c.channel||"WhatsApp")+" CRM copy for HUFT.\n"+BRAND_CONTEXT+"\n"+channelRules+"\n"+COPY_BEST_PRACTICES+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nFeedback:\n"+fb:"")+(isPush?"\nPUSH: title max 40 (hard 50); body max 70 chars (HARD LIMIT — second line never exceeds 70), at most two short flowing lines.":"")+"\nThe header is the IMAGE COPY / overlay — keep it a short, crisp, FLOWING line, never broken-up word fragments. Return ONLY JSON: {direction,header,body,cta}.";
         const usr=briefBlock+"\n\nCurrent:\n"+JSON.stringify(opts[idx])+"\n\nSteer (one-time): "+refineText;
-        const j=sanitizeOption(await callClaude(sys,usr,true));
+        const j=sanitizeOption(await callClaude(sys,usr,true,"copy"));
         const wasSelected=sel===idx;
         const newData={...(c.data||{}),copyOptions:opts.map((o,i)=>i===idx?j:o),sentBack:false};
         if(wasSelected)newData.selectedCopyIdx=null;
@@ -3586,7 +3586,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         const channelRules=isPush?PUSH_RULES:isEmail?EMAIL_RULES:WHATSAPP_RULES;
         const sys="You revise ONE "+(c.channel||"WhatsApp")+" CRM copy for HUFT to address a reviewer's send-back.\n"+BRAND_CONTEXT+"\n"+channelRules+"\n"+COPY_BEST_PRACTICES+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nFeedback:\n"+fb:"")+(isPush?"\nPUSH: title max 40 (hard 50); body max 70 chars (HARD LIMIT — second line never exceeds 70), at most two short flowing lines.":"")+"\nThe header is the IMAGE COPY / overlay — keep it a short, crisp, FLOWING line, never broken-up word fragments. Return ONLY JSON: {direction,header,body,cta}.";
         const usr=briefBlock+"\n\nCurrent copy:\n"+JSON.stringify(opts[idx])+"\n\nThe reviewer sent this back for changes. Revise the copy to fully address this feedback while staying true to the brief and rulebook:\n"+(reason||"Improve clarity, brand fit, and impact.");
-        const j=sanitizeOption(await callClaude(sys,usr,true));
+        const j=sanitizeOption(await callClaude(sys,usr,true,"copy"));
         const newData={...(c.data||{}),copyOptions:opts.map((o,i)=>i===idx?j:o),sentBack:false};
         patch(c.id,{data:newData});
         setRefineFor(null);
