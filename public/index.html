@@ -95,7 +95,7 @@ const canBrandApprove=(me)=>["super_admin","brand_lead"].includes(_r(me));      
 const canDesignApprove=(me)=>["super_admin","design_lead"].includes(_r(me));      // design approval (Anmol)
 // Which tabs each role sees
 const TAB_VIS={
-  super_admin:["dashboard","mytasks","approvals","brief","content","design","library","done","analytics","archive"],
+  super_admin:["dashboard","mytasks","approvals","brief","content","design","composer","library","done","analytics","archive"],
   brand_lead:["dashboard","mytasks","approvals","brief","content","design","library","done","analytics","archive"],
   design_lead:["dashboard","mytasks","approvals","brief","content","design","library","done","analytics","archive"],
   cxo:["dashboard","approvals","done"],
@@ -106,7 +106,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.55 · Restructured the Design page into the intended linear flow. Gone is the two-card 'Choose image source' (art direction vs library as co-equals) and the separate top-level library picker. Now it reads top-to-bottom: short brief (Product · Channel · Offer) → approved copy → generate ONE editable art direction → finish it (composer for everyone, 'Create on Canva' for design team, or upload) → send for design review. Library is no longer a top-level choice — it's a Source inside the composer, and when you pick 'Image from library' the composer now SUGGESTS brief-relevant scenes as thumbnails (plus the full list). The art direction carries into the composer and defaults its source to 'Generated AI background + product'. Builds on v29.54 (approval chain, handoff, Canva).";
+const BUILD="v29.58 · Canva-first design flow; composer hidden from the team flows. Design page 'Finish the design' now offers: Image from the library + Make it on Canva (both teams), and Generate an image (design team only, the AI art-direction path). The in-house Composer is removed from the business/design flows and now lives as a 'Composer' tab in the left sidebar visible ONLY to super-admin (pick any asset → full composer). Builds on v29.57 (composer/canva), v29.55 (linear flow).";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -252,7 +252,62 @@ const computeMyTasks=(campaigns,me)=>{
 const _first=(n)=>((n||"").trim().split(/\s+/)[0]||"");
 const slotHolders=(team,slot)=>(team||[]).filter(u=>Array.isArray(u.approval_slots)&&u.approval_slots.includes(slot)).map(u=>u.name);
 const SLOT_FALLBACK={copy:"brand lead",design:"design lead",asset:"brand lead",final:"Head of Marketing"};
-const CANVA_CREATE_URL="https://www.canva.com/create/instagram-posts/"; // design team "Create on Canva" target (edit to a brand-template link if desired)
+// HUFT Canva brand templates. Both teams open the suggested one, paste the approved copy into the
+// pre-branded text layers (fonts/layout already set), then upload the export / share link for review.
+const CANVA_TEMPLATES=[
+  {id:"EAHNe42__J0",label:"Hearty · Discount",url:"https://www.canva.com/brand/brand-templates/EAHNe42__J0",any:["hearty"],offer:true},
+  {id:"EAHNmUue0Ok",label:"Spa · Voucher",url:"https://www.canva.com/brand/brand-templates/EAHNmUue0Ok",any:["spa"],offer:true},
+  {id:"EAHNmZRoZYA",label:"Spa",url:"https://www.canva.com/brand/brand-templates/EAHNmZRoZYA",any:["spa"]},
+  {id:"EAHNmYgxjdw",label:"Meowsi",url:"https://www.canva.com/brand/brand-templates/EAHNmYgxjdw",any:["meowsi"]},
+  {id:"EAHNe96ez7Q",label:"General template",url:"https://www.canva.com/brand/brand-templates/EAHNe96ez7Q"},
+];
+function canvaHasOffer(c){const o=c&&c.offer;return !!(o&&!/^\s*(none|no offer|n\/?a|nil|-)\s*$/i.test(String(o)));}
+function suggestCanvaTemplate(c){
+  const hay=[(c&&c.product)||"",(c&&c.name)||"",(c&&c.category)||"",(c&&c.sub_brand)||"",(c&&c.objective)||""].join(" ").toLowerCase();
+  const hasOffer=canvaHasOffer(c);
+  let best=null,bs=-1e9;
+  for(const t of CANVA_TEMPLATES){
+    let s=0;
+    if(t.any){if(t.any.some(k=>hay.includes(k)))s+=10;else continue;}
+    if(t.offer)s+=hasOffer?6:-4; else if(t.any)s+=hasOffer?0:2; else s+=1;
+    if(s>bs){bs=s;best=t;}
+  }
+  return best||CANVA_TEMPLATES[CANVA_TEMPLATES.length-1];
+}
+function CanvaMaker({c,copy}){
+  const sug=suggestCanvaTemplate(c);
+  const[copied,setCopied]=useState("");
+  const open=(url)=>window.open(url,"_blank","noopener");
+  const cp=(t,k)=>{try{navigator.clipboard.writeText(String(t||""));setCopied(k);setTimeout(()=>setCopied(""),1200);}catch(e){}};
+  const fields=[["Headline",copy&&copy.header],["Sub-headline",copy&&copy.sub],["Button / CTA",copy&&copy.cta]].filter(f=>f[1]&&String(f[1]).trim());
+  return<div style={{border:`1px solid ${C.line}`,borderRadius:12,padding:"13px 15px",marginBottom:12,background:"#fff"}}>
+    <div style={{fontSize:13,fontWeight:800,color:C.ink,marginBottom:3}}>Make it in Canva</div>
+    <div style={{fontSize:11.5,color:C.sub,marginBottom:10,lineHeight:1.45}}>Open the on-brand template below, then paste this copy into the text layers — the fonts and layout are already set. When it's done, upload the export or paste the share link further down and send for review.</div>
+    <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:C.tealSoft,border:`1px solid ${C.teal}44`,borderRadius:9,padding:"9px 11px",marginBottom:10}}>
+      <div style={{flex:1,minWidth:150}}>
+        <div style={{fontSize:10,fontWeight:800,color:"#0F766E",textTransform:"uppercase",letterSpacing:.5}}>Suggested template</div>
+        <div style={{fontSize:13,fontWeight:700,color:C.ink}}>{sug.label}</div>
+      </div>
+      <Btn small variant="teal"onClick={()=>open(sug.url)}>Open in Canva <ArrowRight size={12}/></Btn>
+    </div>
+    <div style={{fontSize:10.5,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.4,marginBottom:5}}>Or pick another</div>
+    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:fields.length?12:0}}>
+      {CANVA_TEMPLATES.filter(t=>t.id!==sug.id).map(t=><button key={t.id}onClick={()=>open(t.url)}style={{fontSize:11.5,fontWeight:600,padding:"5px 10px",borderRadius:999,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.ink,display:"inline-flex",alignItems:"center",gap:4}}>{t.label}<ArrowRight size={10}/></button>)}
+    </div>
+    {fields.length>0&&<div>
+      <div style={{fontSize:10.5,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.4,marginBottom:5}}>Paste this copy into the template</div>
+      <div style={{display:"grid",gap:6}}>
+        {fields.map(([label,val])=><div key={label}style={{display:"flex",alignItems:"center",gap:8,border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 10px"}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:9.5,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.4}}>{label}</div>
+            <div style={{fontSize:12.5,color:C.ink,whiteSpace:"pre-line"}}>{val}</div>
+          </div>
+          <button onClick={()=>cp(val,label)}style={{flexShrink:0,fontSize:11,fontWeight:700,padding:"4px 9px",borderRadius:7,border:`1px solid ${C.line}`,background:copied===label?C.tealSoft:"#fff",color:copied===label?C.teal:C.ink,cursor:"pointer"}}>{copied===label?"Copied ✓":"Copy"}</button>
+        </div>)}
+      </div>
+    </div>}
+  </div>;
+}
 const waitingOn=(c,team)=>{
   if(!c||isArchived(c))return null;
   const named=(slot,fb)=>{const n=slotHolders(team,slot);return n.length?n.join(", "):fb;};
@@ -1333,6 +1388,7 @@ function App(){
     {k:"brief",label:"Brief",icon:<FileText size={16}/>,count:cnt.brief||undefined},
     {k:"content",label:"Copy",icon:<MessageSquare size={16}/>,count:cnt.copy||undefined},
     {k:"design",label:"Design",icon:<Palette size={16}/>,count:cnt.design||undefined},
+    {k:"composer",label:"Composer",icon:<Wand2 size={16}/>},
     {k:"library",label:"Brand Assets",icon:<ImageIcon size={16}/>},
     {k:"done",label:"Finalized Assets",icon:<CheckCircle2 size={16}/>,count:cnt.done||undefined},
     {k:"analytics",label:"Analytics",icon:<BarChart3 size={16}/>},
@@ -1391,6 +1447,7 @@ function App(){
       {tab==="brief"&&<BriefTab active={active}patch={patch}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={scoped}onOpen={open}audiences={audiences}onDelete={delCampaign}onNew={newCampaign}onBulkImport={bulkImportBriefs}onBulkGenerate={bulkGenerate}toast={toast}/>}
       {(tab==="content"||tab==="brand_review")&&<ContentTab active={active}patch={patch}copyRules={copyRules}addRule={addRule}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={scoped}onOpen={open}toast={toast}onDelete={delCampaign}onSplit={splitCopyAssets}catRules={catRules}team={team}reload={loadAll}/>}
       {tab==="design"&&<DesignTab active={active}patch={patch}promptRules={promptRules}addRule={addRule}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={scoped}onOpen={open}onDelete={delCampaign}onDuplicate={duplicateCampaign}team={team}/>}
+      {tab==="composer"&&<ComposerTab campaigns={scoped}me={me}patch={patch}promptRules={promptRules}toast={toast}/>}
       {tab==="library"&&<BrandAssetsTab me={me}toast={toast}copyRules={copyRules}promptRules={promptRules}addRule={addRule}toggleRule={toggleRule}delRule={delRule}feedback={feedback}audiences={audiences}setAudiences={setAudiences}/>}
       {tab==="done"&&<DoneTab campaigns={scoped}patch={patch}onOpen={open}me={me}setTab={setTab}onDelete={delCampaign}onDuplicate={duplicateCampaign}/>}
       {tab==="analytics"&&<AnalyticsTab campaigns={scoped}patch={patch}onOpen={open}me={me}/>}
@@ -5596,6 +5653,37 @@ function BriefInShort({c}){
     {rtbs.length>0&&<div style={{fontSize:12,color:C.sub,lineHeight:1.4}}><b>Proof points: </b>{rtbs.join(" · ")}</div>}
   </div>;
 }
+// Super-admin-only standalone composer: pick any asset, open the full composer for it.
+function ComposerTab({campaigns,me,patch,promptRules,toast}){
+  const list=(campaigns||[]).filter(c=>!isArchived(c)&&(c.stage==="design"||c.stage==="content"||c.stage==="done"));
+  const[selId,setSelId]=useState("");
+  const c=list.find(x=>x.id===selId)||list[0]||null;
+  const d=c?((c.data&&c.data.design)||{}):{};
+  const copyOpts=c?(c.data?.copyOptions||[]):[];
+  const selIdx=c?c.data?.selectedCopyIdx:null;
+  const copy=c?(selIdx!=null?copyOpts[selIdx]:(copyOpts[0]||null)):null;
+  const approvedPrompt=(c&&d.imagePrompts&&d.approvedPromptIdx!=null)?d.imagePrompts[d.approvedPromptIdx]:null;
+  return<div>
+    <div style={{marginBottom:16}}>
+      <Eyebrow>Super-admin</Eyebrow>
+      <h1 style={{margin:"4px 0 0",fontSize:24,fontWeight:800}}>Composer</h1>
+      <div style={{fontSize:12.5,color:C.sub,marginTop:4}}>The full creative composer — available to you for any asset. Hidden from the business and design flows.</div>
+    </div>
+    {list.length===0
+      ?<Card><Empty icon={<Wand2 size={26}color={C.sub}/>}title="No assets to compose"sub="Assets appear here once they have copy or reach the design stage."/></Card>
+      :<div>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+          <span style={{fontSize:12.5,fontWeight:700,color:C.ink}}>Asset:</span>
+          <select value={c?c.id:""}onChange={e=>setSelId(e.target.value)}style={{border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 10px",fontSize:13,minWidth:260,maxWidth:"100%"}}>
+            {list.map(x=><option key={x.id}value={x.id}>{(x.product||x.name||"Untitled")+(x.channel?(" · "+x.channel):"")+" · "+x.stage}</option>)}
+          </select>
+        </div>
+        {c&&copy
+          ?<CreativeComposer c={c}copy={copy}me={me}patch={patch}d={d}approvedPrompt={approvedPrompt}promptRules={promptRules}toast={toast}/>
+          :<Card><div style={{fontSize:13,color:C.sub,padding:"4px 2px"}}>This asset has no copy yet — pick another asset, or add copy in the Copy tab first.</div></Card>}
+      </div>}
+  </div>;
+}
 function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedback,campaigns,onOpen,onDelete,onDuplicate,team}){
   const allDesignRaw=(campaigns||[]).filter(c=>c.stage==="design"&&(c.channel!=="Push notification"||c.data?.selfMade)&&!isArchived(c));
   const allDesign=isBusiness(me)?allDesignRaw.filter(c=>c.data?.selfMade):isDesignTeam(me)?allDesignRaw.filter(c=>!c.data?.selfMade):allDesignRaw;
@@ -5844,15 +5932,15 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
         {/* Back to picker */}
 
         {/* Art direction notes */}
-        {!isPushChannel(c.channel)&&<ArtNotes d={d}setD={setD}busy={busy}genNotes={genNotes}/>}
+        {!isPushChannel(c.channel)&&["design_team","design_lead","super_admin"].includes(_r(me))&&<ArtNotes d={d}setD={setD}busy={busy}genNotes={genNotes}/>}
 
         {/* Reference images — upload or pull from library to steer generation */}
-        {!isPushChannel(c.channel)&&<RefImagePicker d={d}setD={setD}campaignId={c.id}product={c.product}/>}
+        {!isPushChannel(c.channel)&&["design_team","design_lead","super_admin"].includes(_r(me))&&<RefImagePicker d={d}setD={setD}campaignId={c.id}product={c.product}/>}
 
         {/* Image prompts */}
-        {!isPushChannel(c.channel)&&<div style={{marginBottom:12}}>
+        {!isPushChannel(c.channel)&&["design_team","design_lead","super_admin"].includes(_r(me))&&<div style={{marginBottom:12}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-            <div style={{fontSize:12,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5}}>Art direction</div>
+            <div style={{fontSize:12,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5}}>Generate an image</div>
             {busy==="prompts"?<Spin label="Generating…"/>:<Btn small onClick={e=>{e.stopPropagation();genPrompts();}}>{d.imagePrompts?"Regenerate":"Generate art direction"}</Btn>}
           </div>
           {err&&<div style={{color:C.coral,fontSize:13,marginBottom:8}}>{err}</div>}
@@ -5910,13 +5998,12 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
         {/* Finish the design — design team & admins only. Either compose in-app, or upload your own. */}
         {["design_team","design_lead","super_admin","business"].includes(_r(me))&&<div>
           <div style={{marginTop:14,marginBottom:6,fontSize:13,fontWeight:800,color:C.ink}}>Finish the design</div>
-          <div style={{fontSize:12.5,color:C.sub,marginBottom:4}}>{["design_team","design_lead","super_admin"].includes(_r(me))?<>Build it in the <b>composer</b> below, <b>create it on Canva</b>, or <b>upload</b> a file / link — then send for design review.</>:<>Build it in the <b>composer</b> below, <b>or</b> upload your own design (file / link) at the bottom. You only need one.</>}</div>
-          {["design_team","design_lead","super_admin"].includes(_r(me))&&<div style={{margin:"4px 0 10px",display:"flex",alignItems:"center",gap:9,flexWrap:"wrap"}}>
-            <Btn small variant="ghost"onClick={()=>window.open(CANVA_CREATE_URL,"_blank","noopener")}>Create on Canva <ArrowRight size={12}/></Btn>
-            <span style={{fontSize:11,color:C.sub}}>Design there, then upload the file or paste the share link below — and send for design review.</span>
-          </div>}
+          <div style={{fontSize:12.5,color:C.sub,marginBottom:10}}>Pick an <b>image from the library</b>, or <b>make it on Canva</b> from a brand template. Then upload/finish below and send for design review.</div>
 
-          {isOpen&&copy&&<CreativeComposer c={c}copy={copy}me={me}patch={patch}d={d}approvedPrompt={approvedPrompt}promptRules={promptRules}toast={(typeof toast!=="undefined"?toast:null)}/>}
+          <div style={{fontSize:12,fontWeight:800,color:C.ink,margin:"4px 0 6px"}}>Image from the library</div>
+          <SmartLibraryPicker d={d}setD={setD}copy={copy}brief={c.data?.brief}product={c.product}campaignId={c.id}/>
+          <div style={{fontSize:12,fontWeight:800,color:C.ink,margin:"16px 0 6px"}}>Or make it on Canva</div>
+          <CanvaMaker c={c}copy={copy}/>
           <FinalDesignUpload c={c}d={d}patch={patch}me={me}/>
           {d.finalFile&&<div style={{marginTop:10,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:C.tealSoft,border:`1px solid ${C.teal}55`,borderRadius:10,padding:"10px 13px"}}>
             <ImageIcon size={15}color={C.teal}/>
