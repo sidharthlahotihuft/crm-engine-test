@@ -106,7 +106,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.37 · Four changes. DESIGN: (1) the WhatsApp preview no longer overlays the image copy when a design image exists — the copy is already on the creative, so it shows the design as-is; (2) a 'Submit design for approval' button is now pinned to the TOP of each design tile (sends the current design to Anmol & Ilena), with a clear pending state once submitted. COPY: (3) each generated option now also produces 2-3 short RTBs (proof points) drawn from the brief; (4) the copy team can tap to add any RTBs to the image copy — selected RTBs are appended to the header, none selected keeps it short. Builds on v29.36 (image-fix chat), v29.35 (brief in short), v29.34 (typing), v29.33 (stable Copy row), v29.31 (content on Gemini).";
+const BUILD="v29.40 · Push copy now leans toward earning the tap: soft guidance (a preference, not a hard rule) steers it to use a question or something surprising/fun/relatable, and to use plain everyday words — e.g. 'cat', never 'feline'. Applies to push generation across generate/steer/fix. Builds on v29.39 (channel rules in steer/fix), v29.38 (push body hard 70), v29.37 (design preview/RTBs).";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -156,11 +156,13 @@ const COPY_BEST_PRACTICES=`HIGH-ENGAGEMENT COPY PRINCIPLES (apply to every optio
 // Channel-specific engagement rules (shared by every generator).
 const PUSH_RULES=`PUSH NOTIFICATION RULES — win the tap in under 2 seconds on a crowded lock screen:
 - TITLE ≤ 40 chars (hard max 50): the single most tappable promise — a benefit, a curiosity gap, or a timely trigger. Front-load the most important word; the first ~3 words must carry the hook because previews truncate.
-- BODY ≤ 90 chars (aim for ~60–75): AT MOST two short, complete sentences/lines — ideally just one. Each line is a full, natural thought, never a fragment. The body pays off the title and points to the action. No bullets, no third line, no second idea.
+- BODY (the second line) ≤ 70 chars — THIS IS A HARD LIMIT, never exceed 70 characters: AT MOST two short, complete sentences/lines — ideally just one. Each line is a full, natural thought, never a fragment. The body pays off the title and points to the action. No bullets, no third line, no second idea.
 - Exactly ONE idea and ONE CTA. CTA is 2–3 words or implied ("Shop now", "Tap to save", "Book today").
 - Lead with value or curiosity, NOT the brand name. Personalise with the pet/parent only when it adds real relevance.
 - Use urgency/timeliness only when genuine (new drop, ends tonight, today only) — never fake scarcity.
 - Sentence case. One tasteful emoji is welcome if it earns its place (max 1). No ALL-CAPS, no "!!!".
+- ENGAGEMENT (aim for this — a strong preference, not a hard rule): the whole goal is to EARN THE TAP, so lean into one of these angles — ask an intriguing QUESTION, or say something SURPRISING, FUN, or RELATABLE that a pet parent instantly feels. Playful and human beats polished-and-salesy. Default to the more engaging option when in doubt.
+- PLAIN WORDS: use simple, everyday language a busy parent reads at a glance — avoid stiff or fancy words. For example, never say "feline"; say "cat". Skip jargon and clever-but-cold phrasing.
 - Sound like a helpful nudge from someone who knows their pet — not an ad.`;
 const EMAIL_RULES=`EMAIL RULES — most opens are on mobile, so write mobile-first, front-loaded and scannable:
 - SUBJECT (the "subject" field) 30–50 chars: ONE benefit or curiosity hook with the key word front-loaded. No spam words, no ALL-CAPS, no excess punctuation. Specific and personal beats clever-but-vague.
@@ -203,7 +205,7 @@ const sanitizeOptions=(arr)=>Array.isArray(arr)?arr.map(sanitizeOption):arr;
 // Shared shape/format spec for copy generation — used by BOTH the bulk generator and the per-card generator so they never drift.
 // header = the IMAGE COPY / on-creative overlay: must be a short, crisp, FLOWING line (or two) — never broken-up word fragments. Surface the offer here when the brief has one.
 const COPY_SHAPE=(isPush,isEmail)=>(isPush
-  ?"each: {direction,header,body,cta,rtbs}. header=push TITLE, max 40 chars (hard 50), one crisp flowing line. body=max 90 chars, at most TWO short complete sentences (one is better), natural flow not fragments. cta=2-3 words. If the brief has an offer, put it in the title or body in plain words."
+  ?"each: {direction,header,body,cta,rtbs}. header=push TITLE, max 40 chars (hard 50), one crisp flowing line. body=the second line, max 70 chars — THIS IS A HARD LIMIT, never exceed 70 chars; at most TWO short complete sentences (one is better), natural flow not fragments. cta=2-3 words. If the brief has an offer, put it in the title or body in plain words."
   :isEmail
   ?"each: {direction,subject,header,body,cta,rtbs}. subject=email subject line under 50 chars. header=IMAGE COPY / hero overlay: 1-2 short FLOWING lines (crisp, never broken-up word fragments); surface the offer here if the brief has one. body=short scannable email (~50-80 words): warm 1-line opener, core value/offer in 1-2 lines, 2-3 proof points, friendly sign-off. cta=action phrase."
   :"each: {direction,header,body,cta,rtbs}. header=IMAGE COPY / on-image overlay: 1-2 short FLOWING lines (crisp and readable, never individual words broken onto separate lines, never a fragment); surface the offer here if the brief has one. body=tight WhatsApp message (~45-60 words): hook line that breaks before 'read more', payoff, 2-3 proof bullets, switch/offer line, store CTA, light opt-out. cta=action phrase.")
@@ -425,7 +427,7 @@ Language: British English only. Clarity first, warmth second.
 Header (image overlay): 2–3 very short punchy lines. Lead with emotion or truth, NOT product name.
 Body: 1 warm opener → 3–5 scannable ✓ bullets → short sign-off → one CTA.
 Emoji: max 1–2 (🐾 💛 👀 ✓ are preferred). Never decorative strings.
-Push: title MAX 50 chars, body MAX 90 chars, one sentence, max 1 emoji.
+Push: title MAX 50 chars, body (second line) MAX 70 chars HARD LIMIT, one sentence, max 1 emoji.
 Email: subject under 50 chars, curiosity or benefit-led. Preheader extends subject, never repeats.
 
 ▌ PERFORMANCE AD FRAMEWORKS
@@ -3559,7 +3561,9 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       try{
         const fb=recentFeedback("content");
         const isPush=isPushChannel(c.channel);
-        const sys="You refine ONE "+(c.channel||"WhatsApp")+" CRM copy for HUFT.\n"+BRAND_CONTEXT+"\n"+COPY_BEST_PRACTICES+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nFeedback:\n"+fb:"")+(isPush?"\nPUSH: title max 40 (hard 50); body max 90 chars, at most two short flowing lines.":"")+"\nThe header is the IMAGE COPY / overlay — keep it a short, crisp, FLOWING line, never broken-up word fragments. Return ONLY JSON: {direction,header,body,cta}.";
+        const isEmail=c.channel==="Email"||c.channel==="WhatsApp + Email";
+        const channelRules=isPush?PUSH_RULES:isEmail?EMAIL_RULES:WHATSAPP_RULES;
+        const sys="You refine ONE "+(c.channel||"WhatsApp")+" CRM copy for HUFT.\n"+BRAND_CONTEXT+"\n"+channelRules+"\n"+COPY_BEST_PRACTICES+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nFeedback:\n"+fb:"")+(isPush?"\nPUSH: title max 40 (hard 50); body max 70 chars (HARD LIMIT — second line never exceeds 70), at most two short flowing lines.":"")+"\nThe header is the IMAGE COPY / overlay — keep it a short, crisp, FLOWING line, never broken-up word fragments. Return ONLY JSON: {direction,header,body,cta}.";
         const usr=briefBlock+"\n\nCurrent:\n"+JSON.stringify(opts[idx])+"\n\nSteer (one-time): "+refineText;
         const j=sanitizeOption(await callClaude(sys,usr,true));
         const wasSelected=sel===idx;
@@ -3575,7 +3579,9 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         const reason=(c.data?.lastRejectReason||"").trim();
         const fb=recentFeedback("content");
         const isPush=isPushChannel(c.channel);
-        const sys="You revise ONE "+(c.channel||"WhatsApp")+" CRM copy for HUFT to address a reviewer's send-back.\n"+BRAND_CONTEXT+"\n"+COPY_BEST_PRACTICES+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nFeedback:\n"+fb:"")+(isPush?"\nPUSH: title max 40 (hard 50); body max 90 chars, at most two short flowing lines.":"")+"\nThe header is the IMAGE COPY / overlay — keep it a short, crisp, FLOWING line, never broken-up word fragments. Return ONLY JSON: {direction,header,body,cta}.";
+        const isEmail=c.channel==="Email"||c.channel==="WhatsApp + Email";
+        const channelRules=isPush?PUSH_RULES:isEmail?EMAIL_RULES:WHATSAPP_RULES;
+        const sys="You revise ONE "+(c.channel||"WhatsApp")+" CRM copy for HUFT to address a reviewer's send-back.\n"+BRAND_CONTEXT+"\n"+channelRules+"\n"+COPY_BEST_PRACTICES+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nFeedback:\n"+fb:"")+(isPush?"\nPUSH: title max 40 (hard 50); body max 70 chars (HARD LIMIT — second line never exceeds 70), at most two short flowing lines.":"")+"\nThe header is the IMAGE COPY / overlay — keep it a short, crisp, FLOWING line, never broken-up word fragments. Return ONLY JSON: {direction,header,body,cta}.";
         const usr=briefBlock+"\n\nCurrent copy:\n"+JSON.stringify(opts[idx])+"\n\nThe reviewer sent this back for changes. Revise the copy to fully address this feedback while staying true to the brief and rulebook:\n"+(reason||"Improve clarity, brand fit, and impact.");
         const j=sanitizeOption(await callClaude(sys,usr,true));
         const newData={...(c.data||{}),copyOptions:opts.map((o,i)=>i===idx?j:o),sentBack:false};
@@ -3685,7 +3691,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
             <div style={{fontWeight:700,fontSize:13.5,color:C.ink,whiteSpace:"pre-line",marginBottom:4}}>{o.header}</div>
             <div style={{fontSize:12.5,color:"#374151",lineHeight:1.5,whiteSpace:"pre-line"}}>{o.body}</div>
             {o.cta&&<div style={{marginTop:7,display:"inline-block",background:C.navy,color:"#fff",fontSize:11.5,fontWeight:700,padding:"4px 11px",borderRadius:7}}>{o.cta}</div>}
-            {isPush&&<div style={{marginTop:8,display:"flex",gap:10,fontSize:10,color:C.sub}}><span style={{color:(o.header||"").length>50?"#DC2626":C.sub}}>Title {(o.header||"").length}/50</span><span style={{color:(o.body||"").length>90?"#DC2626":C.sub}}>Body {(o.body||"").length}/90</span></div>}
+            {isPush&&<div style={{marginTop:8,display:"flex",gap:10,fontSize:10,color:C.sub}}><span style={{color:(o.header||"").length>50?"#DC2626":C.sub}}>Title {(o.header||"").length}/50</span><span style={{color:(o.body||"").length>70?"#DC2626":C.sub}}>Body {(o.body||"").length}/70</span></div>}
           </div>}
           <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
             <CopyBtn text={()=>copyTextFromOption(o)}/>
@@ -3907,8 +3913,8 @@ function ManualCopyForm({initial,channel,onSave,onCancel}){
     {isEmail&&<><Field label="Subject line (under 50 chars)"value={subj}onChange={setSubj}placeholder="e.g. Your dog's dinner just got an upgrade"/>
     <div style={{display:"flex",gap:10,fontSize:10.5,color:C.sub,marginTop:-6,marginBottom:10}}><span style={{color:subj.length>50?"#DC2626":C.sub}}>Subject {subj.length}/50</span></div></>}
     <Field label={isPush?"Title (keep under 50 chars)":"Image copy"}value={h}onChange={setH}textarea rows={2}/>
-    <Field label={isPush?"Body (keep under 90 chars)":isEmail?"Body copy":"Body copy"}value={b}onChange={setB}textarea rows={isPush?2:5}/>
-    {isPush&&<div style={{display:"flex",gap:10,fontSize:10.5,color:C.sub,marginTop:-6,marginBottom:10}}><span style={{color:h.length>50?"#DC2626":C.sub}}>Title {h.length}/50</span><span style={{color:b.length>90?"#DC2626":C.sub}}>Body {b.length}/90</span></div>}
+    <Field label={isPush?"Body (keep under 70 chars — hard limit)":isEmail?"Body copy":"Body copy"}value={b}onChange={setB}textarea rows={isPush?2:5}/>
+    {isPush&&<div style={{display:"flex",gap:10,fontSize:10.5,color:C.sub,marginTop:-6,marginBottom:10}}><span style={{color:h.length>50?"#DC2626":C.sub}}>Title {h.length}/50</span><span style={{color:b.length>70?"#DC2626":C.sub}}>Body {b.length}/70</span></div>}
     <Field label="CTA"value={cta}onChange={setCta}placeholder="e.g. Shop now"/>
 
     {/* Grammar-check results panel */}
@@ -4195,7 +4201,7 @@ function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,
           {/* Character count */}
           <div style={{marginTop:8,display:"flex",gap:10,fontSize:10,color:"rgba(255,255,255,.4)"}}>
             <span style={{color:(o.header||"").length>50?"#F87171":"rgba(255,255,255,.4)"}}>Title: {(o.header||"").length}/50</span>
-            <span style={{color:(o.body||"").length>90?"#F87171":"rgba(255,255,255,.4)"}}>Body: {(o.body||"").length}/90</span>
+            <span style={{color:(o.body||"").length>70?"#F87171":"rgba(255,255,255,.4)"}}>Body: {(o.body||"").length}/70</span>
           </div>
         </div>
       :isEmail
