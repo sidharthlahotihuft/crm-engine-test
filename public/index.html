@@ -106,7 +106,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.54 · Design-flow rework (batch). (1) Approval chain: Anmol approves the design → Ilena approves the full asset, and Ilena's approval is now the FINAL gate that takes it live — HMO & CXO are notified for oversight only, no extra sign-off step. (2) Business 'Can't do it? Request the design team' fully hands an asset off to the design team's queue (leaves the business queue). (3) Brief-in-short trimmed and now leads with Product · Channel · Offer. (4) Design page now generates ONE editable art direction (was two prompts) that auto-flows into the composer. (5) Design team gets a 'Create on Canva' button (opens Canva; finish there → upload file/link → send for design review). Builds on v29.53 (composer sources), v29.52 (no-design-needed removed).";
+const BUILD="v29.55 · Restructured the Design page into the intended linear flow. Gone is the two-card 'Choose image source' (art direction vs library as co-equals) and the separate top-level library picker. Now it reads top-to-bottom: short brief (Product · Channel · Offer) → approved copy → generate ONE editable art direction → finish it (composer for everyone, 'Create on Canva' for design team, or upload) → send for design review. Library is no longer a top-level choice — it's a Source inside the composer, and when you pick 'Image from library' the composer now SUGGESTS brief-relevant scenes as thumbnails (plus the full list). The art direction carries into the composer and defaults its source to 'Generated AI background + product'. Builds on v29.54 (approval chain, handoff, Canva).";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -4671,6 +4671,8 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   const[linkSizes,setLinkSizes]=useState(true); // sub-headline size scales with headline unless unlinked
   const[autoFit,setAutoFit]=useState(true); // auto-place/scale products into free space (no overlap)
   const[mockupPreset,setMockupPreset]=useState("studio-cream"); // clean preset background for product mockups
+  const[libSuggest,setLibSuggest]=useState(null); // suggested library scenes for this brief, shown when Source = Image from library
+  React.useEffect(()=>{if(bgMode!=="library"||libSuggest!==null||!c||!c.id)return;api.get("/api/image-library-suggest/"+c.id).then(r=>setLibSuggest((Array.isArray(r)?r:[]).filter(i=>i.kind!=="product").slice(0,8))).catch(()=>setLibSuggest([]));},[bgMode,libSuggest,c&&c.id]);
   const[reqNote,setReqNote]=useState("");const[reqBusy,setReqBusy]=useState(false);const[reqSent,setReqSent]=useState(false);
   const sz=COMPOSER_SIZES[sizeIdx];
 
@@ -5373,7 +5375,15 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
           <div style={{fontSize:10.5,color:C.sub}}>Your exact product packshot composites on top with a natural shadow — the label stays accurate. Add the product below.</div>
         </div>}
 
-        {bgMode==="library"&&<div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Library image (scene)</label><select value={bgId}onChange={e=>setBgId(e.target.value)}style={ctrl}><option value="">— pick —</option>{assetItems.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select></div>}
+        {bgMode==="library"&&<div style={{gridColumn:"1 / -1",display:"grid",gap:8}}>
+          <label style={fieldL}>Suggested for this brief</label>
+          {libSuggest===null?<div style={{fontSize:11,color:C.sub}}>Finding relevant scenes…</div>
+           :libSuggest.length===0?<div style={{fontSize:11,color:C.sub}}>No close matches — pick any scene below.</div>
+           :<div style={{display:"flex",gap:7,overflowX:"auto",paddingBottom:2}}>
+              {libSuggest.map(im=><button key={im.id}onClick={()=>setBgId(im.id)}title={im.product||im.file_name||"scene"}style={{flexShrink:0,width:64,height:64,borderRadius:8,overflow:"hidden",border:`2px solid ${bgId===im.id?C.coral:C.line}`,padding:0,cursor:"pointer",background:"#fff"}}><ImageThumb id={im.id}alt={im.product||"scene"}/></button>)}
+            </div>}
+          <div><label style={fieldL}>…or pick any library scene</label><select value={bgId}onChange={e=>setBgId(e.target.value)}style={ctrl}><option value="">— pick —</option>{assetItems.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select></div>
+        </div>}
 
 
         {bgMode==="generate"&&canGenerate&&<div style={{gridColumn:"1 / -1",display:"grid",gap:8,padding:"10px 12px",background:C.paper,border:`1px solid ${C.line}`,borderRadius:8}}>
@@ -5830,34 +5840,17 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
 
         {copyChangedAfterPrompts&&<div style={{display:"flex",alignItems:"center",gap:8,background:"#FEF3C7",border:"1px solid #FDE68A",borderRadius:8,padding:"8px 12px",marginBottom:12,fontSize:12.5,color:"#92400E",fontWeight:600}}><span>⚠️ Copy was updated after prompts were generated — regenerate prompts to match.</span></div>}
         {/* Image source picker — hidden for push (push needs no design) */}
-        {!isPushChannel(c.channel)&&!imageMode&&<div style={{marginBottom:12}}>
-          <div style={{fontSize:12,fontWeight:700,color:C.sub,marginBottom:8}}>Choose image source</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-            <div onClick={()=>setImageMode("prompt")}style={{border:`2px solid ${C.line}`,borderRadius:12,padding:14,cursor:"pointer",textAlign:"center"}}>
-              <Wand2 size={20}color={C.coral}style={{marginBottom:6}}/>
-              <div style={{fontWeight:700,fontSize:13}}>Generate art direction</div>
-              <div style={{fontSize:12,color:C.sub}}>One editable art direction for the scene</div>
-            </div>
-            <div onClick={()=>{setImageMode("library");setD({imageSource:"library"});}}style={{border:`2px solid ${C.line}`,borderRadius:12,padding:14,cursor:"pointer",textAlign:"center"}}>
-              <ImageIcon size={20}color={C.teal}style={{marginBottom:6}}/>
-              <div style={{fontWeight:700,fontSize:13}}>Pick from library</div>
-              <div style={{fontSize:12,color:C.sub}}>Use existing Drive assets</div>
-            </div>
-          </div>
-          <button onClick={()=>setImageMode(null)}style={{display:"none"}}/>
-        </div>}
 
         {/* Back to picker */}
-        {imageMode&&<button onClick={()=>setImageMode(null)}style={{display:"flex",alignItems:"center",gap:5,background:"none",border:"none",cursor:"pointer",color:C.sub,fontSize:12.5,marginBottom:12,padding:0}}><ChevronRight size={13}style={{transform:"rotate(180deg)"}}/>Change image source</button>}
 
         {/* Art direction notes */}
-        {imageMode==="prompt"&&<ArtNotes d={d}setD={setD}busy={busy}genNotes={genNotes}/>}
+        {!isPushChannel(c.channel)&&<ArtNotes d={d}setD={setD}busy={busy}genNotes={genNotes}/>}
 
         {/* Reference images — upload or pull from library to steer generation */}
-        {imageMode==="prompt"&&<RefImagePicker d={d}setD={setD}campaignId={c.id}product={c.product}/>}
+        {!isPushChannel(c.channel)&&<RefImagePicker d={d}setD={setD}campaignId={c.id}product={c.product}/>}
 
         {/* Image prompts */}
-        {imageMode==="prompt"&&<div style={{marginBottom:12}}>
+        {!isPushChannel(c.channel)&&<div style={{marginBottom:12}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
             <div style={{fontSize:12,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5}}>Art direction</div>
             {busy==="prompts"?<Spin label="Generating…"/>:<Btn small onClick={e=>{e.stopPropagation();genPrompts();}}>{d.imagePrompts?"Regenerate":"Generate art direction"}</Btn>}
@@ -5913,7 +5906,6 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
         </div>}
 
         {/* Library picker */}
-        {imageMode==="library"&&<SmartLibraryPicker d={d}setD={setD}copy={copy}brief={c.data?.brief}product={c.product}campaignId={c.id}/>}
 
         {/* Finish the design — design team & admins only. Either compose in-app, or upload your own. */}
         {["design_team","design_lead","super_admin","business"].includes(_r(me))&&<div>
