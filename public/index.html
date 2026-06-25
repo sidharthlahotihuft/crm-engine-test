@@ -106,7 +106,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.48 · Products stay pixel-exact. Root problem: image generators (Gemini/Claude) REDRAW any product you feed them, distorting the packshot. Fix in the Composer: (1) 'Keep my product exact' (on by default) generates an EMPTY, product-ready scene — the model never draws the product — then your real PNG composites on top untouched; (2) the composite is now grounded with a cast shadow built from the product's own silhouette + a tight contact shadow + a 'light from' direction, so the exact packshot looks planted in the scene, not pasted on. Builds on v29.47 (brief maker flow), v29.45 (copy→Anthropic/brief→Gemini).";
+const BUILD="v29.49 · Fixed a dead role-gate bug from the old role rename. Several gates still checked the legacy names ('admin'/'design'/'brand'/'content'), which no longer match anyone's stored role — so the features silently switched off for everyone. Restored: AI scene generation in the Composer (the 'Generated image (AI)' source + 'Keep my product exact'), the Requests inbox (Send to design team), image-library Edit, and Duplicate. Now keyed to real roles (super_admin / design_lead / design_team / brand_lead, + business for duplicate). Unblocks testing v29.48's product-exact flow.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -889,7 +889,7 @@ function ChannelIcon({channel,size=16}){
 }
 function RowActions({c,patch,me,onEdit,onDelete,onDuplicate}){
   const canEdit=seesAll(me)||isBusiness(me);
-  const canDup=["admin","business","design","brand"].includes(me.role);
+  const canDup=["super_admin","business","design_lead","design_team","brand_lead"].includes(_r(me));
   return<div style={{display:"flex",gap:5,alignItems:"center",flexShrink:0}}>
     {onEdit&&<button onClick={e=>{e.stopPropagation();onEdit();}}style={{display:"flex",alignItems:"center",gap:3,fontSize:11.5,padding:"4px 8px",borderRadius:6,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.sub,fontWeight:600}}><PenLine size={11}/>Edit</button>}
     {canDup&&onDuplicate&&<button onClick={e=>{e.stopPropagation();onDuplicate(c);}}style={{display:"flex",alignItems:"center",gap:3,fontSize:11.5,padding:"4px 8px",borderRadius:6,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.sub,fontWeight:600}}><Copy size={11}/>Duplicate</button>}
@@ -1107,7 +1107,7 @@ function App(){
   const[drawer,setDrawer]=useState(null);
   const[reqOpenCount,setReqOpenCount]=useState(0);
   const refreshReqCount=React.useCallback(()=>{
-    if(!me||!["admin","design","brand"].includes(me.role))return;
+    if(!me||!["super_admin","design_lead","design_team","brand_lead"].includes(_r(me)))return;
     api.get("/api/creative-requests/stats").then(r=>{if(isTypingNow())return;setReqOpenCount(r&&r.open||0);}).catch(()=>{});
   },[me]);
   useEffect(()=>{refreshReqCount();const t=setInterval(refreshReqCount,60000);return()=>clearInterval(t);},[refreshReqCount]);
@@ -1369,7 +1369,7 @@ function App(){
       </div>
       <div style={{padding:"10px 10px 12px",borderTop:"1px solid rgba(255,255,255,.08)",display:"flex",flexDirection:"column",gap:3}}>
         <button onClick={()=>{setNotifOpen(true);}}style={sideBtn}><BellIcon size={15}/><span style={{flex:1}}>Alerts</span>{unreadNotifs>0&&<span style={{background:C.coral,color:"#fff",fontSize:10,fontWeight:800,padding:"1px 7px",borderRadius:999}}>{unreadNotifs}</span>}</button>
-        {["admin","design","brand"].includes(me.role)&&<button onClick={()=>{setDrawer("requests");refreshReqCount();}}style={sideBtn}><Inbox size={15}/><span style={{flex:1}}>Requests</span>{reqOpenCount>0&&<span style={{background:C.coral,color:"#fff",fontSize:10,fontWeight:800,padding:"1px 7px",borderRadius:999}}>{reqOpenCount}</span>}</button>}
+        {["super_admin","design_lead","design_team","brand_lead"].includes(_r(me))&&<button onClick={()=>{setDrawer("requests");refreshReqCount();}}style={sideBtn}><Inbox size={15}/><span style={{flex:1}}>Requests</span>{reqOpenCount>0&&<span style={{background:C.coral,color:"#fff",fontSize:10,fontWeight:800,padding:"1px 7px",borderRadius:999}}>{reqOpenCount}</span>}</button>}
         {canManageTeam(me)&&<button onClick={()=>setDrawer("team")}style={sideBtn}><Users size={15}/>Team</button>}
         {isSuper(me)&&<button onClick={()=>setDrawer("categories")}style={sideBtn}><LayoutDashboard size={15}/>Category routing</button>}
         <div style={{marginTop:8,padding:"10px 12px",borderRadius:10,background:"rgba(255,255,255,.06)",display:"flex",alignItems:"center",gap:8}}>
@@ -3271,7 +3271,7 @@ function BrandStylingTab({me,toast}){
   const[styles,setStyles]=useState([]);
   const[logos,setLogos]=useState([]);
   const[form,setForm]=useState(null);
-  const canEdit=["admin","brand","design"].includes(me.role);
+  const canEdit=["super_admin","brand_lead","design_lead","design_team"].includes(_r(me));
   const blank=(sb)=>({sub_brand:sb||"",headline_font:"Korolev",subhead_font:"Rubik",cta_font:"Rubik",bg:"#102242",text_color:"#FFFFFF",cta_color:"#E8632A",logo_id:"",notes:""});
   const load=async()=>{try{setStyles(await api.get("/api/brand-styles")||[]);}catch(e){}};
   const loadLogos=async()=>{try{const all=await api.get("/api/image-library")||[];setLogos(all.filter(i=>i.kind==="logo"));}catch(e){}};
@@ -4651,13 +4651,13 @@ let _pid=0;const nextPid=()=>"p"+(++_pid);
 function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   const ref=React.useRef(null);
   const role=(me&&me.role)||"";
-  const isBusiness=role==="business";
-  const canGenerate=["design","admin","brand"].includes(role); // full AI generation
+  const isBusiness=_r(me)==="business";
+  const canGenerate=["super_admin","design_lead","design_team","brand_lead"].includes(_r(me)); // full AI generation
   const restricted=!canGenerate; // business, content → library + mockups only, no AI
   const dsg=(c.data&&c.data.design)||{};
   // Background defaults to plain/generate — a library pick is routed by kind once the library loads
   // (asset → background scene; product mockup → product layer). See pick-routing effect below.
-  const initSource = (dsg.imageSource==="prompt"&&["design","admin","brand"].includes(role)) ? "generate" : "plain";
+  const initSource = (dsg.imageSource==="prompt"&&canGenerate) ? "generate" : "plain";
 
   const[sizeIdx,setSizeIdx]=useState(0);
   const[template,setTemplate]=useState("");
@@ -6066,7 +6066,7 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate}){
         </div>}
         <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginTop:6}}>
           <button onClick={()=>reactivate(c)}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.ink,fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}><RotateCcw size={12}/>Reactivate</button>
-          {["admin","business","design"].includes(me.role)&&onDuplicate&&<button onClick={()=>onDuplicate(c)}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.ink,fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}><Copy size={12}/>Duplicate</button>}
+          {["super_admin","business","design_lead","design_team"].includes(_r(me))&&onDuplicate&&<button onClick={()=>onDuplicate(c)}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.ink,fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}><Copy size={12}/>Duplicate</button>}
           {canManage&&<button onClick={()=>{if(window.confirm("Archive this asset? It moves to the Archive tab."))patch(c.id,{data:{archived:true}});}}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.sub,fontWeight:600}}>Archive</button>}
           {canManage&&<button onClick={()=>onDelete&&onDelete(c.id)}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:"1px solid #FECACA",background:"#FFF5F5",cursor:"pointer",color:"#B91C1C",fontWeight:600}}>Delete</button>}
         </div>
