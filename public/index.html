@@ -106,7 +106,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.42 · Added RTBs are now shown as a separate 'RTB on the image' element — not merged into the image copy. The image copy (header) stays clean and short; any selected RTBs appear under their own labelled block in the copy editor, in the design brief, and as separate badges in the preview, plus a distinct line in the copied copy. Builds on v29.41 (image-fix thread/edit + design-team editor & upload), v29.40 (push engagement), v29.37 (RTB suggest+select).";
+const BUILD="v29.43 · Designs now go through approval instead of straight to live. The design team's button is 'Send design for approval' (top of the tile and on the upload card) — it goes to Anmol (design lead), never directly live. Anmol can approve OR send it back with a reason, and the design team gets the same feedback loop as copy↔brand: a 'Design sent back' banner with Anmol's note, a 'Sent back' pill on the row, and a 'Send again for approval' button to resubmit after fixing. Pairs with SERVER v29.43s (design-reject endpoint). Builds on v29.42 (RTB on the image), v29.41 (image-fix thread/edit + design editor & upload).";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -1671,6 +1671,9 @@ function ReviewModal({c,me,kind,action,tab,onApprove,onSendBackDone,onEdit,onClo
       if(isCopyGate){
         await api.post(`/api/campaigns/${c.id}/brand-reject`,{reason:r});
         await api.put(`/api/campaigns/${c.id}`,{data:{...(c.data||{}),selectedCopyIdx:null,rejectedIdx:selIdx,sentBack:true,lastRejectReason:r,sentBackBy:me.name,sentBackAt:new Date().toISOString()}}).catch(()=>{});
+      }else if(action==="design"){
+        // Same feedback loop as copy↔brand: send the design back to the design team with the reason.
+        await api.post(`/api/campaigns/${c.id}/design-reject`,{reason:r});
       }else{
         await api.post(`/api/campaigns/${c.id}/comments`,{body:"Sent back: "+(r||"please revise"),context:ctx}).catch(()=>{});
       }
@@ -1717,7 +1720,7 @@ function ReviewModal({c,me,kind,action,tab,onApprove,onSendBackDone,onEdit,onClo
         <CommentThread campaignId={c.id}context={ctx}me={me}compact={true}/>
         {/* Send-back reason */}
         {mode==="sendback"&&<div style={{marginTop:12,background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:10,padding:"11px 13px"}}>
-          <div style={{fontSize:11.5,fontWeight:800,color:"#9A3412",marginBottom:6}}>Reason for sending back{isCopyGate?" (the writer sees this)":""}</div>
+          <div style={{fontSize:11.5,fontWeight:800,color:"#9A3412",marginBottom:6}}>Reason for sending back{isCopyGate?" (the writer sees this)":action==="design"?" (the design team sees this)":""}</div>
           <textarea value={reason}onChange={e=>setReason(e.target.value)}rows={3}placeholder="What needs to change?"style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:8,padding:"8px 10px",fontSize:13,resize:"none",boxSizing:"border-box",outline:"none"}}/>
         </div>}
       </div>
@@ -4567,8 +4570,8 @@ function FinalDesignUpload({c,d,patch,me}){
     </div>
     {d.finalLink&&<div style={{fontSize:11.5,marginBottom:10}}><a href={d.finalLink}target="_blank"rel="noreferrer"style={{color:C.teal,fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}><ExternalLink size={12}/>{d.finalLink.slice(0,60)}{d.finalLink.length>60?"…":""}</a></div>}
 
-    <Btn variant="dark"disabled={!ready}onClick={()=>{if(!ready)return;if(window.confirm("Confirm: final design is uploaded and ready to go live?"))patch(c.id,{stage:"done",went_live_at:new Date().toISOString(),design_approver:me.name});}}>
-      <CheckCircle2 size={15}/>{ready?"Design complete — Mark as done":"Upload a file or link to finish"}
+    <Btn variant="dark"disabled={!ready}onClick={()=>{if(!ready)return;if(window.confirm("Send this design to Anmol (design lead) for approval?")){patch(c.id,{data:{...(c.data||{}),design:{...d,pendingApproval:true,assetReview:false,finalReview:false,sentBack:false,submittedForApprovalAt:new Date().toISOString(),approvalStage:"design"}},design_approver:me.name});api.post("/api/notify",{toRole:"design_lead",campaignId:c.id,kind:"Design needs review",body:(c.product||c.name||"A design")+" — submitted for design approval."}).catch(()=>{});}}}>
+      <Send size={15}/>{ready?"Send for approval":"Upload a file or link to finish"}
     </Btn>
   </div>;
 }
@@ -5655,7 +5658,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
     const _imgReady=(d.approvedPromptIdx!=null||d.libraryPick);
     // Top-of-tile submit: send the current design (composed file or generated image) for design + brand approval.
     const submitForApproval=()=>{
-      const nd={...d,pendingApproval:true,assetReview:false,finalReview:false,submittedForApprovalAt:new Date().toISOString(),approvalStage:"design"};
+      const nd={...d,pendingApproval:true,assetReview:false,finalReview:false,sentBack:false,submittedForApprovalAt:new Date().toISOString(),approvalStage:"design"};
       if(!d.finalFile&&d.generatedImage){nd.finalFile={name:(c.product||"creative")+"_generated.png",type:"image/png",dataUrl:d.generatedImage};nd.finalSource="generated";}
       patch(c.id,{data:{...(c.data||{}),design:nd},design_approver:me.name});
       api.post("/api/notify",{toRole:"design_lead",campaignId:c.id,kind:"Design needs review",body:(c.product||c.name||"A design")+" — submitted for design approval."}).catch(()=>{});
@@ -5674,7 +5677,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
       }catch(e){if(typeof toast!=="undefined"&&toast)toast("Couldn't send the alert — try again","error");}
       setEmailing(false);
     };
-    const _dtone=_imgReady?ROW_TONE.design:ROW_TONE.attention;
+    const _dtone=(d.sentBack&&!d.pendingApproval)?ROW_TONE.attention:(_imgReady?ROW_TONE.design:ROW_TONE.attention);
     return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`4px solid ${_dtone.bar}`}}>
       {/* Row header */}
       <div onClick={()=>setOpenId(isOpen?null:c.id)}
@@ -5688,6 +5691,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
           <div style={{fontSize:12,color:C.sub,display:"flex",gap:6,alignItems:"center"}}><span>{parseName(c.name).date&&<b style={{color:C.ink,marginRight:4}}>{parseName(c.name).date}</b>}{copy.direction}</span>{c.created_at&&<span style={{marginLeft:"auto",fontSize:11,color:C.sub,background:"#F3F4F6",padding:"2px 7px",borderRadius:5,flexShrink:0}}>{fmtDate(c.created_at)}</span>}</div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+          {d.sentBack&&!d.pendingApproval&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:800,color:"#9A3412",background:"#FFF7ED",border:"1px solid #FED7AA",padding:"3px 9px",borderRadius:999}}><RotateCcw size={11}/>Sent back</span>}
           {d.pendingApproval&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:800,color:"#9333EA",background:"#FAF5FF",border:"1px solid #E9D5FF",padding:"3px 9px",borderRadius:999}}><Eye size={11}/>Design review (Anmol)</span>}
           {d.assetReview&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:800,color:"#9333EA",background:"#FAF5FF",border:"1px solid #E9D5FF",padding:"3px 9px",borderRadius:999}}><Eye size={11}/>Full-asset review (Ilena)</span>}
           {d.finalReview&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:800,color:"#B45309",background:"#FEF3C7",border:"1px solid #FDE68A",padding:"3px 9px",borderRadius:999}}><Eye size={11}/>Final sign-off (HoM/CXO)</span>}
@@ -5703,11 +5707,21 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
       {/* Expanded */}
       {isOpen&&<div style={{padding:"0 18px 18px",background:"#F8F9FA"}}>
         {/* Submit for approval — pinned to the top of the tile */}
-        {!c.data?.selfMade&&(d.pendingApproval||d.assetReview
+        {!c.data?.selfMade&&(d.sentBack
+          ?<div style={{background:"#FFF7ED",border:"1px solid #FED7AA",borderLeft:"4px solid #C2410C",borderRadius:10,padding:"11px 13px",marginBottom:12}}>
+            <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:4}}>
+              <RotateCcw size={14}color="#C2410C"/>
+              <div style={{fontSize:11,fontWeight:800,color:"#9A3412",textTransform:"uppercase",letterSpacing:.4}}>Design sent back{d.sentBackBy?" · from "+d.sentBackBy:""}</div>
+            </div>
+            <div style={{fontSize:13.5,color:"#7C2D12",fontWeight:600,marginBottom:9,lineHeight:1.45,whiteSpace:"pre-line"}}>{d.lastRejectReason||"See the design comments below for the requested changes."}</div>
+            <Btn small onClick={submitForApproval}disabled={!_designReady}><RotateCcw size={13}/>Send again for approval</Btn>
+            {!_designReady&&<span style={{fontSize:11,color:C.sub,marginLeft:8}}>Update the design first.</span>}
+          </div>
+          :(d.pendingApproval||d.assetReview)
           ?<div style={{display:"flex",alignItems:"center",gap:8,background:"#FAF5FF",border:"1px solid #E9D5FF",borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:12.5,fontWeight:700,color:"#6D28D9"}}><Eye size={14}/>Submitted — pending {d.assetReview?"full-asset":"design"} approval</div>
           :<div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:"#fff",border:`1px solid ${C.line}`,borderRadius:10,padding:"10px 14px",marginBottom:12}}>
-            <Btn variant="dark"disabled={!_designReady}onClick={submitForApproval}><Send size={14}/>Submit design for approval</Btn>
-            <span style={{fontSize:11.5,color:C.sub}}>{_designReady?"Sends the current design to Anmol (design) & Ilena (brand).":"Generate or build the design below first."}</span>
+            <Btn variant="dark"disabled={!_designReady}onClick={submitForApproval}><Send size={14}/>Send design for approval</Btn>
+            <span style={{fontSize:11.5,color:C.sub}}>{_designReady?"Goes to Anmol (design lead) for approval before it can go live.":"Generate or build the design below first."}</span>
           </div>)}
         {/* Brief in short — context for the design team */}
         <BriefInShort c={c}/>
