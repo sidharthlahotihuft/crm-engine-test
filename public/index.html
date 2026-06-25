@@ -103,7 +103,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.30 · Clicking Generate/Regenerate now shows a clear circular progress state in the copy area (with a 'Regenerating copy…' message) and hides the old options while it runs, so it's obvious something is happening. Builds on v29.29 (send-again-for-approval after a send-back), v29.28 (library kind filter), v29.27 (library loads at scale) and v29.26 (copy length/flow/clarity rules, standardised labels, channel-aware analytics, business in-progress state).";
+const BUILD="v29.31 · Brief generation now shows the real failure reason inline instead of a generic 'check the connection' message, so issues (auth/timeout/parse) are diagnosable at a glance. Builds on v29.30 (regenerate progress), v29.29 (send-again after send-back), v29.28 (library kind filter), v29.27 (library at scale), v29.26 (copy length/flow/clarity rules, standardised labels, channel-aware analytics, business in-progress state).";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -2083,7 +2083,7 @@ function BriefFastForm({campaignId,patch,onBriefReady,me,recentFeedback,product}
         stage:"content",
       });
       onBriefReady();
-    }catch(e){setErr("Couldn't generate — check the connection and try again.");setGenerating(false);}
+    }catch(e){setErr("Couldn't generate — "+(e&&e.message?e.message:"check the connection and try again."));setGenerating(false);}
   };
 
   const Chip=({label,active,onClick})=><button onClick={onClick}style={{fontSize:12,fontWeight:600,padding:"5px 11px",borderRadius:999,cursor:"pointer",border:`1px solid ${active?C.coral:C.line}`,background:active?C.coralSoft:"#fff",color:active?C.coral:C.ink}}>{label}</button>;
@@ -2342,7 +2342,7 @@ function BriefChat({campaignId,patch,onBriefReady,me,recentFeedback,product}){
         stage:"content",
       });
       onBriefReady();
-    }catch(e){setErr("Couldn't generate — check the connection and try again.");setGenerating(false);}
+    }catch(e){setErr("Couldn't generate — "+(e&&e.message?e.message:"check the connection and try again."));setGenerating(false);}
   };
 
   const curStep=stepIdx>=0?BRIEF_STEPS[stepIdx]:null;

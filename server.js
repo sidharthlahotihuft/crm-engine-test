@@ -46,7 +46,7 @@ const db = async (sql, params = []) => {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const uid = () => Math.random().toString(36).slice(2, 11);
 const safeJson = (s) => { try { return JSON.parse(s); } catch (e) { return null; } };
-const SERVER_BUILD = "v29.15 · brand-reject no longer inserts a duplicate Sent back comment when a reason is given (the reason already shows in the writer Revision needed banner); a thread breadcrumb is added only when no reason was typed. Notification still includes the reason.";
+const SERVER_BUILD = "v29.31s · Content generation (copy + briefs + image cataloguing) now defaults to Gemini using GEMINI_API_KEY, instead of preferring Anthropic whenever ANTHROPIC_API_KEY was present. Set LLM_PROVIDER=claude to force Anthropic, or LLM_PROVIDER=gemini to force Gemini. Image generation already used Gemini and is unchanged.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -85,7 +85,12 @@ const roles = (...allowed) => (req, res, next) => {
 // ── LLM provider ─────────────────────────────────────────────────────────────
 const GEMINI_KEY   = process.env.GEMINI_API_KEY   || "";
 const CLAUDE_KEY   = process.env.ANTHROPIC_API_KEY || "";
-const PROVIDER     = CLAUDE_KEY ? "claude" : GEMINI_KEY ? "gemini" : "mock";
+// Text/content generation provider. Default: prefer Gemini (uses GEMINI_API_KEY) so copy
+// and briefs run on the Gemini key. Force a provider explicitly with LLM_PROVIDER=gemini|claude.
+const _FORCED_PROVIDER = (process.env.LLM_PROVIDER || "").trim().toLowerCase();
+const PROVIDER = (_FORCED_PROVIDER === "claude" || _FORCED_PROVIDER === "gemini")
+  ? _FORCED_PROVIDER
+  : (GEMINI_KEY ? "gemini" : CLAUDE_KEY ? "claude" : "mock");
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 // Image generation uses a Gemini image model (works even if text PROVIDER is Claude).
 // gemini-2.5-flash-image works today; gemini-2.5-flash-image retires Oct 2 2026 — swap to
