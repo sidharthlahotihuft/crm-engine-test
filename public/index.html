@@ -106,7 +106,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.49 · Fixed a dead role-gate bug from the old role rename. Several gates still checked the legacy names ('admin'/'design'/'brand'/'content'), which no longer match anyone's stored role — so the features silently switched off for everyone. Restored: AI scene generation in the Composer (the 'Generated image (AI)' source + 'Keep my product exact'), the Requests inbox (Send to design team), image-library Edit, and Duplicate. Now keyed to real roles (super_admin / design_lead / design_team / brand_lead, + business for duplicate). Unblocks testing v29.48's product-exact flow.";
+const BUILD="v29.50 · Fixed the Composer closing on its own. Cause: DesignRow was defined inline inside DesignTab, so every background poll (notifications 45s, and now the Requests count 60s that v29.49 re-enabled) re-rendered DesignTab, gave DesignRow a new identity, and React remounted its whole subtree — including the open Composer — resetting its state. Same fix as the copy editor (v29.33): DesignRow is now a stable ref-created component fed fresh values via a ctx prop, so polls no longer remount it. The Composer (and its editor) now stays open. Builds on v29.49 (role-gate fix), v29.48 (product-exact compositing).";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -5597,7 +5597,9 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
   const getImageMode=(id,fallback)=>imageModes[id]!==undefined?imageModes[id]:fallback;
   const setImageModeFor=(id,m)=>setImageModes(x=>({...x,[id]:m}));
 
-  const DesignRow=({c})=>{
+  const DesignRowRef=React.useRef(null);
+  if(!DesignRowRef.current)DesignRowRef.current=({c,ctx})=>{
+    const {openId,setOpenId,imageModes,setImageModes,imageThreads,setImageThreads,designBusyMap,setDesignBusyMap,designErrMap,setDesignErrMap,getImageMode,setImageModeFor,patch,recentFeedback,saveFeedback,onOpen,onDelete,onDuplicate,team,promptRules,addRule,me,active,campaigns}=ctx;
     const isOpen=openId===c.id;
     const copyOpts=c.data?.copyOptions||[];
     const selIdx=c.data?.selectedCopyIdx;
@@ -5933,6 +5935,8 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
       </div>}
     </div>;
   };
+  const DesignRow=DesignRowRef.current;
+  const designRowCtx={openId,setOpenId,imageModes,setImageModes,imageThreads,setImageThreads,designBusyMap,setDesignBusyMap,designErrMap,setDesignErrMap,getImageMode,setImageModeFor,patch,recentFeedback,saveFeedback,onOpen,onDelete,onDuplicate,team,promptRules,addRule,me,active,campaigns};
 
   const[view,setView]=useState("list");
   return<div>
@@ -5955,13 +5959,13 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
           const done=teamDesign.filter(c=>c.data?.design?.approvedPromptIdx!=null||c.data?.design?.libraryPick);
           return<>
             {needsDesign.length>0&&<CollapsibleSection title="Needs attention" count={needsDesign.length} color={C.coral} icon={<ClockIcon size={15}/>}>
-              {groupByDate(needsDesign).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.teal}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><DesignRow key={c.id}c={c}/>)}</Card></div>)}
+              {groupByDate(needsDesign).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.teal}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><DesignRow key={c.id}c={c}ctx={designRowCtx}/>)}</Card></div>)}
             </CollapsibleSection>}
             {done.length>0&&<CollapsibleSection title="Image selected" count={done.length} color={C.teal} icon={<CheckCircle2 size={15}/>}>
-              <div style={{opacity:.75}}>{groupByDate(done).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.teal}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><DesignRow key={c.id}c={c}/>)}</Card></div>)}</div>
+              <div style={{opacity:.75}}>{groupByDate(done).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.teal}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><DesignRow key={c.id}c={c}ctx={designRowCtx}/>)}</Card></div>)}</div>
             </CollapsibleSection>}
             {selfDesign.length>0&&<CollapsibleSection title="Made by business team" count={selfDesign.length} color="#0F766E" icon={<PenLine size={15}/>}>
-              {groupByDate(selfDesign).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={"#0F766E"}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><DesignRow key={c.id}c={c}/>)}</Card></div>)}
+              {groupByDate(selfDesign).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={"#0F766E"}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><DesignRow key={c.id}c={c}ctx={designRowCtx}/>)}</Card></div>)}
             </CollapsibleSection>}
           </>;
         })()}
