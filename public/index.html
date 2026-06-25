@@ -87,7 +87,7 @@ const isBusiness=(me)=>_r(me)==="business";
 const isBrandTeam=(me)=>_r(me)==="brand_team";
 const isDesignTeam=(me)=>_r(me)==="design_team";
 const canManageTeam=(me)=>isSuper(me);                                            // settings = super only
-const canCreateBrief=(me)=>["super_admin","brand_lead","design_lead","business"].includes(_r(me));
+const canCreateBrief=(me)=>["super_admin","brand_lead","design_lead","business","brand_team"].includes(_r(me));
 const canBrandApprove=(me)=>["super_admin","brand_lead"].includes(_r(me));        // copy + full-asset approval (Ilena)
 const canDesignApprove=(me)=>["super_admin","design_lead"].includes(_r(me));      // design approval (Anmol)
 // Which tabs each role sees
@@ -97,13 +97,13 @@ const TAB_VIS={
   design_lead:["dashboard","mytasks","approvals","brief","content","design","library","done","analytics","archive"],
   cxo:["dashboard","approvals","done"],
   head_marketing:["dashboard","approvals","done"],
-  brand_team:["dashboard","mytasks","content","library","done","analytics"],
+  brand_team:["dashboard","mytasks","brief","content","library","done","analytics"],
   design_team:["dashboard","mytasks","design","library","done","analytics"],
   business:["dashboard","mytasks","brief","content","design","done","analytics","archive"],
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.31 · Brief generation now shows the real failure reason inline instead of a generic 'check the connection' message, so issues (auth/timeout/parse) are diagnosable at a glance. Builds on v29.30 (regenerate progress), v29.29 (send-again after send-back), v29.28 (library kind filter), v29.27 (library at scale), v29.26 (copy length/flow/clarity rules, standardised labels, channel-aware analytics, business in-progress state).";
+const BUILD="v29.32 · Brand team (copy writers) can now create briefs too — they get the Brief tab and the New asset button; their briefs flow into the copy queue and on to brand review like any other. Builds on v29.31 (content generation on Gemini + brief error surfacing), v29.30 (regenerate progress), v29.29 (send-again after send-back), v29.28 (library kind filter), v29.27 (library at scale), v29.26 (copy length/flow/clarity rules, standardised labels, channel-aware analytics, business in-progress state).";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
