@@ -106,7 +106,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.61 - Download this image button under the library scroller (appears once a scene is picked; saves the file to drop into Canva or share).";
+const BUILD="v29.62 - Design make-step simplified to two tiles (Generate an AI image / Choose from library). Path shows on choice. Once an image exists: Download + Open-in-Canva (brand template). Divider + When-your-creative-is-ready ship-it-out upload. Removed the or-or-or stack + stale composer copy.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -4600,8 +4600,8 @@ function FinalDesignUpload({c,d,patch,me}){
   };
   const isImg=finalFile&&(finalFile.type||"").startsWith("image/");
   return<div style={{marginTop:10,paddingTop:12,borderTop:`1px solid ${C.line}`,background:"#F0FDF4",borderRadius:10,padding:"14px 16px"}}>
-    <div style={{fontSize:12,fontWeight:700,color:"#15803D",marginBottom:6,display:"flex",alignItems:"center",gap:6}}><UploadIcon size={13}/>Or upload your own design</div>
-    <div style={{fontSize:12,color:"#166534",marginBottom:10}}>Prefer to design outside the composer? Attach your finished export (image or PDF, up to 4 MB) or paste a Canva / Drive link. Either the composer or an upload finishes the asset — you only need one.</div>
+    <div style={{fontSize:12,fontWeight:700,color:"#15803D",marginBottom:6,display:"flex",alignItems:"center",gap:6}}><UploadIcon size={13}/>Upload the finished creative</div>
+    <div style={{fontSize:12,color:"#166534",marginBottom:10}}>Attach the finished export (image or PDF, up to 4 MB), or paste the Canva / Drive link to finish.</div>
 
     {/* Current upload preview */}
     {finalFile&&<div style={{display:"flex",alignItems:"center",gap:10,background:"#fff",border:`1px solid ${C.line}`,borderRadius:10,padding:"8px 12px",marginBottom:10}}>
@@ -5699,6 +5699,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
     const[fixAsRule,setFixAsRule]=useState(true);
     const imageMode=getImageMode(c.id,d.imageSource||null);
     const setImageMode=(m)=>setImageModeFor(c.id,m);
+    const effMode=imageMode||(isBusiness(me)?"library":"");
     const ruleStr=activeRuleText(promptRules);
     const setD=(f)=>patch(c.id,{data:{...(c.data||{}),design:{...d,...f}}});
     const approvedPrompt=d.imagePrompts&&d.approvedPromptIdx!=null?d.imagePrompts[d.approvedPromptIdx]:null;
@@ -5919,11 +5920,15 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
 
         {/* Art direction notes */}
         {!isPushChannel(c.channel)&&<ArtNotes d={d}setD={setD}busy={busy}genNotes={genNotes}/>}
+        {!isPushChannel(c.channel)&&<div style={{display:"flex",gap:10,margin:"14px 0 6px",flexWrap:"wrap"}}>
+          {["design_team","design_lead","super_admin"].includes(_r(me))&&<button onClick={()=>setImageMode("generate")}style={{flex:"1 1 200px",textAlign:"left",cursor:"pointer",border:`2px solid ${effMode==="generate"?C.teal:C.line}`,background:effMode==="generate"?C.tealSoft:"#fff",borderRadius:12,padding:"12px 14px"}}><div style={{display:"flex",alignItems:"center",gap:8,fontWeight:800,fontSize:13.5,color:C.ink}}><Wand2 size={16}color={effMode==="generate"?C.teal:C.sub}/>Generate an AI image</div><div style={{fontSize:11.5,color:C.sub,marginTop:4}}>Create a fresh image from the art direction.</div></button>}
+          <button onClick={()=>setImageMode("library")}style={{flex:"1 1 200px",textAlign:"left",cursor:"pointer",border:`2px solid ${effMode==="library"?C.teal:C.line}`,background:effMode==="library"?C.tealSoft:"#fff",borderRadius:12,padding:"12px 14px"}}><div style={{display:"flex",alignItems:"center",gap:8,fontWeight:800,fontSize:13.5,color:C.ink}}><ImageIcon size={16}color={effMode==="library"?C.teal:C.sub}/>Choose from library</div><div style={{fontSize:11.5,color:C.sub,marginTop:4}}>Pick a ready HUFT scene.</div></button>
+        </div>}
 
         {/* Reference images — upload or pull from library to steer generation */}
 
         {/* Image prompts */}
-        {!isPushChannel(c.channel)&&["design_team","design_lead","super_admin"].includes(_r(me))&&<div style={{marginBottom:12}}>
+        {!isPushChannel(c.channel)&&["design_team","design_lead","super_admin"].includes(_r(me))&&effMode==="generate"&&<div style={{marginBottom:12}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
             <div style={{fontSize:12,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5}}>Generate an image</div>
             {busy==="prompts"?<Spin label="Generating…"/>:<Btn small onClick={e=>{e.stopPropagation();genPrompts();}}>{d.imagePrompts?"Regenerate prompt":"Generate prompt"}</Btn>}
@@ -5983,14 +5988,20 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
 
         {/* Finish the design — design team & admins only. Either compose in-app, or upload your own. */}
         {["design_team","design_lead","super_admin","business"].includes(_r(me))&&<div>
-          <div style={{marginTop:14,marginBottom:6,fontSize:13,fontWeight:800,color:C.ink}}>Finish the design</div>
-          <div style={{fontSize:12.5,color:C.sub,marginBottom:10}}>Pick an <b>image from the library</b>, or <b>make it on Canva</b> from a brand template. Then upload/finish below and send for design review.</div>
+          {effMode==="library"&&<SmartLibraryPicker d={d}setD={setD}copy={copy}brief={c.data?.brief}product={c.product}campaignId={c.id}/>}
 
-          <div style={{fontSize:12,fontWeight:800,color:C.ink,margin:"4px 0 6px"}}>Image from the library</div>
-          <SmartLibraryPicker d={d}setD={setD}copy={copy}brief={c.data?.brief}product={c.product}campaignId={c.id}/>
-          {d.libraryPick&&<div style={{marginTop:8}}><Btn small variant="ghost"onClick={async()=>{try{const r=await api.get("/api/image-library/"+d.libraryPick);const url=r&&r.file_data;if(!url)return;const ext=(url.match(/^data:image\/(\w+)/)||[])[1]||"png";const base=((d.libraryPickMeta&&d.libraryPickMeta.label)||c.product||"huft-image").toString().replace(/[^\w.-]+/g,"_").slice(0,60);const a=document.createElement("a");a.href=url;a.download=base+"."+ext;document.body.appendChild(a);a.click();a.remove();}catch(e){}}}><Download size={13}/>Download this image</Btn><span style={{fontSize:11,color:C.sub,marginLeft:8}}>Saves the picked scene so you can drop it into Canva or share it.</span></div>}
-          <div style={{fontSize:12,fontWeight:800,color:C.ink,margin:"16px 0 6px"}}>Or make it on Canva</div>
-          <CanvaMaker c={c}copy={copy}/>
+          {(d.generatedImage||d.libraryPick)&&<div style={{marginTop:14}}>
+            <div style={{fontSize:13,fontWeight:800,color:C.ink,marginBottom:4}}>Brand it in Canva</div>
+            <div style={{fontSize:12,color:C.sub,marginBottom:10}}>Open the on-brand template, drop in your image and the copy, then download the export or grab the share link.</div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
+              {d.libraryPick&&<Btn small variant="ghost"onClick={async()=>{try{const r=await api.get("/api/image-library/"+d.libraryPick);const url=r&&r.file_data;if(!url)return;const ext=(url.match(/^data:image\/(\w+)/)||[])[1]||"png";const base=((d.libraryPickMeta&&d.libraryPickMeta.label)||c.product||"huft-image").toString().replace(/[^\w.-]+/g,"_").slice(0,60);const a=document.createElement("a");a.href=url;a.download=base+"."+ext;document.body.appendChild(a);a.click();a.remove();}catch(e){}}}><Download size={13}/>Download image</Btn>}
+              {d.generatedImage&&<a href={d.generatedImage}download={((c.product||"huft-image").toString().replace(/[^\w.-]+/g,"_").slice(0,60))+".png"}style={{fontSize:12,fontWeight:700,color:C.ink,textDecoration:"none",border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 12px",display:"inline-flex",alignItems:"center",gap:5,background:"#fff"}}><Download size={13}/>Download image</a>}
+            </div>
+            <CanvaMaker c={c}copy={copy}/>
+          </div>}
+
+          <div style={{borderTop:`1px solid ${C.line}`,margin:"18px 0 12px"}}/>
+          <div style={{fontSize:13.5,fontWeight:800,color:C.ink,marginBottom:10}}>When your creative is ready, ship it out</div>
           <FinalDesignUpload c={c}d={d}patch={patch}me={me}/>
           {d.finalFile&&<div style={{marginTop:10,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:C.tealSoft,border:`1px solid ${C.teal}55`,borderRadius:10,padding:"10px 13px"}}>
             <ImageIcon size={15}color={C.teal}/>
