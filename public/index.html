@@ -103,7 +103,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.10.2 · send-back reason banner + resend gate now work WITHOUT a server deploy (the brand lead's client writes sentBack/lastRejectReason on reject). Includes dashboard time-period selector, push-notification preview, comment edit/resolve-grey, selected-by, active-only Copy/Design lists";
+const BUILD="v29.11.2 · library images show again (load with data in one request, no per-thumb fetch storm); each of the 5 copy options gets its own WhatsApp/notification Preview; preview mockups now have a clear Close button; Steer-with-AI shows a Steering… overlay on the card so you know it is working. Carries Share→Brand Lead, alerts fix (needs server-v29.11)";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -131,17 +131,44 @@ const inferCategory=(c)=>{
 };
 const categoryOf=(c)=>(c&&c.category)||inferCategory(c)||null;
 // Researched WhatsApp/CRM copy best practices — injected into every copy generation.
-const COPY_BEST_PRACTICES="BEST-PRACTICE RULES (keep copy engaging + on the brief's objective):\n"+
-"- ONE objective, ONE clear CTA. Never stack multiple offers or asks.\n"+
-"- Lead with the value the reader cares about — start with the benefit, not setup/context.\n"+
-"- Tie every line back to the brief's objective; cut anything that doesn't serve it.\n"+
-"- Conversational, human, written to ONE person. Plain language, no jargon.\n"+
-"- VARY THE OPENING across the options — do NOT start every option with a name-greeting (\"Hi [name],\"). Most options should open straight on a hook: a benefit, a question, a bold statement, a vivid image, or tension. At most ONE option in a set may open with a name-greeting, and only if it genuinely earns it. Never make the greeting the default.\n"+
-"- Strong opening line that sparks curiosity; use action verbs (discover, switch, try, get). Each option in a set should hook differently from the others — no two openings should feel interchangeable.\n"+
-"- Short and scannable. No fluff, no filler, no repetition.\n"+
-"- NO ALL-CAPS words and NO spammy phrasing (free!!!, buy now!!!). Emojis sparingly (max ~3), only where they add warmth.\n"+
-"- Make the offer/switch concrete and the next step obvious.\n"+
-"- Keep a light opt-out line at the very end for WhatsApp.";
+const COPY_BEST_PRACTICES=`HIGH-ENGAGEMENT COPY PRINCIPLES (apply to every option, every channel):
+- ONE reader, ONE message, ONE call-to-action. Never stack offers or asks. If two ideas compete, cut the weaker one.
+- BENEFIT-FIRST: open on the outcome the pet parent gains (a happier/healthier pet, less mess, peace of mind), not on product features, the brand name, or setup/context.
+- HOOK IN THE FIRST 5–7 WORDS: that is all most people see before a cut-off. Earn the next second with curiosity, tension, a vivid image, a sharp question, or a bold promise.
+- SPECIFIC BEATS VAGUE: concrete proof wins — real ingredient, food format, a number, a timeframe ("first ingredient is real chicken", "48-hour odour lock", "ready in 2 minutes"). NEVER invent claims; only use the RTBs/proof points supplied in the brief.
+- SECOND PERSON, PRESENT TENSE, ACTIVE VOICE. Speak to "you" and "your dog/cat". Verbs over adjectives; cut filler ("really, very, just, simply") and adverbs.
+- EMOTION + PROOF: lead with the pet-parent feeling, then back it with a reason to believe. HUFT is warm AND credible — never one without the other.
+- VOICE: a knowledgeable, kind friend who loves pets — premium, honest, never pushy, never salesy, never clickbait.
+- SCANNABLE: short sentences, one idea per line, generous whitespace. No walls of text, no repetition, no fluff.
+- VARY OPENINGS across the set — no two options should open the same way, and a name-greeting is NEVER the default (at most one option may use it, only if earned).
+- CLEAR NEXT STEP: the CTA is a pictureable action tied to the store/app ("Switch to fresh", "Book a spa day", "Shop the litter") — not "click here".
+- CLEAN FORMATTING: no ALL-CAPS words, no exclamation spam (no "!!!"), no "free!!!/buy now". Max ~1–2 purposeful emojis, only where they add warmth or meaning.
+- FOR EDIBLES: always state the FORMAT explicitly (Chews / Fresh / Kibble / Wet / Gravy / Treats).
+- HONEST & INCLUSIVE: no health/medical overclaims, no fear-mongering; "family isn't defined by species". Stay true to the brief's objective and emotional pillar — cut anything off-objective.`;
+// Channel-specific engagement rules (shared by every generator).
+const PUSH_RULES=`PUSH NOTIFICATION RULES — win the tap in under 2 seconds on a crowded lock screen:
+- TITLE ≤ 40 chars (hard max 50): the single most tappable promise — a benefit, a curiosity gap, or a timely trigger. Front-load the most important word; the first ~3 words must carry the hook because previews truncate.
+- BODY ≤ 90 chars: ONE sentence that pays off the title and points to the action. No bullets, no line breaks, no second idea.
+- Exactly ONE idea and ONE CTA. CTA is 2–3 words or implied ("Shop now", "Tap to save", "Book today").
+- Lead with value or curiosity, NOT the brand name. Personalise with the pet/parent only when it adds real relevance.
+- Use urgency/timeliness only when genuine (new drop, ends tonight, today only) — never fake scarcity.
+- Sentence case. Max 1 emoji, only if it earns its place. No ALL-CAPS, no "!!!".
+- Sound like a helpful nudge from someone who knows their pet — not an ad.`;
+const EMAIL_RULES=`EMAIL RULES — most opens are on mobile, so write mobile-first, front-loaded and scannable:
+- SUBJECT (the "subject" field) 30–50 chars: ONE benefit or curiosity hook with the key word front-loaded. No spam words, no ALL-CAPS, no excess punctuation. Specific and personal beats clever-but-vague.
+- PREVIEW/PREHEADER (the "header" field) ~40–90 chars: EXTEND the subject with a second reason to open — never repeat the subject.
+- ONE primary message + ONE primary CTA, placed high ("above the fold"). Any secondary link stays subordinate.
+- BODY structure: a warm 1-line opener that earns the scroll → the core value/offer in 1–2 tight lines → 2–3 ✓ proof points (RTBs; for edibles use ingredient/format/quality/vet proof) → a friendly sign-off.
+- Short paragraphs (1–2 lines), lots of whitespace, no dense blocks.
+- CTA copy = action + outcome ("Start fresh feeding", "Claim my offer"), never "Click here".
+- Warm, conversational, premium — a trusted expert friend writing to ONE pet parent. Reference the audience moment when given (first-time, lapsed, festive, post-grooming).`;
+const WHATSAPP_RULES=`WHATSAPP RULES — follow this three-part anatomy:
+1) HOOK (the ONLY line shown before WhatsApp's "read more" cut-off): the single most important line — catchy enough on its own to earn the tap. A curiosity gap or a line that cuts mid-thought is great when it lands naturally; a complete punchy line is equally good. Never force it. This is the first line of the body.
+2) PAYOFF (first thing seen after "read more"): completes the hook's thought and lands the core tension/insight.
+3) BODY: RTB/USP proof points (especially for edibles), the switch/offer line, and a clear store/app CTA. Tight and scannable.
+- State the food FORMAT explicitly (Chews / Fresh / Kibble / Wet / Gravy / Treats). Relevant over clever.
+- Keep a light opt-out line at the very end.
+STRUCTURE REFERENCE (shape only — do NOT reuse this wording): warm open → an intriguing hook that breaks before "read more" → payoff sentences → product switch line → 2–3 proof bullets → store/app CTA → opt-out line. Hook + payoff lead the body; RTBs and CTA follow.`;
 // HARD: copy must never contain leftover merge tokens / placeholders. \"M-hash\" must never appear.
 const FORBIDDEN_TOKENS_RULE="FORBIDDEN — never output any of these anywhere in the copy: the literal text \"M-hash\" (or \"M#\", \"#M\", \"mhash\"), any merge placeholders like {{1}}, {name}, #VAR#, [VARIABLE], or unfilled template tags. Write the real words instead. If you don't have a real value (e.g. a name), write a natural greeting without a placeholder.";
 // Strip any forbidden placeholder tokens that slip through, across all copy fields.
@@ -766,6 +793,7 @@ const Inbox=p=><Svg{...p}><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.1
 const Eye=p=><Svg{...p}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12"cy="12"r="3"/></Svg>;
 const Copy=p=><Svg{...p}><rect x="9"y="9"width="13"height="13"rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></Svg>;
 const Download=p=><Svg{...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></Svg>;
+const Share2=p=><Svg{...p}><circle cx="18"cy="5"r="3"/><circle cx="6"cy="12"r="3"/><circle cx="18"cy="19"r="3"/><path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98"/></Svg>;
 const ThumbsUp=p=><Svg{...p}><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.3a2 2 0 0 0 2-1.7l1.4-9a2 2 0 0 0-2-2.3H14z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></Svg>;
 const Star=p=><Svg{...p}><path d="M12 2l3.1 6.3L22 9.3l-5 4.9 1.2 6.9L12 17.8l-6.2 3.3 1.2-6.9L2 9.3l6.9-1z"/></Svg>;
 const Send=p=><Svg{...p}><path d="M22 2L11 13"/><path d="M22 2L15 22l-4-9-9-4 20-7z"/></Svg>;
@@ -829,11 +857,7 @@ function briefBlockFor(c){
 async function genCopyOptionsFor(c, ruleStr, fb){
   const isPush=isPushChannel(c.channel);
   const isEmail=c.channel==="Email"||c.channel==="WhatsApp + Email";
-  const channelRules=isPush
-    ?`PUSH NOTIFICATION RULES (NON-NEGOTIABLE):\n- Title: MAX 50 chars. Short, punchy.\n- Body: MAX 90 chars. One sentence. No bullets.\n- Max 1 emoji. 2-second read.\n- CTA: 2-3 words.`
-    :isEmail
-    ?`EMAIL RULES:\n- Keep it SHORT, crisp, warm and conversational. No filler.\n- Subject line: curiosity or benefit-led, within RB's character limit.\n- Body: warm opener + 2-3 ✓ bullets + sign-off. Tight, not padded.\n- CTA: clear action phrase.`
-    :`WHATSAPP RULES — three-part anatomy:\n1) HOOK (only line shown before "read more"): must be catchy enough alone to earn the tap. Curiosity gap / mid-thought cut welcome when natural, not forced; a complete punchy line is fine too. It's the first line of the body.\n2) PAYOFF (right after "read more"): completes the hook and lands the core insight.\n3) BODY: RTB/USP proof points (esp. edibles), switch/offer line, clear store/app CTA. Tight and scannable.\n- State the food FORMAT (Chews / Fresh / Kibble / Wet / Treats). Relevant over clever.\nStructure ref (shape only, don't reuse wording): Dear [Name] → intriguing hook that breaks before "read more" → payoff → switch line → 2-3 proof bullets → CTA → opt-out. Hook + payoff lead the body; RTBs/CTA follow.`;
+  const channelRules=isPush?PUSH_RULES:isEmail?EMAIL_RULES:WHATSAPP_RULES;
   const nOpts=copyOptionCount(c.channel);
   const shape=isPush
     ?"each: {direction,header,body,cta}. header=push title MAX 50 chars, body=MAX 90 chars one sentence, cta=2-3 words"
@@ -2990,7 +3014,7 @@ function ImageLibraryTab({me,toast}){
   const folderRef=useRef(null);
 
   const load=async(query)=>{
-    try{setItems(await api.get("/api/image-library"+(query?`?q=${encodeURIComponent(query)}`:"")));}
+    try{setItems(await api.get("/api/image-library?withData=1"+(query?`&q=${encodeURIComponent(query)}`:"")));}
     catch(e){setItems([]);}
   };
   useEffect(()=>{load("");},[]);
@@ -3065,7 +3089,7 @@ function ImageLibraryTab({me,toast}){
       :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:14}}>
         {items.map(img=><div key={img.id}style={{border:`1px solid ${C.line}`,borderRadius:12,overflow:"hidden",background:"#fff"}}>
           <div onClick={()=>setPreview(img)}style={{aspectRatio:"4/3",background:"#F3F4F6",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
-            <ImageThumb id={img.id}alt={img.description}/>
+            {img.file_data?<img src={img.file_data}alt={img.description||""}style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<ImageThumb id={img.id}alt={img.description}/>}
           </div>
           <div style={{padding:"9px 11px"}}>
             <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4,flexWrap:"wrap"}}>
@@ -3090,7 +3114,7 @@ function ImageLibraryTab({me,toast}){
           <button onClick={()=>setPreview(null)}style={{border:"none",background:"none",cursor:"pointer",color:C.sub}}><X size={20}/></button>
         </div>
         <div style={{padding:18}}>
-          <ImageFull id={preview.id}/>
+          {preview.file_data?<img src={preview.file_data}alt=""style={{width:"100%",borderRadius:10}}/>:<ImageFull id={preview.id}/>}
           <div style={{marginTop:12,fontSize:13,lineHeight:1.6}}>
             {preview.description&&<div style={{marginBottom:8}}>{preview.description}</div>}
             <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{(preview.tags||[]).map((t,i)=><span key={i}style={{fontSize:11,color:C.sub,background:"#F3F4F6",padding:"2px 9px",borderRadius:999}}>{t}</span>)}</div>
@@ -3187,28 +3211,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         const fb=recentFeedback("content");
         const isPush=isPushChannel(c.channel);
         const isEmail=c.channel==="Email"||c.channel==="WhatsApp + Email";
-        const channelRules=isPush
-          ?`PUSH NOTIFICATION RULES (NON-NEGOTIABLE):
-- Title: MAX 50 chars. Short, punchy.
-- Body: MAX 90 chars. One sentence. No bullets.
-- Max 1 emoji. 2-second read.
-- CTA: 2-3 words.`
-          :isEmail
-          ?`EMAIL RULES:
-- Keep it SHORT, crisp, warm and conversational. No filler.
-- Subject line: curiosity or benefit-led, within the brand's character limit (confirm with RB).
-- Preview text: within limit (confirm with RB).
-- Header / image copy: 2-3 short punchy lines for the hero image overlay.
-- Body: warm opener + 2-3 ✓ proof bullets + sign-off. Tight, not padded.
-- CTA: clear action phrase.`
-          :`WHATSAPP RULES — follow this three-part anatomy:
-1) HOOK (the only thing shown before WhatsApp's "read more" cutoff): the single most important line. It must be catchy enough on its own to make the reader tap "read more". A curiosity gap or a line that cuts mid-thought is great WHEN it lands naturally — never force it; a complete punchy line is equally good. This is the first line of the body.
-2) PAYOFF (first thing seen after "read more"): completes the hook's thought and lands the core tension/insight.
-3) BODY (below): the RTB/USP proof points (especially for edibles), the switch/offer line, a clear store/app CTA. Keep it tight and scannable.
-- State the food FORMAT explicitly (Chews / Fresh / Kibble / Wet / Treats).
-- Relevant over clever. Cut anything not pulling weight.
-STRUCTURE REFERENCE (shape only — do NOT reuse this wording): "Dear [Name]" → an intriguing hook that breaks before "read more" → payoff sentences completing the thought → product switch line → 2-3 proof bullets → store/app CTA → opt-out line.
-Put the hook + payoff as the first lines of the body; RTBs and CTA follow below.`;
+        const channelRules=isPush?PUSH_RULES:isEmail?EMAIL_RULES:WHATSAPP_RULES;
         const nOpts=copyOptionCount(c.channel);
         const shape=isPush
           ?"each: {direction,header,body,cta}. header=push title MAX 50 chars, body=MAX 90 chars one sentence, cta=2-3 words"
@@ -3402,12 +3405,12 @@ Put the hook + payoff as the first lines of the body; RTBs and CTA follow below.
         {opts&&<div>
           {sel!=null&&<div style={{marginBottom:10}}>
             <div style={{fontSize:11,fontWeight:700,color:"#5B21B6",textTransform:"uppercase",letterSpacing:.5,marginBottom:6,display:"flex",alignItems:"center",gap:4}}><CheckCircle2 size={11}/>Approved copy</div>
-            <ContentCard o={opts[sel]}idx={sel}sel={true}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}onEditSave={editDirectly}channel={c.channel}sentBack={c.data?.sentBack}isResend={!!c.data?.lastRejectReason}/>
+            <ContentCard o={opts[sel]}idx={sel}sel={true}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}onEditSave={editDirectly}channel={c.channel}sentBack={c.data?.sentBack}isResend={!!c.data?.lastRejectReason}image={mockImage}/>
           </div>}
           {sel!=null&&<button onClick={()=>setShowAll(v=>!v)}style={{display:"flex",alignItems:"center",gap:5,background:"none",border:"none",cursor:"pointer",color:C.sub,fontSize:12.5,fontWeight:600,marginBottom:8}}>{showAll?<><ChevronDown size={13}/>Hide other options</>:<><Eye size={13}/>See other {opts.length-1} options</>}</button>}
           {sel==null&&opts&&opts.length>1&&<div style={{marginBottom:10,fontSize:12.5,color:C.sub,background:C.paper,border:`1px solid ${C.line}`,borderRadius:10,padding:"9px 13px"}}>Pick <b>one</b> option below — it goes straight to Ilena for approval.</div>}
           {(sel==null||showAll)&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
-            {opts.map((o,i)=>{if(sel!=null&&i===sel)return null;return<ContentCard key={i}o={o}idx={i}sel={false}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}onEditSave={editDirectly}channel={c.channel}sentBack={c.data?.sentBack}isResend={!!c.data?.lastRejectReason}/>;})}</div>}
+            {opts.map((o,i)=>{if(sel!=null&&i===sel)return null;return<ContentCard key={i}o={o}idx={i}sel={false}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}onEditSave={editDirectly}channel={c.channel}sentBack={c.data?.sentBack}isResend={!!c.data?.lastRejectReason}image={mockImage}/>;})}</div>}
         </div>}
         {sel!=null&&<div style={{marginTop:12,background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:10,padding:"14px 16px"}}>
           <div style={{fontSize:12,fontWeight:700,color:"#15803D",textTransform:"uppercase",letterSpacing:.5,marginBottom:10,display:"flex",alignItems:"center",gap:6}}><CheckCircle2 size={13}/>Copy approved — next steps</div>
@@ -3585,6 +3588,7 @@ function WhatsAppMockup({o,image,product,onClose}){
   const cta=stripForbidden(o&&o.cta||"");
   const now=new Date().toLocaleTimeString("en-IN",{hour:"numeric",minute:"2-digit"});
   return<div onClick={onClose}style={{position:"fixed",inset:0,background:"rgba(10,15,25,.6)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+    <button onClick={onClose}title="Close preview"style={{position:"absolute",top:18,right:20,background:"rgba(255,255,255,.16)",border:"1px solid rgba(255,255,255,.25)",color:"#fff",borderRadius:999,padding:"7px 14px",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:6,fontSize:13,fontWeight:700,zIndex:2}}><X size={16}/>Close</button>
     <div onClick={e=>e.stopPropagation()}style={{width:340,maxWidth:"94vw",background:"#0b141a",borderRadius:28,overflow:"hidden",boxShadow:"0 20px 60px rgba(0,0,0,.4)",border:"7px solid #1f2c34"}}>
       {/* WA header */}
       <div style={{background:"#1f2c34",display:"flex",alignItems:"center",gap:10,padding:"12px 14px"}}>
@@ -3638,6 +3642,7 @@ function PushMockup({o,image,product,onClose}){
   const day=new Date().toLocaleDateString("en-IN",{weekday:"long",day:"numeric",month:"long"});
   const hh=new Date().toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:false});
   return<div onClick={onClose}style={{position:"fixed",inset:0,background:"rgba(10,15,25,.6)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+    <button onClick={onClose}title="Close preview"style={{position:"absolute",top:18,right:20,background:"rgba(255,255,255,.16)",border:"1px solid rgba(255,255,255,.25)",color:"#fff",borderRadius:999,padding:"7px 14px",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:6,fontSize:13,fontWeight:700,zIndex:2}}><X size={16}/>Close</button>
     <div onClick={e=>e.stopPropagation()}style={{width:330,maxWidth:"94vw",borderRadius:34,overflow:"hidden",boxShadow:"0 20px 60px rgba(0,0,0,.45)",border:"8px solid #0c0c0e",
       background:image?`url(${image}) center/cover`:"linear-gradient(160deg,#3b4a63,#1c2536 70%)",minHeight:560,position:"relative",display:"flex",flexDirection:"column"}}>
       {/* dim overlay so text reads over any wallpaper */}
@@ -3669,7 +3674,83 @@ function PushMockup({o,image,product,onClose}){
     </div>
   </div>;
 }
-function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,busy,onSelect,onRefine,onEditSave,channel,sentBack,isResend}){
+// ── Share the final output (any team member) ──────────────────────────────────
+function ShareFinalModal({c,copy,image,onClose}){
+  const isWA=/whatsapp/i.test(c.channel||"");
+  const isEmail=c.channel==="Email"||c.channel==="WhatsApp + Email";
+  const isPush=isPushChannel(c.channel);
+  const[busy,setBusy]=useState(false);
+  const[note,setNote]=useState("");
+  const[showPushPrev,setShowPushPrev]=useState(false);
+  const fname=((c.product||"creative").replace(/[^a-z0-9]+/gi,"_").replace(/^_+|_+$/g,"")||"creative")+".png";
+  // Per-channel share text
+  const waText=copy?copyTextFromOption(copy):"";
+  const emailText=copy?[(copy.subject?"Subject: "+copy.subject:""),(copy.header||""),"",(copy.body||""),(copy.cta?"\n"+copy.cta:"")].filter(Boolean).join("\n").trim():"";
+  const pushText=copy?[(copy.header||""),(copy.body||""),(copy.cta||"")].filter(Boolean).join("\n").trim():"";
+  const shareText=isEmail?emailText:isPush?pushText:waText;
+  const shareToWhatsApp=async(withImage)=>{
+    setBusy(true);setNote("");
+    try{
+      if(withImage&&image&&navigator.canShare){
+        const r=await fetch(image);const b=await r.blob();
+        const file=new File([b],fname,{type:b.type||"image/png"});
+        if(navigator.canShare({files:[file]})){await navigator.share({text:shareText,files:[file]});setBusy(false);return;}
+      }
+      if(navigator.share){await navigator.share({text:shareText});setBusy(false);
+        if(withImage&&image)setNote("Shared the text. To include the image, download it and attach it in the chat.");return;}
+    }catch(e){setBusy(false);if(e&&e.name==="AbortError")return;}
+    window.open("https://api.whatsapp.com/send?text="+encodeURIComponent(shareText),"_blank");
+    setNote(withImage&&image?"Opened WhatsApp with the text — pick the Head of Marketing. Web links can't attach the image, so download it below and attach it in the chat (on a phone, image + text share together).":"Opened WhatsApp with the text — pick the Head of Marketing.");
+    setBusy(false);
+  };
+  const Section=({title,children})=><div style={{marginBottom:14}}><div style={{fontSize:10.5,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.5,marginBottom:6}}>{title}</div>{children}</div>;
+  const ImgBlock=()=>image?<div style={{borderRadius:10,overflow:"hidden",border:`1px solid ${C.line}`}}><img src={image}alt="final creative"style={{width:"100%",display:"block"}}/></div>:<div style={{borderRadius:10,border:`1px dashed ${C.line}`,padding:"22px",textAlign:"center",color:C.sub,fontSize:12.5}}><ImageIcon size={22}/><div style={{marginTop:4}}>No final image on this asset yet.</div></div>;
+  const CopyBlock=()=><div style={{background:"#F8FAFC",border:`1px solid ${C.line}`,borderRadius:10,padding:"12px 14px"}}>
+    {copy?.subject&&isEmail&&<div style={{marginBottom:6}}><div style={{fontSize:9,fontWeight:800,color:C.sub,textTransform:"uppercase"}}>Subject</div><div style={{fontSize:13.5,fontWeight:700,color:C.ink}}>{copy.subject}</div></div>}
+    {copy?.header&&<div style={{marginBottom:6}}><div style={{fontSize:9,fontWeight:800,color:C.sub,textTransform:"uppercase"}}>{isEmail?"Preview / hero":isPush?"Title":"Image copy"}</div><div style={{fontSize:13.5,fontWeight:700,color:C.ink,whiteSpace:"pre-line"}}>{copy.header}</div></div>}
+    {copy?.body&&<div style={{marginBottom:6}}><div style={{fontSize:9,fontWeight:800,color:C.sub,textTransform:"uppercase"}}>{isEmail?"Body":isPush?"Message":"Caption"}</div><div style={{fontSize:12.5,color:"#374151",lineHeight:1.5,whiteSpace:"pre-line"}}>{copy.body}</div></div>}
+    {copy?.cta&&<div style={{fontSize:12,fontWeight:700,color:C.purple}}>{copy.cta} →</div>}
+  </div>;
+  const DownloadImg=()=>image?<a href={image}download={fname}style={{fontSize:12,fontWeight:700,color:C.ink,textDecoration:"none",border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 12px",display:"inline-flex",alignItems:"center",gap:5,background:"#fff"}}><Download size={13}/>Download image</a>:null;
+  const WAShareBtn=({withImage,label})=><button onClick={()=>shareToWhatsApp(withImage)}disabled={busy||!copy}style={{fontSize:12.5,fontWeight:700,color:"#fff",background:"#25D366",border:"none",borderRadius:8,padding:"8px 13px",cursor:busy?"wait":"pointer",display:"inline-flex",alignItems:"center",gap:6}}><MessageSquare size={14}/>{label}</button>;
+  const CopyText=({text})=><CopyBtn text={()=>text}label="Copy text"/>;
+  return<div onClick={onClose}style={{position:"fixed",inset:0,background:"rgba(15,23,42,.45)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+    <div onClick={e=>e.stopPropagation()}style={{width:460,maxWidth:"96vw",maxHeight:"90vh",overflowY:"auto",background:"#fff",borderRadius:16,boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
+      <div style={{padding:"16px 18px",borderBottom:`1px solid ${C.line}`,display:"flex",alignItems:"center",gap:10,position:"sticky",top:0,background:"#fff",zIndex:2}}>
+        <Share2 size={18}color={C.ink}/>
+        <div style={{flex:1}}><div style={{fontWeight:800,fontSize:15.5,color:C.ink}}>Send to Head of Marketing</div><div style={{fontSize:12,color:C.sub}}>{c.product||c.name} · {c.channel||"WhatsApp"} · hand off on WhatsApp</div></div>
+        <button onClick={onClose}style={{border:"none",background:"transparent",cursor:"pointer",color:C.sub}}><X size={18}/></button>
+      </div>
+      <div style={{padding:"16px 18px"}}>
+        {isWA&&<>
+          <Section title="WhatsApp — image + copy together"><ImgBlock/><div style={{height:10}}/><CopyBlock/></Section>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}><WAShareBtn withImage={true}label="Send to Head of Marketing"/><DownloadImg/><CopyText text={waText}/></div>
+        </>}
+        {isEmail&&<>
+          <Section title="Email image (download to attach in your ESP / share)"><ImgBlock/><div style={{marginTop:8}}><DownloadImg/></div></Section>
+          <Section title="Email copy (separate)"><CopyBlock/><div style={{marginTop:8,display:"flex",gap:8,flexWrap:"wrap"}}><CopyText text={emailText}/><WAShareBtn withImage={false}label="Send copy to Head of Marketing"/></div></Section>
+        </>}
+        {isPush&&<>
+          <Section title="Push notification — copy"><CopyBlock/></Section>
+          <Section title="Preview image"><ImgBlock/>
+            <div style={{marginTop:8,display:"flex",gap:8,flexWrap:"wrap"}}>
+              <button onClick={()=>setShowPushPrev(true)}style={{fontSize:12,fontWeight:700,color:"#fff",background:C.navy,border:"none",borderRadius:8,padding:"7px 12px",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}><BellIcon size={13}/>Preview as notification</button>
+              <DownloadImg/>
+            </div>
+          </Section>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}><WAShareBtn withImage={true}label="Send to Head of Marketing"/><CopyText text={pushText}/></div>
+        </>}
+        {note&&<div style={{marginTop:12,fontSize:12,color:C.sub,background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:8,padding:"9px 11px",lineHeight:1.5}}>{note}</div>}
+        {!copy&&<div style={{marginTop:12,fontSize:12,color:"#B45309"}}>No approved copy found on this asset.</div>}
+      </div>
+      {showPushPrev&&<PushMockup o={copy}image={image}product={c.product}onClose={()=>setShowPushPrev(false)}/>}
+    </div>
+  </div>;
+}
+function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,busy,onSelect,onRefine,onEditSave,channel,sentBack,isResend,image}){
+  const[showWA,setShowWA]=useState(false);
+  const[showPush,setShowPush]=useState(false);
+  const isWAchan=/whatsapp/i.test(channel||"");
   const isPush=isPushChannel(channel);
   const isEmail=channel==="Email"||channel==="WhatsApp + Email";
   const dirColors=[
@@ -3682,8 +3763,13 @@ function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,
 
   return<div style={{
     border:`2px solid ${sel?C.purple:C.line}`,borderRadius:14,overflow:"hidden",
-    background:sel?"#FAF5FF":"#fff",transition:"border-color .15s",
+    background:sel?"#FAF5FF":"#fff",transition:"border-color .15s",position:"relative",
   }}>
+    {busy&&refineFor===idx&&<div style={{position:"absolute",inset:0,background:"rgba(250,245,255,.82)",zIndex:5,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:8,backdropFilter:"blur(1px)"}}>
+      <RefreshCw size={22}color={C.purple}style={{animation:"spin 1s linear infinite"}}/>
+      <div style={{fontSize:12.5,fontWeight:800,color:C.purple}}>Steering with AI…</div>
+      <div style={{fontSize:11,color:C.sub}}>Rewriting this copy — one moment</div>
+    </div>}
     {/* Direction tag — colour coded per option */}
     <div style={{background:sel?C.purple:dc.bg,padding:"8px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
       <span style={{fontSize:11.5,fontWeight:700,color:sel?"#fff":dc.text,letterSpacing:.2}}>{o.direction}</span>
@@ -3784,8 +3870,12 @@ function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,
             :<Btn small variant="dark"onClick={()=>onSelect(idx)}><CheckCircle2 size={12}/>{isResend?"Resend for approval":"Select"}</Btn>)}
           {sel&&<Btn small variant="ghost"onClick={()=>onSelect(null)}><X size={12}/>Unselect</Btn>}
           <Btn small variant="ghost"onClick={()=>setEditMode("menu")}><PenLine size={13}/>Edit copy</Btn>
+          {isWAchan&&<button onClick={()=>setShowWA(true)}title="Preview this copy on WhatsApp"style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,fontWeight:700,color:"#0b141a",background:"#25D36622",border:"1px solid #25D36655",borderRadius:8,padding:"6px 10px",cursor:"pointer"}}><MessageSquare size={13}/>Preview</button>}
+          {isPushChannel(channel)&&<button onClick={()=>setShowPush(true)}title="Preview this copy as a notification"style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,fontWeight:700,color:C.navy,background:C.navy+"12",border:`1px solid ${C.navy}40`,borderRadius:8,padding:"6px 10px",cursor:"pointer"}}><BellIcon size={13}/>Preview</button>}
           <CopyBtn text={()=>copyTextFromOption(o)}/>
         </div>}
+      {showWA&&<WhatsAppMockup o={o}image={image}product={null}onClose={()=>setShowWA(false)}/>}
+      {showPush&&<PushMockup o={o}image={image}product={null}onClose={()=>setShowPush(false)}/>}
     </div>
   </div>;
 }
@@ -5229,6 +5319,7 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate}){
   const allDone=(campaigns||[]).filter(c=>c.stage==="done"&&!isArchived(c)).sort((a,b)=>new Date(b.updated_at||b.created_at)-new Date(a.updated_at||a.created_at));
   const[view,setView]=useState("list");
   const[reactivating,setReactivating]=useState(null);
+  const[shareFor,setShareFor]=useState(null);
   const reactivate=(c)=>{
     const hasCopy=!!(c.data?.copyOptions);
     const hasDesign=!!(c.data?.design?.approvedPromptIdx!=null||c.data?.design?.libraryPick);
@@ -5286,6 +5377,7 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate}){
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
           {copy&&<div onClick={e=>e.stopPropagation()}><CopyBtn text={()=>copyTextFromOption(copy)}/></div>}
+          {canBrandApprove(me)&&<button onClick={e=>{e.stopPropagation();setShareFor(c);}}title="Share to Head of Marketing on WhatsApp"style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,fontWeight:700,color:"#fff",background:"#25D366",border:"none",borderRadius:8,padding:"5px 10px",cursor:"pointer"}}><Share2 size={13}/>Share</button>}
           {isOpen?<ChevronDown size={16}color={C.sub}/>:<ChevronRight size={16}color={C.sub}/>}
         </div>
       </div>
@@ -5332,6 +5424,7 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate}){
     </div>;
   };
   return<div>
+    {shareFor&&<ShareFinalModal c={shareFor}copy={shareFor.data?.copyOptions?.[shareFor.data?.selectedCopyIdx]}image={shareFor.data?.design?.finalFile?.dataUrl||shareFor.data?.design?.generatedImage||null}onClose={()=>setShareFor(null)}/>}
     {reactivating&&<div onClick={()=>setReactivating(null)}style={{position:"fixed",inset:0,background:"rgba(15,18,30,.5)",zIndex:50,display:"flex",alignItems:"center",justifyContent:"center"}}>
       <div onClick={e=>e.stopPropagation()}style={{background:"#fff",borderRadius:16,padding:28,width:360,boxShadow:"0 8px 32px rgba(0,0,0,.2)"}}>
         <div style={{fontWeight:800,fontSize:17,marginBottom:6}}>Reactivate {reactivating.product||"asset"}</div>
