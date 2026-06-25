@@ -106,7 +106,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.62 - Design make-step simplified to two tiles (Generate an AI image / Choose from library). Path shows on choice. Once an image exists: Download + Open-in-Canva (brand template). Divider + When-your-creative-is-ready ship-it-out upload. Removed the or-or-or stack + stale composer copy.";
+const BUILD="v29.63 - One art direction only (drives the AI image + guides library/Canva). Generate-AI-image tile builds straight from that direction. All designs route through a Create-on-Canva step after an image is selected/generated, then ship. Removed the duplicate art-direction (ArtNotes).";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -5919,7 +5919,19 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
         {/* Back to picker */}
 
         {/* Art direction notes */}
-        {!isPushChannel(c.channel)&&<ArtNotes d={d}setD={setD}busy={busy}genNotes={genNotes}/>}
+        {/* Single art direction — drives everything below */}
+        {!isPushChannel(c.channel)&&<div style={{marginBottom:14}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+            <div style={{fontSize:12,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5}}>Art direction</div>
+            {busy==="prompts"?<Spin label="Writing…"/>:<Btn small onClick={e=>{e.stopPropagation();genPrompts();}}>{d.imagePrompts?"Regenerate":"Generate art direction"}</Btn>}
+          </div>
+          {err&&<div style={{color:C.coral,fontSize:13,marginBottom:8}}>{err}</div>}
+          {d.imagePrompts&&d.imagePrompts[0]?<div>
+            <textarea value={d.imagePrompts[0].prompt||""}onChange={e=>{const v=e.target.value;setD({imagePrompts:[{...d.imagePrompts[0],prompt:v}]});}}rows={3}style={{width:"100%",boxSizing:"border-box",fontSize:12.5,lineHeight:1.5,color:C.ink,border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 9px",resize:"vertical",fontFamily:"inherit",marginBottom:6,background:"#fff"}}/>
+            {d.imagePrompts[0].negativePrompt&&<div style={{fontSize:11,color:C.sub,marginBottom:6}}><b>Avoid:</b> {d.imagePrompts[0].negativePrompt}</div>}
+            <div style={{fontSize:11.5,color:C.sub}}>This one direction drives the AI image and guides your library / Canva pick below.</div>
+          </div>:<div style={{fontSize:12,color:C.sub,fontStyle:"italic"}}>Generate one art direction to guide the creative.</div>}
+        </div>}
         {!isPushChannel(c.channel)&&<div style={{display:"flex",gap:10,margin:"14px 0 6px",flexWrap:"wrap"}}>
           {["design_team","design_lead","super_admin"].includes(_r(me))&&<button onClick={()=>setImageMode("generate")}style={{flex:"1 1 200px",textAlign:"left",cursor:"pointer",border:`2px solid ${effMode==="generate"?C.teal:C.line}`,background:effMode==="generate"?C.tealSoft:"#fff",borderRadius:12,padding:"12px 14px"}}><div style={{display:"flex",alignItems:"center",gap:8,fontWeight:800,fontSize:13.5,color:C.ink}}><Wand2 size={16}color={effMode==="generate"?C.teal:C.sub}/>Generate an AI image</div><div style={{fontSize:11.5,color:C.sub,marginTop:4}}>Create a fresh image from the art direction.</div></button>}
           <button onClick={()=>setImageMode("library")}style={{flex:"1 1 200px",textAlign:"left",cursor:"pointer",border:`2px solid ${effMode==="library"?C.teal:C.line}`,background:effMode==="library"?C.tealSoft:"#fff",borderRadius:12,padding:"12px 14px"}}><div style={{display:"flex",alignItems:"center",gap:8,fontWeight:800,fontSize:13.5,color:C.ink}}><ImageIcon size={16}color={effMode==="library"?C.teal:C.sub}/>Choose from library</div><div style={{fontSize:11.5,color:C.sub,marginTop:4}}>Pick a ready HUFT scene.</div></button>
@@ -5928,30 +5940,16 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
         {/* Reference images — upload or pull from library to steer generation */}
 
         {/* Image prompts */}
+        {/* Generate-an-AI-image path — builds from the single art direction */}
         {!isPushChannel(c.channel)&&["design_team","design_lead","super_admin"].includes(_r(me))&&effMode==="generate"&&<div style={{marginBottom:12}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-            <div style={{fontSize:12,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5}}>Generate an image</div>
-            {busy==="prompts"?<Spin label="Generating…"/>:<Btn small onClick={e=>{e.stopPropagation();genPrompts();}}>{d.imagePrompts?"Regenerate prompt":"Generate prompt"}</Btn>}
-          </div>
-          <RefImagePicker d={d}setD={setD}campaignId={c.id}product={c.product}/>
-          {err&&<div style={{color:C.coral,fontSize:13,marginBottom:8}}>{err}</div>}
-          {d.imagePrompts&&d.imagePrompts.map((p,i)=><div key={i}style={{border:`2px solid ${d.approvedPromptIdx===i?C.teal:C.line}`,borderRadius:10,padding:12,marginBottom:10,background:d.approvedPromptIdx===i?C.tealSoft:"#fff"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
-              <span style={{fontWeight:700,fontSize:13,color:C.ink}}>{p.label}</span>
-              <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                <span style={{fontSize:11,color:C.sub}}>{p.aspectRatio}</span>
-                {d.approvedPromptIdx===i&&<span style={{fontSize:11,color:C.teal,fontWeight:700,display:"flex",alignItems:"center",gap:3}}><CheckCircle2 size={12}/>Picked</span>}
-              </div>
+          {!d.imagePrompts?<div style={{fontSize:12,color:C.sub,fontStyle:"italic",marginBottom:6}}>Generate an art direction above first — the image is built from it.</div>:<>
+            <RefImagePicker d={d}setD={setD}campaignId={c.id}product={c.product}/>
+            <div style={{display:"flex",gap:7,alignItems:"center",marginTop:8}}>
+              {busy==="img0"?<Spin label="Generating image…"/>:<Btn small variant="teal"onClick={()=>genImageFor(d.imagePrompts[0],0)}><ImageIcon size={13}/>{d.generatedImage?"Regenerate image":"Generate image from the art direction"}</Btn>}
             </div>
-            <textarea value={p.prompt}onChange={e=>{const v=e.target.value;setD({imagePrompts:(d.imagePrompts||[]).map((x,xi)=>xi===i?{...x,prompt:v}:x)});}}rows={3}style={{width:"100%",boxSizing:"border-box",fontSize:12.5,lineHeight:1.5,color:C.ink,border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 9px",resize:"vertical",fontFamily:"inherit",marginBottom:6,background:"#fff"}}/>
-            {p.negativePrompt&&<div style={{fontSize:11,color:C.sub,marginBottom:8}}><b>Avoid:</b> {p.negativePrompt}</div>}
-            <div style={{display:"flex",gap:7,alignItems:"center"}}>
-              {["design_team","design_lead","super_admin"].includes(_r(me))&&(busy==="img"+i?<Spin label="Generating image…"/>:<Btn small variant="teal"onClick={()=>genImageFor(p,i)}><ImageIcon size={13}/>Generate image</Btn>)}
-            </div>
-            {d.generatedImage&&d.approvedPromptIdx===i&&<div style={{marginTop:10}}>
+            {d.generatedImage&&<div style={{marginTop:10}}>
               <img src={d.generatedImage}alt="Generated"style={{width:"100%",maxWidth:340,borderRadius:10,border:`1px solid ${C.line}`}}/>
-              <div style={{fontSize:11.5,color:C.sub,marginTop:5}}>Generated from this prompt. Refine text/product placement in the composer below, then "Use as final".</div>
-              {/* Fix-the-image chat */}
+              <div style={{fontSize:11.5,color:C.sub,marginTop:5}}>Generated from your art direction. Tweak it below, then take it into Canva.</div>
               <div style={{marginTop:10,border:`1px solid ${C.line}`,borderRadius:10,overflow:"hidden",maxWidth:520}}>
                 <div style={{background:C.navy,color:"#fff",fontSize:11.5,fontWeight:700,padding:"7px 12px",display:"flex",alignItems:"center",gap:6}}><Sparkles size={13}/>Fix the image — tell the AI what to change</div>
                 {Array.isArray((imageThreads[c.id]||[]))&&(imageThreads[c.id]||[]).length>0&&<div style={{padding:"10px 12px",display:"flex",flexDirection:"column",gap:10,background:"#F8FAFC",borderBottom:`1px solid ${C.line}`,maxHeight:460,overflowY:"auto"}}>
@@ -5981,7 +5979,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
                 </div>
               </div>
             </div>}
-          </div>)}
+          </>}
         </div>}
 
         {/* Library picker */}
@@ -5991,7 +5989,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
           {effMode==="library"&&<SmartLibraryPicker d={d}setD={setD}copy={copy}brief={c.data?.brief}product={c.product}campaignId={c.id}/>}
 
           {(d.generatedImage||d.libraryPick)&&<div style={{marginTop:14}}>
-            <div style={{fontSize:13,fontWeight:800,color:C.ink,marginBottom:4}}>Brand it in Canva</div>
+            <div style={{fontSize:13,fontWeight:800,color:C.ink,marginBottom:4}}>Create on Canva</div>
             <div style={{fontSize:12,color:C.sub,marginBottom:10}}>Open the on-brand template, drop in your image and the copy, then download the export or grab the share link.</div>
             <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
               {d.libraryPick&&<Btn small variant="ghost"onClick={async()=>{try{const r=await api.get("/api/image-library/"+d.libraryPick);const url=r&&r.file_data;if(!url)return;const ext=(url.match(/^data:image\/(\w+)/)||[])[1]||"png";const base=((d.libraryPickMeta&&d.libraryPickMeta.label)||c.product||"huft-image").toString().replace(/[^\w.-]+/g,"_").slice(0,60);const a=document.createElement("a");a.href=url;a.download=base+"."+ext;document.body.appendChild(a);a.click();a.remove();}catch(e){}}}><Download size={13}/>Download image</Btn>}
