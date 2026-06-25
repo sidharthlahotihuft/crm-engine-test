@@ -106,7 +106,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.40 · Push copy now leans toward earning the tap: soft guidance (a preference, not a hard rule) steers it to use a question or something surprising/fun/relatable, and to use plain everyday words — e.g. 'cat', never 'feline'. Applies to push generation across generate/steer/fix. Builds on v29.39 (channel rules in steer/fix), v29.38 (push body hard 70), v29.37 (design preview/RTBs).";
+const BUILD="v29.42 · Added RTBs are now shown as a separate 'RTB on the image' element — not merged into the image copy. The image copy (header) stays clean and short; any selected RTBs appear under their own labelled block in the copy editor, in the design brief, and as separate badges in the preview, plus a distinct line in the copied copy. Builds on v29.41 (image-fix thread/edit + design-team editor & upload), v29.40 (push engagement), v29.37 (RTB suggest+select).";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -899,7 +899,7 @@ function RowActions({c,patch,me,onEdit,onDelete,onDuplicate}){
 
 function ApproverChip({name,at,color=C.teal}){if(!name)return null;return<span style={{display:"inline-flex",alignItems:"center",gap:5,background:color+"18",color:color,fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={12}/>{name} · {fmtTime(at)}</span>;}
 // Build a clean, paste-ready text block from an approved copy option
-const copyTextFromOption=(o)=>{if(!o)return"";return[o.subject?("Subject: "+o.subject):"",o.subject?"":undefined,o.header,"",o.body,"",o.cta?("CTA: "+o.cta):""].filter(x=>x!==undefined).join("\n").replace(/\n{3,}/g,"\n\n").trim();};
+const copyTextFromOption=(o)=>{if(!o)return"";const rtb=(Array.isArray(o.rtbsSelected)&&o.rtbsSelected.length)?("RTB on image: "+o.rtbsSelected.join(" · ")):undefined;return[o.subject?("Subject: "+o.subject):"",o.subject?"":undefined,o.header,rtb,"",o.body,"",o.cta?("CTA: "+o.cta):""].filter(x=>x!==undefined).join("\n").replace(/\n{3,}/g,"\n\n").trim();};
 // How many copy options to generate per channel — Email gets 2, WhatsApp/Push get 5
 const copyOptionCount=(ch)=>{const c=(ch||"").toLowerCase();return(c.includes("email")&&!c.includes("whatsapp"))?2:5;};
 
@@ -3632,24 +3632,17 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
     // Inline direct-text edit of a generated option (no AI, user types changes)
     const editDirectly=(idx,updated)=>{
       const base=opts||[];
-      const newOpts=base.map((o,i)=>{
-        if(i!==idx)return o;
-        const merged={...o,...updated,manual:true};
-        // a manual header edit becomes the new RTB base; clear any prior RTB selection
-        if(updated&&updated.header!==undefined){merged.headerBase=updated.header;merged.rtbsSelected=[];}
-        return merged;
-      });
+      const newOpts=base.map((o,i)=>i===idx?{...o,...updated,manual:true}:o);
       patch(c.id,{data:{...(c.data||{}),copyOptions:newOpts,sentBack:false}});
       if(toast)toast("Copy updated ✓ — you can now resend for approval","success");
     };
-    // RTB toggle: selected proof points are appended to the image copy (header); deselect removes them.
+    // RTB toggle: stores the selection only. RTBs are shown SEPARATELY as "RTB on the image",
+    // never merged into the image-copy header text.
     const toggleRtb=(idx,rtb)=>{
       const arr=opts||[];const o=arr[idx];if(!o)return;
-      const base=(o.headerBase!=null?o.headerBase:(o.header||""));
       const cur=Array.isArray(o.rtbsSelected)?o.rtbsSelected:[];
       const next=cur.includes(rtb)?cur.filter(x=>x!==rtb):[...cur,rtb];
-      const newHeader=base+(next.length?("\n"+next.join(" · ")):"");
-      const newOpts=arr.map((x,i)=>i===idx?{...x,headerBase:base,rtbsSelected:next,header:newHeader}:x);
+      const newOpts=arr.map((x,i)=>i===idx?{...x,rtbsSelected:next}:x);
       patch(c.id,{data:{...(c.data||{}),copyOptions:newOpts}});
     };
 
@@ -3967,6 +3960,11 @@ function ApprovedCopyCard({copy,channel,product,image}){
       <div style={{fontSize:9,fontWeight:800,color:"#7C3AED",textTransform:"uppercase",letterSpacing:.6,marginBottom:3}}>Image copy</div>
       <div style={{fontWeight:700,fontSize:13.5,lineHeight:1.4,color:"#1E1B4B",whiteSpace:"pre-line"}}>{copy.header}</div>
     </div>}
+    {/* RTB on the image — proof points to place on the creative, separate from the image copy */}
+    {Array.isArray(copy.rtbsSelected)&&copy.rtbsSelected.length>0&&<div style={{marginBottom:8,background:C.tealSoft,border:`1px solid ${C.teal}55`,borderRadius:8,padding:"7px 10px"}}>
+      <div style={{fontSize:9,fontWeight:800,color:C.teal,textTransform:"uppercase",letterSpacing:.6,marginBottom:3}}>RTB on the image</div>
+      <div style={{fontWeight:600,fontSize:13,lineHeight:1.4,color:"#0F766E"}}>{copy.rtbsSelected.join(" · ")}</div>
+    </div>}
     {/* Body copy — the message caption */}
     {copy.body&&<div>
       <div style={{fontSize:9,fontWeight:800,color:"#0F766E",textTransform:"uppercase",letterSpacing:.6,marginBottom:3}}>Body copy</div>
@@ -4006,6 +4004,7 @@ function WhatsAppMockup({o,image,product,onClose,imageHasCopy}){
             {header&&!imageHasCopy
               ?<div style={{position:"absolute",inset:0,padding:"14px 14px",display:"flex",flexDirection:"column",justifyContent:"flex-start",background:"linear-gradient(180deg,rgba(0,0,0,.45),rgba(0,0,0,0) 55%)"}}>
                   <div style={{color:"#fff",fontWeight:800,fontSize:17,lineHeight:1.22,whiteSpace:"pre-line",textShadow:"0 1px 6px rgba(0,0,0,.55)"}}>{header}</div>
+                  {Array.isArray(o&&o.rtbsSelected)&&o.rtbsSelected.length>0&&<div style={{marginTop:"auto",display:"flex",flexWrap:"wrap",gap:5}}>{o.rtbsSelected.map((r,ri)=><span key={ri}style={{background:"rgba(0,0,0,.55)",color:"#fff",fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:6,backdropFilter:"blur(2px)"}}>{r}</span>)}</div>}
                 </div>
               :(!image&&<div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",color:"#5b6b73",fontSize:12,gap:6,flexDirection:"column"}}><ImageIcon size={26}/><span>Image / creative here</span></div>)}
           </div>
@@ -4238,11 +4237,16 @@ function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,
 
     {/* RTBs — copy team can append proof points to the image copy */}
     {Array.isArray(o.rtbs)&&o.rtbs.length>0&&<div style={{padding:"0 12px 10px"}}>
-      <div style={{fontSize:9.5,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.5,marginBottom:6,display:"flex",alignItems:"center",gap:5}}><Plus size={11}/>Add proof points (RTBs) to the image copy</div>
+      <div style={{fontSize:9.5,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.5,marginBottom:6,display:"flex",alignItems:"center",gap:5}}><Plus size={11}/>RTBs to place on the image</div>
       <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
         {o.rtbs.map((rtb,ri)=>{const on=(o.rtbsSelected||[]).includes(rtb);return<button key={ri}onClick={()=>onRtbToggle&&onRtbToggle(idx,rtb)}style={{fontSize:11.5,fontWeight:600,padding:"5px 11px",borderRadius:999,cursor:"pointer",border:`1px solid ${on?C.teal:C.line}`,background:on?C.tealSoft:"#fff",color:on?C.teal:C.ink,display:"inline-flex",alignItems:"center",gap:5}}>{on?<Check size={12}/>:<Plus size={12}/>}{rtb}</button>;})}
       </div>
-      <div style={{fontSize:10.5,color:C.sub,marginTop:6}}>{(o.rtbsSelected||[]).length>0?"Selected RTBs are appended to the image copy above — tap again to remove.":"Optional — tap to add a proof point to the image copy; leave unselected to keep it short."}</div>
+      {(o.rtbsSelected||[]).length>0
+        ?<div style={{marginTop:8,background:C.tealSoft,border:`1px solid ${C.teal}55`,borderRadius:8,padding:"7px 10px"}}>
+          <div style={{fontSize:9,fontWeight:800,color:C.teal,textTransform:"uppercase",letterSpacing:.5,marginBottom:3}}>RTB on the image</div>
+          <div style={{fontSize:12.5,color:C.ink,fontWeight:600,lineHeight:1.4}}>{(o.rtbsSelected||[]).join(" · ")}</div>
+        </div>
+        :<div style={{fontSize:10.5,color:C.sub,marginTop:6}}>Optional — tap to add a proof point that sits on the image as a separate RTB (kept apart from the image copy). Leave unselected for none.</div>}
     </div>}
 
     {/* Actions */}
@@ -5536,6 +5540,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
   const allDesign=isBusiness(me)?allDesignRaw.filter(c=>c.data?.selfMade):isDesignTeam(me)?allDesignRaw.filter(c=>!c.data?.selfMade):allDesignRaw;
   const[openId,setOpenId]=useState(null);
   const[imageModes,setImageModes]=useState({});
+  const[imageThreads,setImageThreads]=useState({}); // {campaignId: [{image,fix,at,by}]} — session only, never persisted (avoids bloating campaign data)
   const[designBusyMap,setDesignBusyMap]=useState({});
   const[designErrMap,setDesignErrMap]=useState({});
   React.useEffect(()=>{if(active?.id)setOpenId(active.id);},[active?.id]);
@@ -5599,6 +5604,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
         const full=[p.prompt,(typeof HUFT_VISUAL_GUIDELINES!=="undefined"?HUFT_VISUAL_GUIDELINES:"")].filter(Boolean).join("\n\n");
         const r=await api.post("/api/generate-image",{prompt:full,negativePrompt:p.negativePrompt||"",aspectRatio:ar,productImages:(d.refImages||[])});
         setD({imageSource:"prompt",approvedPromptIdx:idx,generatedImage:r.image});
+        setImageThreads(x=>({...x,[c.id]:[{image:r.image,fix:null,at:new Date().toISOString()}]}));
         patch(c.id,{design_approver:me.name});
       }catch(e){
         const msg=String(e.message||"");
@@ -5614,17 +5620,26 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
     const genImageFix=async()=>{
       const fix=(fixText||"").trim();
       if(!fix)return;
-      if(!approvedPrompt){setErr("Generate an image first, then describe what to fix.");return;}
+      const baseImg=d.generatedImage;
+      if(!baseImg){setErr("Generate an image first, then describe what to fix.");return;}
       setBusy("imgfix");setErr("");
       try{
         const isWA=/whatsapp/i.test(c.channel||"");
-        const ar=isWA?"1:1":(approvedPrompt.aspectRatio||"1:1");
-        const allFixes=[...((d.imageFixes||[]).map(f=>f.text)),fix];
-        const full=[approvedPrompt.prompt,
-          "ADJUSTMENTS — apply ALL of these fixes to the image, keeping everything else the same: "+allFixes.join("; "),
+        const ar=isWA?"1:1":(approvedPrompt&&approvedPrompt.aspectRatio||"1:1");
+        // EDIT the current image rather than regenerate from scratch: pass it as the base input
+        // and instruct the smallest possible change so little fixes stay close to the original.
+        const editPrompt=["You are EDITING the existing creative shown in the FIRST attached image — not creating a new one.",
+          "Apply ONLY this change: "+fix+".",
+          "Keep everything else exactly as it is in that image — overall composition, product, pet, background, on-image text/copy, colours, logos and layout. Make the SMALLEST edit that satisfies the request; do not redraw or re-imagine the whole scene. Any additional attached images are product references only.",
           (typeof HUFT_VISUAL_GUIDELINES!=="undefined"?HUFT_VISUAL_GUIDELINES:"")].filter(Boolean).join("\n\n");
-        const r=await api.post("/api/generate-image",{prompt:full,negativePrompt:approvedPrompt.negativePrompt||"",aspectRatio:ar,productImages:(d.refImages||[])});
-        setD({generatedImage:r.image,imageFixes:[...(d.imageFixes||[]),{text:fix,at:new Date().toISOString(),by:me.name}]});
+        const inputs=[baseImg,...((d.refImages||[]))]; // base image first = the thing to edit
+        const r=await api.post("/api/generate-image",{prompt:editPrompt,negativePrompt:(approvedPrompt&&approvedPrompt.negativePrompt)||"",aspectRatio:ar,productImages:inputs});
+        const newImg=r.image;
+        // Visual thread kept in session memory only (NOT saved to the campaign) so we never bloat the record.
+        const seed=(imageThreads[c.id]&&imageThreads[c.id].length)?imageThreads[c.id]:[{image:baseImg,fix:null,at:new Date().toISOString()}];
+        const newThread=[...seed,{image:newImg,fix:fix,at:new Date().toISOString(),by:me.name}];
+        setImageThreads(x=>({...x,[c.id]:newThread}));
+        setD({generatedImage:newImg,imageFixes:[...(d.imageFixes||[]),{text:fix,at:new Date().toISOString(),by:me.name}]});
         setFixText("");
         // Learning: feed every fix back so future prompt generations avoid the same issue.
         if(saveFeedback)saveFeedback({stage:"design",text:"IMAGE FIX ("+(c.channel||"WhatsApp")+" creative) — apply going forward: "+fix});
@@ -5794,8 +5809,17 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
               {/* Fix-the-image chat */}
               <div style={{marginTop:10,border:`1px solid ${C.line}`,borderRadius:10,overflow:"hidden",maxWidth:520}}>
                 <div style={{background:C.navy,color:"#fff",fontSize:11.5,fontWeight:700,padding:"7px 12px",display:"flex",alignItems:"center",gap:6}}><Sparkles size={13}/>Fix the image — tell the AI what to change</div>
-                {(d.imageFixes||[]).length>0&&<div style={{padding:"9px 12px",display:"flex",flexDirection:"column",gap:7,background:"#F8FAFC",borderBottom:`1px solid ${C.line}`}}>
-                  {(d.imageFixes||[]).map((f,fi)=><div key={fi}style={{fontSize:12,color:C.ink,display:"flex",gap:7,alignItems:"flex-start",lineHeight:1.4}}><span style={{flexShrink:0,width:18,height:18,borderRadius:999,background:C.tealSoft,color:C.teal,fontSize:10,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>{fi+1}</span><span>{f.text}</span></div>)}
+                {Array.isArray((imageThreads[c.id]||[]))&&(imageThreads[c.id]||[]).length>0&&<div style={{padding:"10px 12px",display:"flex",flexDirection:"column",gap:10,background:"#F8FAFC",borderBottom:`1px solid ${C.line}`,maxHeight:460,overflowY:"auto"}}>
+                  {(imageThreads[c.id]||[]).map((step,si)=><div key={si}>
+                    {step.fix
+                      ?<div style={{display:"flex",justifyContent:"flex-end",marginBottom:6}}><div style={{background:C.navy,color:"#fff",fontSize:12,borderRadius:"12px 12px 4px 12px",padding:"7px 11px",maxWidth:"85%",lineHeight:1.4}}>{step.fix}</div></div>
+                      :<div style={{fontSize:9.5,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.5,marginBottom:5}}>Before</div>}
+                    <div style={{display:"flex",alignItems:"flex-end",gap:7}}>
+                      <span style={{flexShrink:0,width:22,height:22,borderRadius:999,background:C.tealSoft,color:C.teal,display:"flex",alignItems:"center",justifyContent:"center"}}><Sparkles size={12}/></span>
+                      <img src={step.image}alt={step.fix?("After: "+step.fix):"Before"}style={{width:"100%",maxWidth:240,borderRadius:10,border:`1px solid ${C.line}`}}/>
+                    </div>
+                    <div style={{fontSize:10,color:C.sub,marginTop:3,marginLeft:29}}>{si===0?"Starting image":("Version "+(si+1)+(si===(imageThreads[c.id]||[]).length-1?" · current":""))}</div>
+                  </div>)}
                 </div>}
                 <div style={{padding:"10px 12px"}}>
                   {busy==="imgfix"?<Spin label="Applying your fix…"/>:<>
@@ -5807,7 +5831,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
                       <input type="checkbox"checked={fixAsRule}onChange={e=>setFixAsRule(e.target.checked)}style={{width:14,height:14,accentColor:C.coral}}/>
                       Also save this fix as a permanent design rule (future images will follow it)
                     </label>
-                    <div style={{fontSize:10.5,color:C.sub,marginTop:5}}>Each fix is regenerated on the same prompt and remembered as a design learning.</div>
+                    <div style={{fontSize:10.5,color:C.sub,marginTop:5}}>Each fix edits the current image — small changes stay close to the original — and is remembered as a design learning.</div>
                   </>}
                 </div>
               </div>
@@ -5819,7 +5843,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
         {imageMode==="library"&&<SmartLibraryPicker d={d}setD={setD}copy={copy}brief={c.data?.brief}product={c.product}campaignId={c.id}/>}
 
         {/* Finish the design — design team & admins only. Either compose in-app, or upload your own. */}
-        {["design","admin"].includes(me.role)&&<div>
+        {["design_team","design_lead","super_admin","business"].includes(_r(me))&&<div>
           <div style={{marginTop:14,marginBottom:6,fontSize:13,fontWeight:800,color:C.ink}}>Finish the design — two ways</div>
           <div style={{fontSize:12.5,color:C.sub,marginBottom:4}}>Either build it in the composer below, <b>or</b> upload your own design (file / link) at the bottom. You only need one.</div>
           {!(d.finalFile||d.generatedImage||d.libraryPick||approvedPrompt)&&!d.pendingApproval&&!d.assetReview&&!d.finalReview&&<div style={{margin:"8px 0 4px",background:"#F8F9FA",border:`1px dashed ${C.line}`,borderRadius:10,padding:"10px 13px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
@@ -5833,7 +5857,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
             }}>No design needed — send to final <ArrowRight size={13}/></Btn>
           </div>}
           {isOpen&&copy&&<CreativeComposer c={c}copy={copy}me={me}patch={patch}d={d}approvedPrompt={approvedPrompt}promptRules={promptRules}toast={(typeof toast!=="undefined"?toast:null)}/>}
-          {(approvedPrompt||d.libraryPick||d.finalFile)&&<FinalDesignUpload c={c}d={d}patch={patch}me={me}/>}
+          <FinalDesignUpload c={c}d={d}patch={patch}me={me}/>
           {d.finalFile&&<div style={{marginTop:10,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:C.tealSoft,border:`1px solid ${C.teal}55`,borderRadius:10,padding:"10px 13px"}}>
             <ImageIcon size={15}color={C.teal}/>
             <span style={{fontSize:12.5,color:C.ink,fontWeight:600}}>Final asset is ready.</span>
