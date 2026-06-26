@@ -106,7 +106,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.66 - FIXED composer blank page (bgMode used before its declaration - temporal dead zone; moved the library-suggest effect below the bgMode useState). Reference-image picker in the Generate path again suggests matching scenes from the library (click to add as a reference). Upload-for-approval already routes to the Design Lead and shows to design + business.";
+const BUILD="v29.68 - Composer: (1) every layer is movable - product Size/Horizontal/Vertical sliders are now always shown and moving one releases auto-fit; extra text/CTA/image elements already had X/Y/size. (2) Added images get a Set as background button. (3) New Dark gradient behind text toggle draws a scrim so copy stays legible on busy photos.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -4736,11 +4736,14 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   const[bgColor,setBgColor]=useState("#102242");
   const[bgId,setBgId]=useState("");
   const[bgImg,setBgImg]=useState(null);
+  const[customBg,setCustomBg]=useState(null);
+  const[textBackdrop,setTextBackdrop]=useState(false);
   const[genImg,setGenImg]=useState(null);
   const[lockProduct,setLockProduct]=useState(true); // true = generate empty scene, composite exact PNG (never let AI redraw the product)
   const[genPrompt,setGenPrompt]=useState((approvedPrompt&&approvedPrompt.prompt)||"");
   const[genNeg,setGenNeg]=useState((approvedPrompt&&approvedPrompt.negativePrompt)||"");
   const[genBusy,setGenBusy]=useState(false);
+  const[promptBusy,setPromptBusy]=useState(false);
   const[genErr,setGenErr]=useState("");
 
   // products / mockups — MULTI (library only). A post can feature several products (per the brief).
@@ -5014,6 +5017,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
 
     // 1) background
     if(bgMode==="generate"&&genImg) drawBgImage(ctx,genImg);
+    else if(bgMode==="custom"&&customBg) drawBgImage(ctx,customBg);
     else if((bgMode==="library"||bgMode==="mockup")&&bgImg) drawBgImage(ctx,bgImg);
     else if(bgMode==="mockup") drawMockupPreset(ctx,mockupPreset);
     else{ctx.fillStyle=bgColor;ctx.fillRect(0,0,sz.w,sz.h);}
@@ -5025,7 +5029,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
     let maxW=sz.w-pad*2;
     let anchorX=hAlign==="left"?pad:hAlign==="right"?sz.w-pad:sz.w/2;
     // Smart subject-avoidance: keep copy out of the busy part of the scene (the dog, the bowl…)
-    const scanBg=bgMode==="generate"?genImg:(bgMode==="library"||bgMode==="mockup")?bgImg:null;
+    const scanBg=bgMode==="generate"?genImg:(bgMode==="library"||bgMode==="mockup")?bgImg:bgMode==="custom"?customBg:null;
     if(autoAvoid&&scanBg){
       const band=vPos==="top"?[0.04,0.56]:vPos==="bottom"?[0.46,0.96]:[0.26,0.74];
       const fit=calmColumn(scanBg,band[0],band[1],hAlign,pad/sz.w);
@@ -5123,6 +5127,12 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
     });
 
     // 3) image copy — headline + sub-headline
+    if(textBackdrop){
+      const vP=(anchor||"mid-center").split("-")[0];
+      if(vP==="top"){const gh=sz.h*0.6,g=ctx.createLinearGradient(0,0,0,gh);g.addColorStop(0,"rgba(0,0,0,0.6)");g.addColorStop(1,"rgba(0,0,0,0)");ctx.fillStyle=g;ctx.fillRect(0,0,sz.w,gh);}
+      else if(vP==="bot"){const gh=sz.h*0.6,g=ctx.createLinearGradient(0,sz.h,0,sz.h-gh);g.addColorStop(0,"rgba(0,0,0,0.6)");g.addColorStop(1,"rgba(0,0,0,0)");ctx.fillStyle=g;ctx.fillRect(0,sz.h-gh,sz.w,gh);}
+      else{const cy=sz.h*0.5,hh=sz.h*0.34,g=ctx.createLinearGradient(0,cy-hh,0,cy+hh);g.addColorStop(0,"rgba(0,0,0,0)");g.addColorStop(0.5,"rgba(0,0,0,0.55)");g.addColorStop(1,"rgba(0,0,0,0)");ctx.fillStyle=g;ctx.fillRect(0,cy-hh,sz.w,hh*2);}
+    }
     ctx.fillStyle=hl.color||"#FFFFFF";ctx.textAlign=hAlign;
     ctx.font=(hl.bold?"800":"400")+" "+H.px+"px '"+hl.font+"'";try{ctx.letterSpacing=(hl.kern||0)+"px";}catch(e){}
     if(textShadow==="drop"){ctx.shadowColor="rgba(0,0,0,0.38)";ctx.shadowBlur=8;ctx.shadowOffsetY=3;}
@@ -5222,11 +5232,19 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
       }
     });
     ctx.textAlign="left";ctx.textBaseline="top";
-  },[sz,bgMode,bgColor,bgImg,genImg,mockupPreset,products,prodImgs,shadow,shadowDir,hl,sh,anchor,ct,ctaBg,logoImg,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,huftReady,divider,autoFit,textShadow,textAlign,oldPrice,copyScale,autoAvoid,genUsedProduct,editorOpen,elements,elImgs]);
+  },[sz,bgMode,bgColor,bgImg,genImg,mockupPreset,products,prodImgs,shadow,shadowDir,hl,sh,anchor,ct,ctaBg,logoImg,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,huftReady,divider,autoFit,textShadow,textAlign,oldPrice,copyScale,autoAvoid,genUsedProduct,editorOpen,elements,elImgs,customBg,textBackdrop]);
 
   React.useEffect(()=>{if(!canGenerate&&bgMode==="generate")setBgMode("mockup");},[canGenerate,bgMode]);
   React.useEffect(()=>{draw();},[draw]);
 
+  const genScenePrompt=async()=>{setPromptBusy(true);try{
+    const brief=(c.data&&c.data.brief)||{};
+    const ad=(approvedPrompt&&approvedPrompt.prompt)||"";
+    const sys="You write ONE short scene/background prompt for a HUFT product photo. Describe ONLY the background setting, surface, lighting and mood - NOT the product (the real product is composited on top). One or two plain sentences. Return ONLY JSON: {prompt, negativePrompt}.";
+    const usr="Product: "+(c.product||"")+"\nArt direction: "+ad+"\nIdea: "+(brief.idea||"")+"\nCopy direction: "+((copy&&copy.direction)||"");
+    const j=await callClaude(sys,usr,true);
+    if(j&&j.prompt)setGenPrompt(j.prompt);if(j&&j.negativePrompt)setGenNeg(j.negativePrompt);
+  }catch(e){}setPromptBusy(false);};
   const runGenerate=async()=>{
     if(!genPrompt.trim()){setGenErr("No prompt available to generate from.");return;}
     setGenBusy(true);setGenErr("");
@@ -5388,7 +5406,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
         <div style={{fontSize:11,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.6,marginBottom:10}}>Canvas &amp; source</div>
         <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:11,alignContent:"start"}}>
         <div><label style={fieldL}>Size</label><select value={sizeIdx}onChange={e=>setSizeIdx(+e.target.value)}style={ctrl}>{COMPOSER_SIZES.map((s,i)=><option key={i}value={i}>{s.label} ({s.w}×{s.h})</option>)}</select></div>
-        <div><label style={fieldL}>Source · keep or switch</label><select value={(bgMode==="plain"||bgMode==="mockup")?"product":bgMode}onChange={e=>{const v=e.target.value;setBgMode(v==="product"?"mockup":v);}}style={ctrl}>
+        <div><label style={fieldL}>Source · keep or switch</label><select value={(bgMode==="plain"||bgMode==="mockup")?"product":(bgMode==="custom"?"library":bgMode)}onChange={e=>{const v=e.target.value;setBgMode(v==="product"?"mockup":v);}}style={ctrl}>
           <option value="product">Product on a background</option>
           <option value="library">Image from library</option>
           {canGenerate&&<option value="generate">Generated AI background + product</option>}
@@ -5442,7 +5460,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
 
 
         {bgMode==="generate"&&canGenerate&&<div style={{gridColumn:"1 / -1",display:"grid",gap:8,padding:"10px 12px",background:C.paper,border:`1px solid ${C.line}`,borderRadius:8}}>
-          <div><label style={fieldL}>Prompt (scene / background)</label><textarea value={genPrompt}onChange={e=>setGenPrompt(e.target.value)}rows={2}style={{...ctrl,resize:"vertical"}}placeholder="e.g. warm rustic kitchen counter, soft morning light"/></div>
+          <div><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}><label style={fieldL}>Prompt (scene / background)</label><button onClick={genScenePrompt}disabled={promptBusy}style={{border:"none",background:"none",cursor:promptBusy?"wait":"pointer",color:C.coral,fontSize:11,fontWeight:700,padding:0,whiteSpace:"nowrap"}}>{promptBusy?"Writing…":"✨ From art direction"}</button></div><textarea value={genPrompt}onChange={e=>setGenPrompt(e.target.value)}rows={2}style={{...ctrl,resize:"vertical"}}placeholder="e.g. warm rustic kitchen counter, soft morning light"/></div>
           <div><label style={fieldL}>Avoid (optional)</label><input value={genNeg}onChange={e=>setGenNeg(e.target.value)}style={ctrl}placeholder="text, watermarks, other products"/></div>
           <label style={{display:"flex",alignItems:"flex-start",gap:7,fontSize:12,color:C.ink,cursor:"pointer",marginBottom:8,lineHeight:1.4}}><input type="checkbox"checked={lockProduct}onChange={e=>setLockProduct(e.target.checked)}style={{marginTop:2}}/><span>Keep my product exact <span style={{fontSize:10.5,color:C.sub}}>— generates an empty scene, then your real packshot composites on top (the AI never redraws it). Uncheck only if you want the AI to blend/restyle the product.</span></span></label>
           <Btn small disabled={genBusy}onClick={runGenerate}style={{width:"100%",justifyContent:"center"}}>{genBusy?"Generating…":(lockProduct?"Generate empty scene":"Generate scene")}</Btn>
@@ -5518,9 +5536,9 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
             <button onClick={()=>rmProduct(p.pid)}title="Remove this product"style={{border:"none",background:"none",color:"#B91C1C",fontSize:11,fontWeight:700,cursor:"pointer",padding:0}}>Remove</button>
           </div>
           <div style={{gridColumn:"1 / -1"}}><select value={p.id}onChange={e=>updProduct(p.pid,{id:e.target.value})}style={ctrl}><option value="">— pick from library —</option>{productItems.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select></div>
-          {!autoFit&&slider("Size",Math.round(p.scale*100),15,100,v=>updProduct(p.pid,{scale:v/100}),v=>v+"%")}
-          {!autoFit&&slider("Horizontal",Math.round(p.x*100),0,100,v=>updProduct(p.pid,{x:v/100}),v=>v+"%")}
-          {!autoFit&&slider("Vertical",Math.round(p.y*100),5,95,v=>updProduct(p.pid,{y:v/100}),v=>v+"%")}
+          {slider("Size",Math.round(p.scale*100),15,100,v=>{if(autoFit)setAutoFit(false);updProduct(p.pid,{scale:v/100});},v=>v+"%")}
+          {slider("Horizontal",Math.round(p.x*100),0,100,v=>{if(autoFit)setAutoFit(false);updProduct(p.pid,{x:v/100});},v=>v+"%")}
+          {slider("Vertical",Math.round(p.y*100),5,95,v=>{if(autoFit)setAutoFit(false);updProduct(p.pid,{y:v/100});},v=>v+"%")}
           {autoFit&&<div style={{gridColumn:"1 / -1",fontSize:11,color:C.sub,fontStyle:"italic"}}>Auto-fit on — size & position are automatic. Turn off Auto-fit below for manual control.</div>}
         </div>)}
         <label style={{gridColumn:"1 / -1",display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.ink,cursor:"pointer"}}><input type="checkbox"checked={autoFit}onChange={e=>setAutoFit(e.target.checked)}/>Auto-fit products into free space <span style={{fontSize:11,color:C.sub}}>(scales & places to avoid overlap — turn off for manual size/position)</span></label>
@@ -5578,6 +5596,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
               <button key={k}onClick={()=>setTextAlign(k)}style={{padding:"7px 11px",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",background:textAlign===k?C.coral:"#fff",color:textAlign===k?"#fff":C.sub}}>{lbl}</button>)}
           </div></div>
           <div><label style={fieldL}>Text shadow</label><select value={textShadow}onChange={e=>setTextShadow(e.target.value)}style={ctrl}><option value="soft">Soft glow (legibility)</option><option value="drop">Drop shadow</option><option value="none">None</option></select></div>
+          <label style={{display:"flex",alignItems:"center",gap:7,fontSize:12.5,fontWeight:600,color:C.ink,cursor:"pointer",gridColumn:"1 / -1",marginTop:2}}><input type="checkbox"checked={textBackdrop}onChange={e=>setTextBackdrop(e.target.checked)}/>Dark gradient behind text (legibility on busy photos)</label>
         </div>
         {/* divider rule */}
         <div style={{gridColumn:"1 / -1",borderTop:`1px solid ${C.line}`,paddingTop:11,fontSize:11.5,fontWeight:800,color:C.ink}}>Divider rule</div>
@@ -5628,6 +5647,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
             {slider("Size",Math.round((el.size||1)*100),40,260,v=>updEl(el.id,{size:v/100}),v=>v+"%")}
             {slider("Horizontal",Math.round(el.x*100),0,100,v=>updEl(el.id,{x:v/100}),v=>v+"%")}
             {slider("Vertical",Math.round(el.y*100),0,100,v=>updEl(el.id,{y:v/100}),v=>v+"%")}
+            {el.type==="image"&&<Btn small variant="ghost"onClick={()=>{const im=new Image();im.onload=()=>{setCustomBg(im);setBgMode("custom");rmEl(el.id);};im.src=el.src;}}style={{marginTop:6}}><ImageIcon size={13}/>Set as background</Btn>}
             {el.type!=="image"&&<label style={{display:"flex",alignItems:"center",gap:7,fontSize:12.5,fontWeight:600,color:C.ink,cursor:"pointer",marginTop:6}}><input type="checkbox"checked={!!el.bold}onChange={e=>updEl(el.id,{bold:e.target.checked})}/>Bold</label>}
           </div>)}
         </div>
