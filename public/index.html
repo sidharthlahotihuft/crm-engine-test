@@ -108,7 +108,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.77 - 'Consider reusing' strip now only suggests RELEVANT creatives: product packshots and logos are excluded, and suggestions are matched to the brief's product. If nothing relevant is unused, the strip is hidden instead of showing random packshots. (v29.76: Send-for-approval lives ONLY at the bottom of the design flow, gated on an uploaded creative; premature top button removed.)";
+const BUILD="v29.79 - Removed the 'Send to Head of Marketing' WhatsApp hand-off feature: the green Share button on Finalized Assets and its share modal are gone.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -4610,6 +4610,7 @@ function FinalDesignUpload({c,d,patch,me}){
   const setDesign=(f)=>patch(c.id,{data:{...(c.data||{}),design:{...d,...f}}});
   const finalFile=d.finalFile;
   const ready=!!(finalFile||(d.finalLink&&d.finalLink.trim()));
+  const pending=!!(d.pendingApproval||d.assetReview||d.finalReview)&&!d.sentBack;
   const onFile=(e)=>{
     const f=e.target.files&&e.target.files[0];if(!f)return;
     if(f.size>4*1024*1024){alert("That file is over 4 MB. Please upload a smaller export, or paste a Canva/Drive link instead.");e.target.value="";return;}
@@ -4644,8 +4645,9 @@ function FinalDesignUpload({c,d,patch,me}){
     </div>
     {d.finalLink&&<div style={{fontSize:11.5,marginBottom:10}}><a href={d.finalLink}target="_blank"rel="noreferrer"style={{color:C.teal,fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}><ExternalLink size={12}/>{d.finalLink.slice(0,60)}{d.finalLink.length>60?"…":""}</a></div>}
 
-    <Btn variant="dark"disabled={!ready}onClick={()=>{if(!ready)return;if(window.confirm("Send this design to Anmol (design lead) for approval?")){patch(c.id,{data:{...(c.data||{}),design:{...d,pendingApproval:true,assetReview:false,finalReview:false,sentBack:false,submittedForApprovalAt:new Date().toISOString(),approvalStage:"design"}},design_approver:me.name});api.post("/api/notify",{toRole:"design_lead",campaignId:c.id,kind:"Design needs review",body:(c.product||c.name||"A design")+" — submitted for design approval."}).catch(()=>{});}}}>
-      <Send size={15}/>{ready?(d.sentBack?"Send again for approval":"Send design for approval"):"Upload a file or link to finish"}
+    {pending&&<div style={{fontSize:12,fontWeight:600,color:"#6D28D9",background:"#F5F3FF",border:"1px solid #DDD6FE",borderRadius:8,padding:"8px 11px",marginBottom:10,display:"flex",alignItems:"center",gap:6}}><CheckCircle2 size={13}/>Sent for approval — waiting for the design lead. It can only be sent once.</div>}
+    <Btn variant="dark"disabled={!ready||pending}onClick={()=>{if(!ready||pending)return;if(window.confirm("Send this design to Anmol (design lead) for approval?")){patch(c.id,{data:{...(c.data||{}),design:{...d,pendingApproval:true,assetReview:false,finalReview:false,sentBack:false,submittedForApprovalAt:new Date().toISOString(),approvalStage:"design"}},design_approver:me.name});api.post("/api/notify",{toRole:"design_lead",campaignId:c.id,kind:"Design needs review",body:(c.product||c.name||"A design")+" — submitted for design approval."}).catch(()=>{});}}}>
+      <Send size={15}/>{pending?"Sent for approval ✓":ready?(d.sentBack?"Send again for approval":"Send design for approval"):"Upload a file or link to finish"}
     </Btn>
   </div>;
 }
@@ -6071,12 +6073,6 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
           <div style={{borderTop:`1px solid ${C.line}`,margin:"18px 0 12px"}}/>
           <div style={{fontSize:13.5,fontWeight:800,color:C.ink,marginBottom:10}}>When your creative is ready, ship it out</div>
           <FinalDesignUpload c={c}d={d}patch={patch}me={me}/>
-          {d.finalFile&&<div style={{marginTop:10,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:C.tealSoft,border:`1px solid ${C.teal}55`,borderRadius:10,padding:"10px 13px"}}>
-            <ImageIcon size={15}color={C.teal}/>
-            <span style={{fontSize:12.5,color:C.ink,fontWeight:600}}>Final asset is ready.</span>
-            {emailing?<Spin label="Sending…"/>:<Btn small variant="teal"onClick={notifyAssetReady}><BellIcon size={13}/>Send email — asset ready</Btn>}
-            <span style={{fontSize:11,color:C.sub}}>Alerts brand, business &amp; marketing (in-app always; email if SMTP configured).</span>
-          </div>}
         </div>}
         <FeedbackBar stage="design"by={me.name}onSave={saveFeedback}/>
         {/* Art direction comments — design context, available to everyone */}
@@ -6128,7 +6124,6 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate}){
   const allDone=(campaigns||[]).filter(c=>c.stage==="done"&&!isArchived(c)).sort((a,b)=>new Date(b.updated_at||b.created_at)-new Date(a.updated_at||a.created_at));
   const[view,setView]=useState("list");
   const[reactivating,setReactivating]=useState(null);
-  const[shareFor,setShareFor]=useState(null);
   const reactivate=(c)=>{
     const hasCopy=!!(c.data?.copyOptions);
     const hasDesign=!!(c.data?.design?.approvedPromptIdx!=null||c.data?.design?.libraryPick);
@@ -6160,6 +6155,19 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate}){
     const finalFile=design.finalFile;
     const tone=ROW_TONE.done;
     const canManage=isSuper(me)||isBusiness(me);
+    const[emailing,setEmailing]=useState(false);
+    const assetReadySent=!!c.data?.assetReadySentAt;
+    const notifyAssetReady=async()=>{setEmailing(true);
+      try{
+        const prod=c.product||c.name||"An asset";
+        await api.post("/api/notify",{toRole:"brand_lead",campaignId:c.id,kind:"Asset ready for review",body:prod+" — final asset is ready. Please review/approve."});
+        await api.post("/api/notify",{toRole:"business",campaignId:c.id,kind:"Asset ready",body:prod+" — the creative asset is ready."});
+        await api.post("/api/notify",{toRole:"head_marketing",campaignId:c.id,kind:"Asset ready",body:prod+" — final asset ready for sign-off."});
+        patch(c.id,{data:{...(c.data||{}),assetReadySentAt:new Date().toISOString()}});
+        if(typeof toast!=="undefined"&&toast)toast("Sent — brand, business & marketing alerted (email if SMTP is set)","success");
+      }catch(e){if(typeof toast!=="undefined"&&toast)toast("Couldn't send the alert — try again","error");}
+      setEmailing(false);
+    };
     return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`4px solid ${tone.bar}`,background:tone.bg}}>
       {/* Collapsed header — click to expand */}
       <div onClick={()=>setOpenId(isOpen?null:c.id)}style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer"}}>
@@ -6186,7 +6194,6 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate}){
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
           {copy&&<div onClick={e=>e.stopPropagation()}><CopyBtn text={()=>copyTextFromOption(copy)}/></div>}
-          {canBrandApprove(me)&&<button onClick={e=>{e.stopPropagation();setShareFor(c);}}title="Share to Head of Marketing on WhatsApp"style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,fontWeight:700,color:"#fff",background:"#25D366",border:"none",borderRadius:8,padding:"5px 10px",cursor:"pointer"}}><Share2 size={13}/>Share</button>}
           {isOpen?<ChevronDown size={16}color={C.sub}/>:<ChevronRight size={16}color={C.sub}/>}
         </div>
       </div>
@@ -6218,6 +6225,16 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate}){
           {finalFile&&<a href={finalFile.dataUrl}download={finalFile.name}style={{fontSize:11.5,fontWeight:600,color:C.ink,textDecoration:"none",border:`1px solid ${C.line}`,borderRadius:7,padding:"4px 9px",display:"inline-flex",alignItems:"center",gap:4}}><Download size={12}/>Download</a>}
           {design.finalLink&&<a href={design.finalLink}target="_blank"rel="noreferrer"style={{fontSize:11.5,fontWeight:600,color:C.teal,textDecoration:"none",display:"inline-flex",alignItems:"center",gap:4}}><ExternalLink size={12}/>Open</a>}
         </div>}
+        {(finalFile||design.finalLink)&&<div style={{margin:"8px 0",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:C.tealSoft,border:`1px solid ${C.teal}55`,borderRadius:10,padding:"10px 13px"}}>
+          <ImageIcon size={15}color={C.teal}/>
+          <span style={{fontSize:12.5,color:C.ink,fontWeight:600}}>Final asset is ready.</span>
+          {assetReadySent
+            ?<span style={{fontSize:11.5,fontWeight:700,color:C.green,display:"inline-flex",alignItems:"center",gap:5}}><CheckCircle2 size={13}/>Alert sent{c.data?.assetReadySentAt?" · "+fmtDate(c.data.assetReadySentAt):""}</span>
+            :canManage
+              ?(emailing?<Spin label="Sending…"/>:<Btn small variant="teal"onClick={notifyAssetReady}><BellIcon size={13}/>Send email — asset ready</Btn>)
+              :null}
+          <span style={{fontSize:11,color:C.sub}}>Alerts brand, business &amp; marketing (in-app always; email if SMTP configured).</span>
+        </div>}
         <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginTop:6}}>
           <button onClick={()=>reactivate(c)}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.ink,fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}><RotateCcw size={12}/>Reactivate</button>
           {["super_admin","business","design_lead","design_team"].includes(_r(me))&&onDuplicate&&<button onClick={()=>onDuplicate(c)}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.ink,fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}><Copy size={12}/>Duplicate</button>}
@@ -6233,7 +6250,6 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate}){
     </div>;
   };
   return<div>
-    {shareFor&&<ShareFinalModal c={shareFor}copy={shareFor.data?.copyOptions?.[shareFor.data?.selectedCopyIdx]}image={shareFor.data?.design?.finalFile?.dataUrl||shareFor.data?.design?.generatedImage||null}onClose={()=>setShareFor(null)}/>}
     {reactivating&&<div onClick={()=>setReactivating(null)}style={{position:"fixed",inset:0,background:"rgba(15,18,30,.5)",zIndex:50,display:"flex",alignItems:"center",justifyContent:"center"}}>
       <div onClick={e=>e.stopPropagation()}style={{background:"#fff",borderRadius:16,padding:28,width:360,boxShadow:"0 8px 32px rgba(0,0,0,.2)"}}>
         <div style={{fontWeight:800,fontSize:17,marginBottom:6}}>Reactivate {reactivating.product||"asset"}</div>
