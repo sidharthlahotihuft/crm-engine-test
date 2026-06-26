@@ -106,7 +106,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.65 - Download buttons moved next to their own image: library pick downloads under the library scroller, generated image downloads under the generated image. Create-on-Canva no longer carries the misplaced library-download button.";
+const BUILD="v29.66 - FIXED composer blank page (bgMode used before its declaration - temporal dead zone; moved the library-suggest effect below the bgMode useState). Reference-image picker in the Generate path again suggests matching scenes from the library (click to add as a reference). Upload-for-approval already routes to the Design Lead and shows to design + business.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -4499,6 +4499,18 @@ function RefImagePicker({d,setD,campaignId,product}){
     </div>
     {note&&<div style={{fontSize:11,color:C.sub,marginTop:6}}>{note}</div>}
     {refs.length>0&&<div style={{fontSize:11,color:C.sub,marginTop:6}}>Sent with “Generate image” to steer the output.</div>}
+    {sugg&&sugg.length>0&&<div style={{marginTop:10}}>
+      <div style={{fontSize:11,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.4,marginBottom:6,display:"flex",alignItems:"center",gap:5}}><Wand2 size={11}/>Suggested from library{product?" · matched to "+product:""}</div>
+      <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4}}>
+        {sugg.slice(0,12).map(l=><div key={l.id}style={{flexShrink:0,width:72,cursor:adding===l.id?"wait":"pointer",opacity:adding===l.id?.5:1}}onClick={()=>adding||addFromLib(l.id)}title={(l.product||l.file_name||"")+(l.description?" — "+l.description:"")}>
+          <div style={{width:72,height:72,borderRadius:8,overflow:"hidden",border:`1px solid ${C.line}`,background:"#F3F4F6",display:"flex",alignItems:"center",justifyContent:"center",position:"relative"}}>
+            <ImageThumb id={l.id}alt={l.description}/>
+            <div style={{position:"absolute",bottom:3,right:3,width:18,height:18,borderRadius:999,background:C.teal,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center"}}><Plus size={12}/></div>
+          </div>
+          {l.product&&<div style={{fontSize:9.5,color:C.sub,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{l.product}</div>}
+        </div>)}
+      </div>
+    </div>}
   </div>;
 }
 
@@ -4714,13 +4726,13 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   const[linkSizes,setLinkSizes]=useState(true); // sub-headline size scales with headline unless unlinked
   const[autoFit,setAutoFit]=useState(true); // auto-place/scale products into free space (no overlap)
   const[mockupPreset,setMockupPreset]=useState("studio-cream"); // clean preset background for product mockups
-  const[libSuggest,setLibSuggest]=useState(null); // suggested library scenes for this brief, shown when Source = Image from library
-  React.useEffect(()=>{if(bgMode!=="library"||libSuggest!==null||!c||!c.id)return;api.get("/api/image-library-suggest/"+c.id).then(r=>setLibSuggest((Array.isArray(r)?r:[]).filter(i=>i.kind!=="product"&&i.kind!=="logo").slice(0,8))).catch(()=>setLibSuggest([]));},[bgMode,libSuggest,c&&c.id]);
   const[reqNote,setReqNote]=useState("");const[reqBusy,setReqBusy]=useState(false);const[reqSent,setReqSent]=useState(false);
   const sz=COMPOSER_SIZES[sizeIdx];
 
   // background source
   const[bgMode,setBgMode]=useState(initSource);
+  const[libSuggest,setLibSuggest]=useState(null); // suggested library scenes for this brief, shown when Source = Image from library
+  React.useEffect(()=>{if(bgMode!=="library"||libSuggest!==null||!c||!c.id)return;api.get("/api/image-library-suggest/"+c.id).then(r=>setLibSuggest((Array.isArray(r)?r:[]).filter(i=>i.kind!=="product"&&i.kind!=="logo").slice(0,8))).catch(()=>setLibSuggest([]));},[bgMode,libSuggest,c&&c.id]);
   const[bgColor,setBgColor]=useState("#102242");
   const[bgId,setBgId]=useState("");
   const[bgImg,setBgImg]=useState(null);
