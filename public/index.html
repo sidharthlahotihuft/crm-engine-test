@@ -106,7 +106,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.73 - Scene-aware product placement: after the empty scene generates, the vision route now reads the scene (finds the foreground surface + groundline, finds the busy subject to avoid) and grounds your product there instead of dropping it in a generic spot. If auto-placement can't run (server not yet deployed) you now get a clear message instead of a silent random placement. NOTE: requires server.js v29.58s deployed.";
+const BUILD="v29.74 - Composer left panel widened to 360px to match the right panel (was 320px, which clipped the reference thumbnails, the Keep-product label and the product picker on the right edge). Content now has room to breathe.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -5428,7 +5428,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
       </div>
     </div>
     <div style={{flex:1,minHeight:0,display:"flex",overflow:"hidden"}}>
-      <div style={{width:320,flexShrink:0,overflowY:"auto",overflowX:"hidden",borderRight:`1px solid ${C.line}`,background:"#fff",padding:16}}>
+      <div style={{width:360,flexShrink:0,overflowY:"auto",overflowX:"hidden",borderRight:`1px solid ${C.line}`,background:"#fff",padding:16}}>
         <div style={{fontSize:11,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.6,marginBottom:10}}>Canvas &amp; source</div>
         <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:11,alignContent:"start"}}>
         <div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Size</label><select value={sizeIdx}onChange={e=>setSizeIdx(+e.target.value)}style={ctrl}>{COMPOSER_SIZES.map((s,i)=><option key={i}value={i}>{s.label} ({s.w}×{s.h})</option>)}</select></div>
