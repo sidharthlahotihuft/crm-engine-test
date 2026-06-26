@@ -106,7 +106,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.63 - One art direction only (drives the AI image + guides library/Canva). Generate-AI-image tile builds straight from that direction. All designs route through a Create-on-Canva step after an image is selected/generated, then ship. Removed the duplicate art-direction (ArtNotes).";
+const BUILD="v29.65 - Download buttons moved next to their own image: library pick downloads under the library scroller, generated image downloads under the generated image. Create-on-Canva no longer carries the misplaced library-download button.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -5640,6 +5640,12 @@ function BriefInShort({c}){
   </div>;
 }
 // Super-admin-only standalone composer: pick any asset, open the full composer for it.
+class CompErrorBoundary extends React.Component{
+  constructor(p){super(p);this.state={err:null};}
+  static getDerivedStateFromError(e){return{err:e};}
+  componentDidCatch(e,info){console.error("Composer crashed:",e,info);}
+  render(){if(this.state.err)return React.createElement("div",{style:{padding:18,background:"#FEF2F2",border:"1px solid #FCA5A5",borderRadius:10,color:"#991B1B",fontSize:13}},React.createElement("b",null,"The composer hit an error - please screenshot this:"),React.createElement("div",{style:{marginTop:6,fontFamily:"monospace",fontSize:12,whiteSpace:"pre-wrap"}},String((this.state.err&&this.state.err.stack)||(this.state.err&&this.state.err.message)||this.state.err)));return this.props.children;}
+}
 function ComposerTab({campaigns,me,patch,promptRules,toast}){
   const list=(campaigns||[]).filter(c=>!isArchived(c)&&(c.stage==="design"||c.stage==="content"||c.stage==="done"));
   const[selId,setSelId]=useState("");
@@ -5665,7 +5671,7 @@ function ComposerTab({campaigns,me,patch,promptRules,toast}){
           </select>
         </div>
         {c&&copy
-          ?<CreativeComposer c={c}copy={copy}me={me}patch={patch}d={d}approvedPrompt={approvedPrompt}promptRules={promptRules}toast={toast}/>
+          ?<CompErrorBoundary><CreativeComposer c={c}copy={copy}me={me}patch={patch}d={d}approvedPrompt={approvedPrompt}promptRules={promptRules}toast={toast}/></CompErrorBoundary>
           :<Card><div style={{fontSize:13,color:C.sub,padding:"4px 2px"}}>This asset has no copy yet — pick another asset, or add copy in the Copy tab first.</div></Card>}
       </div>}
   </div>;
@@ -5699,7 +5705,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
     const[fixAsRule,setFixAsRule]=useState(true);
     const imageMode=getImageMode(c.id,d.imageSource||null);
     const setImageMode=(m)=>setImageModeFor(c.id,m);
-    const effMode=imageMode||(isBusiness(me)?"library":"");
+    const effMode=(imageMode==="generate"||imageMode==="library")?imageMode:(isBusiness(me)?"library":"");
     const ruleStr=activeRuleText(promptRules);
     const setD=(f)=>patch(c.id,{data:{...(c.data||{}),design:{...d,...f}}});
     const approvedPrompt=d.imagePrompts&&d.approvedPromptIdx!=null?d.imagePrompts[d.approvedPromptIdx]:null;
@@ -5726,21 +5732,22 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
         const brief=c.data?.brief||{};
         const isWA=/whatsapp/i.test(c.channel||"");
         const arRule=isWA?"\nASPECT RATIO: for WhatsApp the aspectRatio MUST be \"1:1\" (square) — never 4:5 or 9:16.":"";
-        const sys="You write ONE strong image-generation prompt (one art direction) for HUFT "+c.channel+" CRM.\n"+BRAND_CONTEXT+"\nPROMPT RULES:\n"+ruleStr+(fb?"\nFeedback:\n"+fb:"")+"\nRules: real Indian-breed pet, correct pack proportions, no added text on pack, realistic lighting. All brand logos and sub-brand lockups must sit on TOP of the composition (top corner/area), never covered by product or pet."+arRule+"\nReturn ONLY JSON: {prompts:[{label,tool,aspectRatio,prompt,negativePrompt}]}";
+        const sys="You are an art director for HUFT "+c.channel+" CRM. Write ONE short, simple art direction a marketer can read in seconds.\n"+BRAND_CONTEXT+(fb?"\nFeedback:\n"+fb:"")+"\nThe prompt field MUST be ONE or TWO plain-English sentences describing scene, hero, mood and one brand cue - NO camera or lens jargon, NO lists, keep it short. Always show a real Indian-breed pet and the real product accurately; brand logo stays on top, never covered."+arRule+"\nReturn ONLY JSON: {prompts:[{label,aspectRatio,prompt,negativePrompt}]} where prompt is that short simple direction and negativePrompt lists what to avoid.";
         const usr="Product: "+c.product+"\nInsight: "+(brief.strategicInsight||"")+"\nIdea: "+(brief.idea||"")+"\nCopy direction: "+copy.direction+"\nHeader: "+copy.header+"\nArt notes: "+(d.notes||[]).join(" | ");
         const j=await callClaude(sys,usr,true);
-        setD({imageSource:"prompt",imagePrompts:(j.prompts||[]).slice(0,1),approvedPromptIdx:0,libraryPick:null,promptsForCopyDir:copy.direction});
-        setImageMode("prompt");
+        setD({imagePrompts:(j.prompts||[]).slice(0,1),approvedPromptIdx:0,libraryPick:null,promptsForCopyDir:copy.direction});
       }catch(e){console.error("genPrompts error:",e);setErr("Couldn't generate prompts: "+(e.message||"check API key"));}setBusy("");
     };
 
+    React.useEffect(()=>{if(isOpen&&!isPushChannel(c.channel)&&!d.imagePrompts&&busy!=="prompts"){genPrompts();}},[isOpen]);
     const approvePrompt=(idx)=>{setD({imageSource:"prompt",approvedPromptIdx:idx});patch(c.id,{design_approver:me.name});};
     const genImageFor=async(p,idx)=>{setBusy("img"+idx);setErr("");
       try{
         const isWA=/whatsapp/i.test(c.channel||"");
         const ar=isWA?"1:1":(p.aspectRatio||"1:1");
         const full=[p.prompt,(typeof HUFT_VISUAL_GUIDELINES!=="undefined"?HUFT_VISUAL_GUIDELINES:"")].filter(Boolean).join("\n\n");
-        const r=await api.post("/api/generate-image",{prompt:full,negativePrompt:p.negativePrompt||"",aspectRatio:ar,productImages:(d.refImages||[])});
+        let prodRefs=[];try{const lib=await api.get("/api/image-library?q="+encodeURIComponent(c.product||"")+"&withData=1");const prods=(lib||[]).filter(x=>x.kind==="product"&&x.file_data);if(prods[0])prodRefs=[prods[0].file_data];}catch(e2){}
+        const r=await api.post("/api/generate-image",{prompt:full,negativePrompt:p.negativePrompt||"",aspectRatio:ar,productImages:[...prodRefs,...(d.refImages||[])]});
         setD({imageSource:"prompt",approvedPromptIdx:idx,generatedImage:r.image});
         setImageThreads(x=>({...x,[c.id]:[{image:r.image,fix:null,at:new Date().toISOString()}]}));
         patch(c.id,{design_approver:me.name});
@@ -5950,6 +5957,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
             {d.generatedImage&&<div style={{marginTop:10}}>
               <img src={d.generatedImage}alt="Generated"style={{width:"100%",maxWidth:340,borderRadius:10,border:`1px solid ${C.line}`}}/>
               <div style={{fontSize:11.5,color:C.sub,marginTop:5}}>Generated from your art direction. Tweak it below, then take it into Canva.</div>
+              <a href={d.generatedImage}download={((c.product||"huft-image").toString().replace(/[^\w.-]+/g,"_").slice(0,60))+".png"}style={{fontSize:12,fontWeight:700,color:C.ink,textDecoration:"none",border:`1px solid ${C.line}`,borderRadius:8,padding:"6px 11px",display:"inline-flex",alignItems:"center",gap:5,background:"#fff",marginTop:8}}><Download size={13}/>Download this image</a>
               <div style={{marginTop:10,border:`1px solid ${C.line}`,borderRadius:10,overflow:"hidden",maxWidth:520}}>
                 <div style={{background:C.navy,color:"#fff",fontSize:11.5,fontWeight:700,padding:"7px 12px",display:"flex",alignItems:"center",gap:6}}><Sparkles size={13}/>Fix the image — tell the AI what to change</div>
                 {Array.isArray((imageThreads[c.id]||[]))&&(imageThreads[c.id]||[]).length>0&&<div style={{padding:"10px 12px",display:"flex",flexDirection:"column",gap:10,background:"#F8FAFC",borderBottom:`1px solid ${C.line}`,maxHeight:460,overflowY:"auto"}}>
@@ -5986,15 +5994,14 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
 
         {/* Finish the design — design team & admins only. Either compose in-app, or upload your own. */}
         {["design_team","design_lead","super_admin","business"].includes(_r(me))&&<div>
-          {effMode==="library"&&<SmartLibraryPicker d={d}setD={setD}copy={copy}brief={c.data?.brief}product={c.product}campaignId={c.id}/>}
+          {effMode==="library"&&<div>
+            <SmartLibraryPicker d={d}setD={setD}copy={copy}brief={c.data?.brief}product={c.product}campaignId={c.id}/>
+            {d.libraryPick&&<div style={{marginTop:8}}><Btn small variant="ghost"onClick={async()=>{try{const r=await api.get("/api/image-library/"+d.libraryPick);const url=r&&r.file_data;if(!url)return;const ext=(url.match(/^data:image\/(\w+)/)||[])[1]||"png";const base=((d.libraryPickMeta&&d.libraryPickMeta.label)||c.product||"huft-image").toString().replace(/[^\w.-]+/g,"_").slice(0,60);const a=document.createElement("a");a.href=url;a.download=base+"."+ext;document.body.appendChild(a);a.click();a.remove();}catch(e){}}}><Download size={13}/>Download this library image</Btn><span style={{fontSize:11,color:C.sub,marginLeft:8}}>Save it to drop into Canva.</span></div>}
+          </div>}
 
           {(d.generatedImage||d.libraryPick)&&<div style={{marginTop:14}}>
             <div style={{fontSize:13,fontWeight:800,color:C.ink,marginBottom:4}}>Create on Canva</div>
-            <div style={{fontSize:12,color:C.sub,marginBottom:10}}>Open the on-brand template, drop in your image and the copy, then download the export or grab the share link.</div>
-            <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
-              {d.libraryPick&&<Btn small variant="ghost"onClick={async()=>{try{const r=await api.get("/api/image-library/"+d.libraryPick);const url=r&&r.file_data;if(!url)return;const ext=(url.match(/^data:image\/(\w+)/)||[])[1]||"png";const base=((d.libraryPickMeta&&d.libraryPickMeta.label)||c.product||"huft-image").toString().replace(/[^\w.-]+/g,"_").slice(0,60);const a=document.createElement("a");a.href=url;a.download=base+"."+ext;document.body.appendChild(a);a.click();a.remove();}catch(e){}}}><Download size={13}/>Download image</Btn>}
-              {d.generatedImage&&<a href={d.generatedImage}download={((c.product||"huft-image").toString().replace(/[^\w.-]+/g,"_").slice(0,60))+".png"}style={{fontSize:12,fontWeight:700,color:C.ink,textDecoration:"none",border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 12px",display:"inline-flex",alignItems:"center",gap:5,background:"#fff"}}><Download size={13}/>Download image</a>}
-            </div>
+            <div style={{fontSize:12,color:C.sub,marginBottom:10}}>Open the on-brand template, drop in your image and the copy, then export or grab the share link to ship below.</div>
             <CanvaMaker c={c}copy={copy}/>
           </div>}
 
