@@ -46,7 +46,7 @@ const db = async (sql, params = []) => {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const uid = () => Math.random().toString(36).slice(2, 11);
 const safeJson = (s) => { try { return JSON.parse(s); } catch (e) { return null; } };
-const SERVER_BUILD = "v29.55s - image-library-suggest excludes logos (kind not in product,logo).";
+const SERVER_BUILD = "v29.57s - scene-placement returns N product placements (items[]) for natural multi-product layout.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -1321,6 +1321,31 @@ app.get("/api/image-library", authMiddleware, async (req, res) => {
 });
 
 // Stamp images as just-used so they rest (hidden from pickers) for a cooldown window
+// Scene-aware placement: look at a generated EMPTY scene and report where N products naturally sit.
+app.post("/api/scene-placement", authMiddleware, async (req, res) => {
+  const { image, count } = req.body || {};
+  if (!image) return res.status(400).json({ error: "image required" });
+  const n = Math.min(3, Math.max(1, Math.round(Number(count) || 1)));
+  const b64 = String(image).includes(",") ? String(image).split(",")[1] : String(image);
+  const mime = (String(image).match(/^data:(.*?);/) || [])[1] || "image/png";
+  const sys = "You are a product-photography art director. The image is an EMPTY scene with NO product. Decide where " + n + " hero product" + (n>1?"s":"") + " should stand so they sit believably on the natural FOREGROUND surface (floor / table / counter)." + (n>1 ? " Arrange them left-to-right, NOT overlapping, sharing one believable groundline, with a little depth (some slightly back). Larger packs read bigger." : "") + " Return ONLY minified JSON: {\"items\":[{\"cx\":n,\"baseY\":n,\"w\":n}]} with EXACTLY " + n + " entries ordered left-to-right. cx = horizontal centre (0=left..1=right), baseY = where the product BASE meets the surface (0=top..1=bottom), w = product WIDTH as a fraction of image width. JSON only, no prose.";
+  const prompt = "Place " + n + " product" + (n>1?"s":"") + " believably on the surface in this scene. JSON only.";
+  try {
+    const text = await generateVision(sys, prompt, b64, mime);
+    const clean = String(text).replace(/```json|```/g, "").trim();
+    const k = clean.search(/[{[]/);
+    let parsed = JSON.parse(k >= 0 ? clean.slice(k) : clean);
+    let items = Array.isArray(parsed) ? parsed : (parsed.items || [parsed]);
+    items = items.slice(0, n).map(it => ({
+      cx: Math.min(0.92, Math.max(0.08, Number(it.cx) || 0.5)),
+      baseY: Math.min(0.97, Math.max(0.5, Number(it.baseY) || 0.86)),
+      w: Math.min(0.55, Math.max(0.1, Number(it.w) || 0.3)),
+    }));
+    while (items.length < n) items.push({ cx: 0.3 + 0.4 * (items.length / Math.max(1, n)), baseY: 0.86, w: 0.28 });
+    res.json({ items });
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+
 app.post("/api/image-library/mark-used", authMiddleware, async (req, res) => {
   const ids = Array.isArray(req.body && req.body.ids) ? req.body.ids.filter(Boolean) : [];
   if (!ids.length) return res.json({ ok: true, updated: 0 });
