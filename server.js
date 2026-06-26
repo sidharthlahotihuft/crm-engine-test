@@ -46,7 +46,7 @@ const db = async (sql, params = []) => {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const uid = () => Math.random().toString(36).slice(2, 11);
 const safeJson = (s) => { try { return JSON.parse(s); } catch (e) { return null; } };
-const SERVER_BUILD = "v29.57s - scene-placement returns N product placements (items[]) for natural multi-product layout.";
+const SERVER_BUILD = "v29.58s - scene-placement now reads the scene in 3 steps (find foreground surface + groundline, find busy subject to avoid, then ground products on the surface) for accurate, non-random placement.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -1328,8 +1328,13 @@ app.post("/api/scene-placement", authMiddleware, async (req, res) => {
   const n = Math.min(3, Math.max(1, Math.round(Number(count) || 1)));
   const b64 = String(image).includes(",") ? String(image).split(",")[1] : String(image);
   const mime = (String(image).match(/^data:(.*?);/) || [])[1] || "image/png";
-  const sys = "You are a product-photography art director. The image is an EMPTY scene with NO product. Decide where " + n + " hero product" + (n>1?"s":"") + " should stand so they sit believably on the natural FOREGROUND surface (floor / table / counter)." + (n>1 ? " Arrange them left-to-right, NOT overlapping, sharing one believable groundline, with a little depth (some slightly back). Larger packs read bigger." : "") + " Return ONLY minified JSON: {\"items\":[{\"cx\":n,\"baseY\":n,\"w\":n}]} with EXACTLY " + n + " entries ordered left-to-right. cx = horizontal centre (0=left..1=right), baseY = where the product BASE meets the surface (0=top..1=bottom), w = product WIDTH as a fraction of image width. JSON only, no prose.";
-  const prompt = "Place " + n + " product" + (n>1?"s":"") + " believably on the surface in this scene. JSON only.";
+  const sys = "You are a product-photography compositor. The image is an EMPTY scene with NO product in it yet. Work in three steps before you answer. "
+    + "STEP 1 — READ THE SCENE: find the main flat FOREGROUND surface a product can physically stand on (floor, rug, table, counter, ledge) and the GROUNDLINE — the y height in the lower part of the frame where that surface sits at standing distance from the camera. Note the camera perspective. "
+    + "STEP 2 — FIND THE BUSY REGION: locate the main subject and clutter that must stay UNCOVERED (pet, person, plant, window, focal décor). Products must NOT sit on top of or in front of the main subject. "
+    + "STEP 3 — PLACE " + n + " hero product" + (n>1?"s":"") + " standing ON that surface, base resting on the groundline you found, in the CLEAREST open part of the foreground, away from the busy region, at believable product eye-level scale (a pack is roughly knee-to-shin height in the scene, not tiny, not floor-to-ceiling). "
+    + (n>1 ? "Spread them left-to-right along the SAME groundline with a small gap between each (they may touch slightly in depth but must not fully cover one another); give gentle depth so one can read a touch smaller/further. Larger packs read bigger. " : "")
+    + "Return ONLY minified JSON: {\"items\":[{\"cx\":n,\"baseY\":n,\"w\":n}]} with EXACTLY " + n + " entries ordered left-to-right. cx = horizontal centre 0..1, baseY = where the product BASE meets the surface 0..1 (this MUST equal the real groundline you found — usually 0.74..0.95, never floating in mid-air), w = product WIDTH as a fraction of image width (about " + (n>1 ? "0.16..0.30 each" : "0.22..0.40") + "). No prose, JSON only.";
+  const prompt = "Read this empty scene, find the foreground surface and the area to keep clear, then place " + n + " product" + (n>1?"s":"") + " grounded on that surface. JSON only.";
   try {
     const text = await generateVision(sys, prompt, b64, mime);
     const clean = String(text).replace(/```json|```/g, "").trim();
