@@ -108,7 +108,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.79 - Removed the 'Send to Head of Marketing' WhatsApp hand-off feature: the green Share button on Finalized Assets and its share modal are gone.";
+const BUILD="v29.80 - Design-tab library picker: clicking 'Search' now opens the WHOLE library immediately (type to filter) instead of waiting for a query. Any image used in the last 7 days now shows a 'Used already' tag so you don't reuse something too soon.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -4409,13 +4409,14 @@ function SmartLibraryPicker({d,setD,copy,brief,product,campaignId}){
 
   // Background suggestions = scenes/assets only — never product mockups (those go in the product layer)
   const all=(items||[]).filter(i=>i.kind!=="product"&&i.kind!=="logo");
+  const usedRecently=(l)=>{if(!l.last_used_at)return false;const days=(Date.now()-new Date(l.last_used_at).getTime())/86400000;return days>=0&&days<=7;};
 
   return<div style={{marginBottom:12}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:8}}>
       <div style={{fontSize:12,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5}}>{searchMode?"Search library":"Suggested from library"}</div>
       <div style={{display:"flex",gap:6}}>
         <button onClick={()=>{setSearchMode(false);loadSuggested();}}style={{fontSize:11.5,background:searchMode?"none":C.tealSoft,border:`1px solid ${C.line}`,borderRadius:6,padding:"3px 9px",cursor:"pointer",color:searchMode?C.sub:C.teal,fontWeight:600,display:"flex",alignItems:"center",gap:4}}><Wand2 size={11}/>Suggested</button>
-        <button onClick={()=>setSearchMode(true)}style={{fontSize:11.5,background:searchMode?C.tealSoft:"none",border:`1px solid ${C.line}`,borderRadius:6,padding:"3px 9px",cursor:"pointer",color:searchMode?C.teal:C.sub,fontWeight:600,display:"flex",alignItems:"center",gap:4}}><SearchIcon size={11}/>Search</button>
+        <button onClick={()=>{setSearchMode(true);setQ("");runSearch("");}}style={{fontSize:11.5,background:searchMode?C.tealSoft:"none",border:`1px solid ${C.line}`,borderRadius:6,padding:"3px 9px",cursor:"pointer",color:searchMode?C.teal:C.sub,fontWeight:600,display:"flex",alignItems:"center",gap:4}}><SearchIcon size={11}/>Search</button>
       </div>
     </div>
 
@@ -4425,6 +4426,7 @@ function SmartLibraryPicker({d,setD,copy,brief,product,campaignId}){
     </div>}
 
     {!searchMode&&<div style={{fontSize:12,color:C.sub,marginBottom:8,fontStyle:"italic"}}>Matched to {product||"this campaign"} by product &amp; tags.</div>}
+    {searchMode&&<div style={{fontSize:12,color:C.sub,marginBottom:8,fontStyle:"italic"}}>{q?`Results for “${q}”`:"Showing the whole library — type to filter."} Recently used images are tagged “Used already”.</div>}
 
     {loading?<Spin label="Finding best matches…"/>
       :all.length===0
@@ -4434,7 +4436,7 @@ function SmartLibraryPicker({d,setD,copy,brief,product,campaignId}){
         const picked=d.libraryPick===l.id;
         return<div key={l.id}style={{flexShrink:0,width:230,scrollSnapAlign:"start",border:`2px solid ${picked?C.teal:C.line}`,borderRadius:10,overflow:"hidden",background:picked?C.tealSoft:"#fff"}}>
           <div onClick={()=>setD({libraryPick:l.id,libraryPickMeta:{label:l.product||l.file_name||"Library image",desc:l.description||"",tags:l.tags||[]}})}style={{cursor:"pointer"}}>
-            <div style={{aspectRatio:"4/3",background:"#F3F4F6",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}><ImageThumb id={l.id}alt={l.description}/></div>
+            <div style={{position:"relative",aspectRatio:"4/3",background:"#F3F4F6",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}><ImageThumb id={l.id}alt={l.description}/>{usedRecently(l)&&<span title={"Last used "+fmtDate(l.last_used_at)}style={{position:"absolute",top:6,left:6,fontSize:9.5,fontWeight:800,color:"#fff",background:"#B45309",padding:"2px 7px",borderRadius:999,boxShadow:"0 1px 3px rgba(0,0,0,.35)"}}>Used already</span>}</div>
             <div style={{padding:"8px 11px"}}>
               <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
                 {l.product&&<span style={{fontSize:11,fontWeight:700,color:C.coral}}>{l.product}</span>}
