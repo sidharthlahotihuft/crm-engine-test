@@ -19,6 +19,8 @@
 
   *{box-sizing:border-box} html,body{margin:0;background:#F6F7FA;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
   @keyframes spin{to{transform:rotate(360deg)}}
+  .cmpLeft, .cmpLeft *{min-width:0}
+  .cmpLeft img{max-width:100%}
   @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
   input,textarea,button,select{font-family:inherit}
@@ -106,7 +108,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.74 - Composer left panel widened to 360px to match the right panel (was 320px, which clipped the reference thumbnails, the Keep-product label and the product picker on the right edge). Content now has room to breathe.";
+const BUILD="v29.77 - 'Consider reusing' strip now only suggests RELEVANT creatives: product packshots and logos are excluded, and suggestions are matched to the brief's product. If nothing relevant is unused, the strip is hidden instead of showing random packshots. (v29.76: Send-for-approval lives ONLY at the bottom of the design flow, gated on an uploaded creative; premature top button removed.)";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -2110,7 +2112,7 @@ function BriefFastForm({campaignId,patch,onBriefReady,me,recentFeedback,product}
   const[linkInput,setLinkInput]=useState("");
   const[maker,setMaker]=useState("team"); // "team" = creative team · "self" = make it myself (templatized)
   const[unusedImgs,setUnusedImgs]=useState(null);
-  useEffect(()=>{let on=true;api.get("/api/image-library").then(all=>{if(!on)return;setUnusedImgs((Array.isArray(all)?all:[]).filter(x=>!x.last_used_at).slice(0,8));}).catch(()=>{if(on)setUnusedImgs([]);});return()=>{on=false;};},[]);
+  useEffect(()=>{let on=true;api.get("/api/image-library").then(all=>{if(!on)return;setUnusedImgs((Array.isArray(all)?all:[]).filter(x=>!x.last_used_at&&x.kind!=="product"&&x.kind!=="logo").slice(0,24));}).catch(()=>{if(on)setUnusedImgs([]);});return()=>{on=false;};},[]);
   const set=(k,v)=>setAnswers(a=>({...a,[k]:v}));
   const toggleMulti=(k,v)=>setAnswers(a=>{const cur=Array.isArray(a[k])?a[k]:[];return{...a,[k]:cur.includes(v)?cur.filter(x=>x!==v):[...cur,v]};});
   const optsFor=(s)=>{
@@ -2189,12 +2191,19 @@ function BriefFastForm({campaignId,patch,onBriefReady,me,recentFeedback,product}
     {err&&<div style={{color:C.coral,fontSize:12.5,fontWeight:600}}>{err}</div>}
     {(isBusiness(me)||isSuper(me))&&<div style={{background:"#fff",border:`1px solid ${C.line}`,borderRadius:11,padding:"11px 13px"}}>
       <div style={{fontSize:13,fontWeight:700,color:C.ink,marginBottom:2}}>How is this asset getting made?<span style={{color:C.coral}}> *</span></div>
-      {unusedImgs&&unusedImgs.length>0&&<div style={{background:"#F0FDFA",border:`1px solid ${C.teal}33`,borderRadius:9,padding:"8px 10px",margin:"8px 0"}}>
-        <div style={{fontSize:11.5,fontWeight:700,color:"#0F766E",marginBottom:6,display:"flex",alignItems:"center",gap:5}}><ImageIcon size={12}/>{unusedImgs.length} image{unusedImgs.length>1?"s":""} in the library you haven't used yet — consider reusing one before making new.</div>
-        <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:2}}>
-          {unusedImgs.map(im=><div key={im.id}title={im.product||im.file_name||"unused"}style={{flexShrink:0,width:54,height:54,borderRadius:7,overflow:"hidden",border:`1px solid ${C.line}`,display:"flex",alignItems:"center",justifyContent:"center",background:"#fff"}}><ImageThumb id={im.id}alt={im.product||"unused"}/></div>)}
-        </div>
-      </div>}
+      {(()=>{
+        const prod=String((answers&&answers.product)||product||"").toLowerCase().trim();
+        let imgs=Array.isArray(unusedImgs)?unusedImgs:[];
+        if(prod){imgs=imgs.filter(x=>[x.product,x.file_name,x.description].some(s=>String(s||"").toLowerCase().includes(prod))||(Array.isArray(x.tags)?x.tags:[]).some(t=>String(t).toLowerCase().includes(prod)));}
+        imgs=imgs.slice(0,8);
+        if(!imgs.length)return null;
+        return <div style={{background:"#F0FDFA",border:`1px solid ${C.teal}33`,borderRadius:9,padding:"8px 10px",margin:"8px 0"}}>
+          <div style={{fontSize:11.5,fontWeight:700,color:"#0F766E",marginBottom:6,display:"flex",alignItems:"center",gap:5}}><ImageIcon size={12}/>{imgs.length} unused {imgs.length>1?"creatives":"creative"} you can reuse{prod?" for this product":""} — consider one before making new.</div>
+          <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:2}}>
+            {imgs.map(im=><div key={im.id}title={im.product||im.file_name||"unused"}style={{flexShrink:0,width:54,height:54,borderRadius:7,overflow:"hidden",border:`1px solid ${C.line}`,display:"flex",alignItems:"center",justifyContent:"center",background:"#fff"}}><ImageThumb id={im.id}alt={im.product||"unused"}/></div>)}
+          </div>
+        </div>;
+      })()}
       <div style={{fontSize:11.5,color:C.sub,marginBottom:8,lineHeight:1.4}}>Is this a <b>templatized</b> post? If yes, you can build it yourself from a template — it skips the brand copy gate and goes to a dual sign-off (Anmol &amp; Ilena). If it needs bespoke creative, hand it to the team.</div>
       <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
         <Chip label="Templatized — I'll make it myself" active={maker==="self"} onClick={()=>setMaker("self")}/>
@@ -4636,7 +4645,7 @@ function FinalDesignUpload({c,d,patch,me}){
     {d.finalLink&&<div style={{fontSize:11.5,marginBottom:10}}><a href={d.finalLink}target="_blank"rel="noreferrer"style={{color:C.teal,fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}><ExternalLink size={12}/>{d.finalLink.slice(0,60)}{d.finalLink.length>60?"…":""}</a></div>}
 
     <Btn variant="dark"disabled={!ready}onClick={()=>{if(!ready)return;if(window.confirm("Send this design to Anmol (design lead) for approval?")){patch(c.id,{data:{...(c.data||{}),design:{...d,pendingApproval:true,assetReview:false,finalReview:false,sentBack:false,submittedForApprovalAt:new Date().toISOString(),approvalStage:"design"}},design_approver:me.name});api.post("/api/notify",{toRole:"design_lead",campaignId:c.id,kind:"Design needs review",body:(c.product||c.name||"A design")+" — submitted for design approval."}).catch(()=>{});}}}>
-      <Send size={15}/>{ready?"Send for approval":"Upload a file or link to finish"}
+      <Send size={15}/>{ready?(d.sentBack?"Send again for approval":"Send design for approval"):"Upload a file or link to finish"}
     </Btn>
   </div>;
 }
@@ -5428,7 +5437,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
       </div>
     </div>
     <div style={{flex:1,minHeight:0,display:"flex",overflow:"hidden"}}>
-      <div style={{width:360,flexShrink:0,overflowY:"auto",overflowX:"hidden",borderRight:`1px solid ${C.line}`,background:"#fff",padding:16}}>
+      <div className="cmpLeft"style={{width:360,flexShrink:0,overflowY:"auto",overflowX:"hidden",borderRight:`1px solid ${C.line}`,background:"#fff",padding:16}}>
         <div style={{fontSize:11,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.6,marginBottom:10}}>Canvas &amp; source</div>
         <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:11,alignContent:"start"}}>
         <div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Size</label><select value={sizeIdx}onChange={e=>setSizeIdx(+e.target.value)}style={ctrl}>{COMPOSER_SIZES.map((s,i)=><option key={i}value={i}>{s.label} ({s.w}×{s.h})</option>)}</select></div>
@@ -5923,16 +5932,11 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
               <div style={{fontSize:11,fontWeight:800,color:"#9A3412",textTransform:"uppercase",letterSpacing:.4}}>Design sent back{d.sentBackBy?" · from "+d.sentBackBy:""}</div>
             </div>
             <div style={{fontSize:13.5,color:"#7C2D12",fontWeight:600,marginBottom:9,lineHeight:1.45,whiteSpace:"pre-line"}}>{d.lastRejectReason||"See the design comments below for the requested changes."}</div>
-            <Btn small onClick={submitForApproval}disabled={!_designReady}><RotateCcw size={13}/>Send again for approval</Btn>
-            {!_designReady&&<span style={{fontSize:11,color:C.sub,marginLeft:8}}>Update the design first.</span>}
+            <div style={{fontSize:12,color:"#9A3412",fontWeight:600}}>Make the changes in the design flow below, then re-upload your creative and use <b>Send again for approval</b> at the bottom.</div>
           </div>
           :(d.pendingApproval||d.assetReview)
           ?<div style={{display:"flex",alignItems:"center",gap:8,background:"#FAF5FF",border:"1px solid #E9D5FF",borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:12.5,fontWeight:700,color:"#6D28D9"}}><Eye size={14}/>Submitted — pending {d.assetReview?"full-asset":"design"} approval</div>
-          :<div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:"#fff",border:`1px solid ${C.line}`,borderRadius:10,padding:"10px 14px",marginBottom:12}}>
-            <Btn variant="dark"disabled={!_designReady}onClick={submitForApproval}><Send size={14}/>Send design for approval</Btn>
-            {isBusiness(me)&&c.data?.selfMade&&<Btn variant="ghost"onClick={requestDesignTeam}><ArrowRight size={13}/>Can't do it? Request the design team</Btn>}
-            <span style={{fontSize:11.5,color:C.sub}}>{_designReady?"Goes to Anmol (design lead) for approval before it can go live.":"Generate or build the design below first."}</span>
-          </div>)}
+          :null)}
         {/* Brief in short — context for the design team */}
         <BriefInShort c={c}/>
         {/* Selected copy context */}
