@@ -108,7 +108,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.80 - Design-tab library picker: clicking 'Search' now opens the WHOLE library immediately (type to filter) instead of waiting for a query. Any image used in the last 7 days now shows a 'Used already' tag so you don't reuse something too soon.";
+const BUILD="v29.81 - Design-tab library 'Search' now opens the WHOLE library as a scrollable grid (every image visible at once, with a count), not the cramped horizontal strip. Suggested view still shows the compact matched strip. 'Used already' tag still flags anything used in the last 7 days.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -4426,15 +4426,15 @@ function SmartLibraryPicker({d,setD,copy,brief,product,campaignId}){
     </div>}
 
     {!searchMode&&<div style={{fontSize:12,color:C.sub,marginBottom:8,fontStyle:"italic"}}>Matched to {product||"this campaign"} by product &amp; tags.</div>}
-    {searchMode&&<div style={{fontSize:12,color:C.sub,marginBottom:8,fontStyle:"italic"}}>{q?`Results for “${q}”`:"Showing the whole library — type to filter."} Recently used images are tagged “Used already”.</div>}
+    {searchMode&&<div style={{fontSize:12,color:C.sub,marginBottom:8,fontStyle:"italic"}}>{q?`${all.length} result${all.length===1?"":"s"} for “${q}”`:`Showing all ${all.length} image${all.length===1?"":"s"} — type to filter.`} Recently used images are tagged “Used already”.</div>}
 
     {loading?<Spin label="Finding best matches…"/>
       :all.length===0
       ?<div style={{padding:"14px 16px",background:"#F8FAFC",border:`1px dashed ${C.line}`,borderRadius:10,fontSize:12.5,color:C.sub}}>No library images{searchMode?" match that search":" matched yet"}. Upload images in the Image Library tab — the engine tags them and they'll appear here.</div>
-      :<div style={{display:"flex",gap:10,overflowX:"auto",paddingBottom:6,scrollSnapType:"x mandatory",WebkitOverflowScrolling:"touch"}}>
+      :<div style={searchMode?{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:10,maxHeight:440,overflowY:"auto",paddingBottom:6,paddingRight:4}:{display:"flex",gap:10,overflowX:"auto",paddingBottom:6,scrollSnapType:"x mandatory",WebkitOverflowScrolling:"touch"}}>
       {all.map(l=>{
         const picked=d.libraryPick===l.id;
-        return<div key={l.id}style={{flexShrink:0,width:230,scrollSnapAlign:"start",border:`2px solid ${picked?C.teal:C.line}`,borderRadius:10,overflow:"hidden",background:picked?C.tealSoft:"#fff"}}>
+        return<div key={l.id}style={{...(searchMode?{}:{flexShrink:0,width:230,scrollSnapAlign:"start"}),border:`2px solid ${picked?C.teal:C.line}`,borderRadius:10,overflow:"hidden",background:picked?C.tealSoft:"#fff"}}>
           <div onClick={()=>setD({libraryPick:l.id,libraryPickMeta:{label:l.product||l.file_name||"Library image",desc:l.description||"",tags:l.tags||[]}})}style={{cursor:"pointer"}}>
             <div style={{position:"relative",aspectRatio:"4/3",background:"#F3F4F6",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}><ImageThumb id={l.id}alt={l.description}/>{usedRecently(l)&&<span title={"Last used "+fmtDate(l.last_used_at)}style={{position:"absolute",top:6,left:6,fontSize:9.5,fontWeight:800,color:"#fff",background:"#B45309",padding:"2px 7px",borderRadius:999,boxShadow:"0 1px 3px rgba(0,0,0,.35)"}}>Used already</span>}</div>
             <div style={{padding:"8px 11px"}}>
