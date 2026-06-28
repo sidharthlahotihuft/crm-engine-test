@@ -108,7 +108,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v30.0 - Canva-style contextual toolbar above the canvas: select any layer (click it on the canvas or in the Layers tab) and a top bar shows what it is plus the relevant common controls — Align ↔ (L/C/R) and Align ↕ (T/M/B), bring Forward/Back, Duplicate, Edit (jumps to that layer's tab) and Delete. Clicking a product, the background or a copy line now selects it. Plus v29.99 drag-to-pan + placement-aware smart expand.";
+const BUILD="v30.2 - Copy rules are now HARD rules (framed non-negotiable, applied every time). Every push notification must DRIVE AN ACTION in the first line (even awareness ones). Push has no image, so the 'RTBs to place on the image' picker is hidden for push and no image copy/RTBs are generated for it. All copy is action-led. Plus v30.1 hook+CTA, local smart-expand, business handoff-only.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -136,7 +136,8 @@ const inferCategory=(c)=>{
 };
 const categoryOf=(c)=>(c&&c.category)||inferCategory(c)||null;
 // Researched WhatsApp/CRM copy best practices — injected into every copy generation.
-const COPY_BEST_PRACTICES=`HIGH-ENGAGEMENT COPY PRINCIPLES (apply to every option, every channel):
+const COPY_BEST_PRACTICES=`HIGH-ENGAGEMENT COPY RULES — these are HARD RULES, NOT soft suggestions. Apply EVERY one to EVERY option, on EVERY channel, EVERY time. They are non-negotiable:
+- ACTION-LED ALWAYS: every piece of copy must drive an action — give the reader a clear thing to do (tap, switch, try, shop, book, learn, save, come back). Even awareness or brand-building copy must move the reader toward an action, never just inform. Lead with the action, or the pull straight toward it.
 - ONE reader, ONE message, ONE call-to-action. Never stack offers or asks. If two ideas compete, cut the weaker one.
 - BENEFIT-FIRST: open on the outcome the pet parent gains (a happier/healthier pet, less mess, peace of mind), not on product features, the brand name, or setup/context.
 - HOOK IN THE FIRST 5–7 WORDS: that is all most people see before a cut-off. Earn the next second with curiosity, tension, a vivid image, a sharp question, or a bold promise.
@@ -155,18 +156,21 @@ const COPY_BEST_PRACTICES=`HIGH-ENGAGEMENT COPY PRINCIPLES (apply to every optio
 - CLEAN FORMATTING: no ALL-CAPS words, no exclamation spam (no "!!!"), no "free!!!/buy now". EMOJIS: use 1-2 tasteful, purposeful emojis where they add warmth or meaning (a relevant 🐾 🐶 🐱 🎉 ✨, or a ✓ for proof points) — they lift engagement; never force them, never use more than 2, and never let an emoji replace a word.
 - FOR EDIBLES: always state the FORMAT explicitly (Chews / Fresh / Kibble / Wet / Gravy / Treats).
 - FUNNEL-STAGE URGENCY: match the urgency to where the reader sits in the funnel — the LOWER the funnel, the HIGHER the urgency to buy. Top of funnel (cold / new / awareness) = a warm invitation and intrigue, low pressure. Mid funnel (engaged, considering) = a clear nudge with a reason to act now. Bottom of funnel (cart left behind, repeat-intent, lapsed / win-back) = the strongest push to act now, backed by a real reason (offer, deadline, restock). Read the brief's audience/objective to place the reader, then dial urgency to match. Frame the ASK correctly for the stage: a LAPSED buyer is RE-conversion — welcome them back and acknowledge they've shopped with us before ("come back to…", "your pet's favourite is waiting"), never a cold first-time pitch; a cart-abandoner is a reminder to finish what they started, not a fresh sell; a brand-new audience is first-time conversion, so invite rather than pressure.
-- HONEST & INCLUSIVE: no health/medical overclaims, no fear-mongering; "family isn't defined by species". Stay true to the brief's objective and emotional pillar — cut anything off-objective.`;
+- HONEST & INCLUSIVE: no health/medical overclaims, no fear-mongering; "family isn't defined by species". Stay true to the brief's objective and emotional pillar — cut anything off-objective.
+- NO SYSTEM BOILERPLATE OR IRRELEVANT COPY: never write opt-out / unsubscribe / "reply STOP" lines, legal footers, sender IDs, "T&Cs apply", placeholder/merge tags, or any channel/system text — those are added by the platform, not the creative. Every line must be relevant to THIS brief's message; if a line is generic filler or could appear on any campaign, cut it. The store/app/website action belongs in the CTA field, not the body.`;
 // Channel-specific engagement rules (shared by every generator).
-const PUSH_RULES=`PUSH NOTIFICATION RULES — win the tap in under 2 seconds on a crowded lock screen:
-- TITLE ≤ 40 chars (hard max 50): the single most tappable promise — a benefit, a curiosity gap, or a timely trigger. Front-load the most important word; the first ~3 words must carry the hook because previews truncate.
-- BODY (the second line) ≤ 70 chars — THIS IS A HARD LIMIT, never exceed 70 characters: AT MOST two short, complete sentences/lines — ideally just one. Each line is a full, natural thought, never a fragment. The body pays off the title and points to the action. No bullets, no third line, no second idea.
+const PUSH_RULES=`PUSH NOTIFICATION RULES — these are HARD RULES, follow every one EVERY time (non-negotiable):
+- ACTION-LED FIRST LINE (most important): EVERY push must drive an action, and that action must be in the FIRST line (the title). Even a purely awareness push must make the reader want to DO something — tap, see, check, discover, save, switch, book, try. Open with or strongly imply the action; never a flat statement with no pull. If the first line doesn't move the reader to act, rewrite it.
+- TITLE ≤ 40 chars (hard max 50): the single most tappable promise carrying the action — a benefit, a curiosity gap, or a timely trigger. Front-load the most important word; the first ~3 words must carry the hook because previews truncate.
+- BODY (the second line) ≤ 70 chars — THIS IS A HARD LIMIT, never exceed 70 characters: AT MOST two short, complete sentences/lines — ideally just one. Each line is a full, natural thought, never a fragment. The body pays off the title and reinforces the action. No bullets, no third line, no second idea.
 - Exactly ONE idea and ONE CTA. CTA is 2–3 words or implied ("Shop now", "Tap to save", "Book today").
-- Lead with value or curiosity, NOT the brand name. Personalise with the pet/parent only when it adds real relevance.
+- Lead with value or curiosity carrying the action, NOT the brand name. Personalise with the pet/parent only when it adds real relevance.
 - Use urgency/timeliness only when genuine (new drop, ends tonight, today only) — never fake scarcity.
 - Sentence case. One tasteful emoji is welcome if it earns its place (max 1). No ALL-CAPS, no "!!!".
-- ENGAGEMENT (aim for this — a strong preference, not a hard rule): the whole goal is to EARN THE TAP, so lean into one of these angles — ask an intriguing QUESTION, or say something SURPRISING, FUN, or RELATABLE that a pet parent instantly feels. Playful and human beats polished-and-salesy. Default to the more engaging option when in doubt.
+- ENGAGEMENT (HARD RULE): the whole goal is to EARN THE TAP, so lead into one of these angles — ask an intriguing QUESTION, or say something SURPRISING, FUN, or RELATABLE that a pet parent instantly feels, always tied to the action. Playful and human beats polished-and-salesy. Default to the more engaging option.
 - PLAIN WORDS: use simple, everyday language a busy parent reads at a glance — avoid stiff or fancy words. For example, never say "feline"; say "cat". Skip jargon and clever-but-cold phrasing.
-- Sound like a helpful nudge from someone who knows their pet — not an ad.`;
+- Sound like a helpful nudge from someone who knows their pet — not an ad.
+- Push has NO image: never write image/overlay copy or image RTBs for a push — just the title and body.`;
 const EMAIL_RULES=`EMAIL RULES — most opens are on mobile, so write mobile-first, front-loaded and scannable:
 - SUBJECT (the "subject" field) 30–50 chars: ONE benefit or curiosity hook with the key word front-loaded. No spam words, no ALL-CAPS, no excess punctuation. Specific and personal beats clever-but-vague.
 - PREVIEW/PREHEADER (the "header" field) ~40–90 chars: EXTEND the subject with a second reason to open — never repeat the subject.
@@ -176,13 +180,13 @@ const EMAIL_RULES=`EMAIL RULES — most opens are on mobile, so write mobile-fir
 - CTA copy = action + outcome ("Start fresh feeding", "Claim my offer"), never "Click here".
 - Warm, conversational, premium — a trusted expert friend writing to ONE pet parent. Reference the audience moment when given (first-time, lapsed, festive, post-grooming).`;
 const WHATSAPP_RULES=`WHATSAPP RULES — follow this three-part anatomy:
-1) HOOK (the ONLY line shown before WhatsApp's "read more" cut-off): the single most important line — catchy enough on its own to earn the tap. A curiosity gap or a line that cuts mid-thought is great when it lands naturally; a complete punchy line is equally good. Never force it. This is the first line of the body.
-2) PAYOFF (first thing seen after "read more"): completes the hook's thought and lands the core tension/insight.
+1) HOOK (the ONLY line shown before WhatsApp's "read more" cut-off): this one line has a single job — make the reader tap "read more". It must work on its own and create a pull: a sharp curiosity gap, a bold benefit promise, a vivid concrete image, real tension, or a question they suddenly need answered. Front-load the most compelling word. NEVER waste it on a generic opener ("Hi", "Hello", "Check out", "Introducing", "This month", "New from…") — those give the reader no reason to tap. Lead with the intrigue itself. A line that cuts off mid-thought is great when it lands naturally. This is the first line of the body, and it is the most important line in the whole message.
+2) PAYOFF (first thing seen after "read more"): completes the hook's thought and lands the core tension/insight — it must reward the tap.
 3) BODY: RTB/USP proof points (especially for edibles), the switch/offer line, and a clear store/app CTA. Tight and scannable.
 - State the food FORMAT explicitly (Chews / Fresh / Kibble / Wet / Gravy / Treats). Relevant over clever.
 - LENGTH: keep the whole body tight — aim for ~45–60 words across about 4–6 short lines (hard ceiling ~75 words). Cut anything that does not add value. The image overlay (the "header" field) is just 1–2 short, flowing lines — crisp and readable, never broken-up word fragments.
-- Keep a light opt-out line at the very end.
-STRUCTURE REFERENCE (shape only — do NOT reuse this wording): warm open → an intriguing hook that breaks before "read more" → payoff sentences → product switch line → 2–3 proof bullets → store/app CTA → opt-out line. Hook + payoff lead the body; RTBs and CTA follow.`;
+- Do NOT add any opt-out, unsubscribe or "reply STOP" line — leave it out of the copy entirely.
+STRUCTURE REFERENCE (shape only — do NOT reuse this wording): warm open → an intriguing hook that breaks before "read more" → payoff sentences → product switch line → 2–3 proof bullets → store/app CTA. Hook + payoff lead the body; RTBs and CTA follow.`;
 // HARD: copy must never contain leftover merge tokens / placeholders. \"M-hash\" must never appear.
 const FORBIDDEN_TOKENS_RULE="FORBIDDEN — never output any of these anywhere in the copy: the literal text \"M-hash\" in ANY form (M-hash, M hash, mhash, M#, #M, or with any dash), any merge placeholders like {{1}}, {name}, #VAR#, #MOBILE#, [VARIABLE], <NAME>, or any unfilled template/merge tag. These are system artifacts, NOT words — they must never appear. Write the real words instead. If you don't have a real value (e.g. a customer's name), write a natural greeting with no placeholder at all (\"Hi there\", or just open on the message).";
 // Strip any forbidden placeholder tokens that slip through, across all copy fields.
@@ -200,6 +204,8 @@ const stripForbidden=(s)=>{
   out=out.replace(/\[[A-Za-z][A-Za-z0-9_ .#-]{1,30}\]/g,"");    // [VARIABLE], [M-hash]
   out=out.replace(/[<\u2039][A-Za-z][A-Za-z0-9_ .#-]{1,30}[>\u203A]/g,""); // <VAR>, ‹VAR›
   out=out.replace(/[(\[\{][\s,.;:–—-]*[)\]\}]/g,"");            // empty () [] {} left behind
+  out=out.replace(/[^.!?\n]*\b(?:opt[\s-]?out|unsubscribe)\b[^.!?\n]*[.!?]?/gi,""); // opt-out / unsubscribe boilerplate
+  out=out.replace(/[^.!?\n]*\breply\s+stop\b[^.!?\n]*[.!?]?/gi,"");                  // "reply STOP" boilerplate
   out=out.replace(/[ \t]{2,}/g," ").replace(/ +([,.!?])/g,"$1").replace(/\s+([,.])/g,"$1").replace(/^[\s,;:]+/gm,"").replace(/\n{3,}/g,"\n\n").trim();
   return out;
 };
@@ -210,11 +216,11 @@ const copyLimits=(isPush,isEmail)=>isPush?{header:50,body:90,cta:25}:isEmail?{su
 // Shared shape/format spec for copy generation — used by BOTH the bulk generator and the per-card generator so they never drift.
 // header = the IMAGE COPY / on-creative overlay: must be a short, crisp, FLOWING line (or two) — never broken-up word fragments. Surface the offer here when the brief has one.
 const COPY_SHAPE=(isPush,isEmail)=>(isPush
-  ?"each: {direction,header,body,cta,rtbs}. header=push TITLE, max 40 chars (hard 50), one crisp flowing line. body=the second line, max 70 chars — THIS IS A HARD LIMIT, never exceed 70 chars; at most TWO short complete sentences (one is better), natural flow not fragments. cta=2-3 words. If the brief has an offer, put it in the title or body in plain words."
+  ?"each: {direction,header,body,cta}. header=push TITLE (the FIRST line), max 40 chars (hard 50), one crisp flowing line that DRIVES AN ACTION — every push, even awareness, makes the reader want to act (tap, see, switch, save). body=the second line, max 70 chars — THIS IS A HARD LIMIT, never exceed 70 chars; at most TWO short complete sentences (one is better), natural flow not fragments, reinforcing the action. cta=2-3 words. Push has NO image — do not write image/overlay copy or rtbs. If the brief has an offer, put it in the title or body in plain words."
   :isEmail
   ?"each: {direction,subject,header,body,cta,rtbs}. subject=email subject line under 50 chars. header=IMAGE COPY / hero overlay: 1-2 short FLOWING lines (crisp, never broken-up word fragments); surface the offer here if the brief has one. body=short scannable email (~50-80 words): warm 1-line opener, core value/offer in 1-2 lines, 2-3 proof points, friendly sign-off. cta=action phrase."
-  :"each: {direction,header,body,cta,rtbs}. header=IMAGE COPY / on-image overlay: 1-2 short FLOWING lines (crisp and readable, never individual words broken onto separate lines, never a fragment); surface the offer here if the brief has one. body=tight WhatsApp message (~45-60 words): hook line that breaks before 'read more', payoff, 2-3 proof bullets, switch/offer line, store CTA, light opt-out. cta=action phrase.")
-  +" rtbs=array of 2-3 SHORT reasons-to-believe / proof points (each ≤6 words, e.g. 'Real chicken first', '48-hour odour lock', '₹500 off first box') drawn ONLY from the brief's proof points/offer — never invented. These are optional add-ons the copy team may append to the image copy.";
+  :"each: {direction,header,body,cta,rtbs}. header=IMAGE COPY / on-image overlay: 1-2 short FLOWING lines (crisp and readable, never individual words broken onto separate lines, never a fragment); surface the offer here if the brief has one. body=tight WhatsApp message (~40-55 words): a STRONG hook line that earns the 'read more' tap (NEVER a generic opener), payoff, 2-3 proof bullets, the switch/offer line. Do NOT put the store/app/website link or an opt-out line in the body. cta=the action phrase that goes in the CTA field (e.g. 'Shop now at huft.com' or 'Order on the HUFT app').")
+  +(isPush?"":" rtbs=array of 2-3 SHORT reasons-to-believe / proof points (each ≤6 words, e.g. 'Real chicken first', '48-hour odour lock', '₹500 off first box') drawn ONLY from the brief's proof points/offer — never invented. These are optional add-ons the copy team may append to the image copy.");
 // ── Shared task / approval computation (used by Dashboard + standalone pages + nav counts) ──
 // ── Shared task / approval computation (used by Dashboard + standalone pages + nav counts) ──
 const _today0=()=>{const d=new Date();d.setHours(0,0,0,0);return d;};
@@ -2296,7 +2302,7 @@ function BriefFastForm({campaignId,patch,onBriefReady,me,recentFeedback,product}
         tat_brief_due:briefDue,tat_content_due:contentDue,tat_design_due:designDue,
         brief_started_at:new Date(now).toISOString(),
         rtbs:rtbList,references:refList,
-        data:{brief:{...j,rtbs:rtbList,references:refList,referenceFiles:refFiles,source:"form"},selfMade:((isBusiness(me)||isSuper(me))&&maker==="self")},
+        data:{brief:{...j,rtbs:rtbList,references:refList,referenceFiles:refFiles,source:"form"},selfMade:(isSuper(me)&&maker==="self")},
         stage:"content",
       });
       onBriefReady();
@@ -2348,11 +2354,11 @@ function BriefFastForm({campaignId,patch,onBriefReady,me,recentFeedback,product}
           </div>
         </div>;
       })()}
-      <div style={{fontSize:11.5,color:C.sub,marginBottom:8,lineHeight:1.4}}>Is this a <b>templatized</b> post? If yes, you can build it yourself from a template — it skips the brand copy gate and goes to a dual sign-off (Anmol &amp; Ilena). If it needs bespoke creative, hand it to the team.</div>
+      {isSuper(me)&&<><div style={{fontSize:11.5,color:C.sub,marginBottom:8,lineHeight:1.4}}>Is this a <b>templatized</b> post? If yes, you can build it yourself from a template — it skips the brand copy gate and goes to a dual sign-off (Anmol &amp; Ilena). If it needs bespoke creative, hand it to the team.</div>
       <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
         <Chip label="Templatized — I'll make it myself" active={maker==="self"} onClick={()=>setMaker("self")}/>
         <Chip label="Bespoke — hand to the creative team" active={maker==="team"} onClick={()=>setMaker("team")}/>
-      </div>
+      </div></>}
     </div>}
     <div style={{position:"sticky",bottom:0,background:"#FFFBF7",paddingTop:8,paddingBottom:4,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
       {generating?<Spin label="Writing your brief…"/>:<Btn onClick={generateBrief}disabled={missing.length>0}><Sparkles size={15}/>Generate brief</Btn>}
@@ -3010,15 +3016,15 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
                 <Btn variant="ghost"onClick={()=>setM(c.id,"edit")}><PenLine size={13}/>Edit brief</Btn>
               </div>
             </>:<>
-              <div style={{fontSize:13,fontWeight:800,color:C.ink,marginBottom:3}}>How is this asset getting made?</div>
-              <div style={{fontSize:11.5,color:C.sub,marginBottom:11}}>Templatized post? Build it yourself from a template. Bespoke creative? Hand it to the team. <button onClick={()=>setTab("library")}style={{background:"none",border:"none",color:C.teal,fontWeight:700,cursor:"pointer",padding:0,fontSize:11.5,textDecoration:"underline"}}>Browse the image library</button> first to reuse an unused image.</div>
+              <div style={{fontSize:13,fontWeight:800,color:C.ink,marginBottom:3}}>{isSuper(me)?"How is this asset getting made?":"Hand this to the creative team"}</div>
+              <div style={{fontSize:11.5,color:C.sub,marginBottom:11}}>{isSuper(me)?<>Templatized post? Build it yourself from a template. Bespoke creative? Hand it to the team. <button onClick={()=>setTab("library")}style={{background:"none",border:"none",color:C.teal,fontWeight:700,cursor:"pointer",padding:0,fontSize:11.5,textDecoration:"underline"}}>Browse the image library</button> first to reuse an unused image.</>:<>The creative team picks it up in <b>Copy</b> next and builds the asset for you.</>}</div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
                 <Btn onClick={()=>{patch(c.id,{stage:"content",data:{...(c.data||{}),selfMade:false}});setTab("content");onOpen(c.id,"content");}}>Hand to the creative team <ArrowRight size={14}/></Btn>
-                {(isBusiness(me)||isSuper(me))&&<Btn variant="ghost"onClick={()=>{patch(c.id,{stage:"content",data:{...(c.data||{}),selfMade:true}});setTab("content");onOpen(c.id,"content");}}><PenLine size={13}/>I'll make it myself</Btn>}
+                {isSuper(me)&&<Btn variant="ghost"onClick={()=>{patch(c.id,{stage:"content",data:{...(c.data||{}),selfMade:true}});setTab("content");onOpen(c.id,"content");}}><PenLine size={13}/>I'll make it myself</Btn>}
                 <Btn variant="ghost"onClick={()=>setM(c.id,"edit")}><PenLine size={13}/>Edit brief</Btn>
               </div>
             </>}
-            <div style={{fontSize:11.5,color:"#7D3D24",marginTop:11,lineHeight:1.55,background:C.coralSoft,borderRadius:8,padding:"9px 12px"}}>It moves to <b>Copy</b> next either way. Making it yourself? Write the copy and build the design — then <b>once the design is ready, send it for approval.</b></div>
+            <div style={{fontSize:11.5,color:"#7D3D24",marginTop:11,lineHeight:1.55,background:C.coralSoft,borderRadius:8,padding:"9px 12px"}}>{isSuper(me)?<>It moves to <b>Copy</b> next either way. Making it yourself? Write the copy and build the design — then <b>once the design is ready, send it for approval.</b></>:<>It moves to <b>Copy</b> next, where the creative team writes the copy and builds the design, then sends it back to you once it's ready.</>}</div>
           </div>);})()}
         </div>}
       </div>}
@@ -4276,7 +4282,6 @@ function WhatsAppMockup({o,image,product,onClose,imageHasCopy}){
               {expanded&&rest&&<span>{"\n"+rest}</span>}
             </div>
             {expanded&&cta&&<div style={{marginTop:8,color:"#53bdeb",fontWeight:600,fontSize:13}}>{cta}</div>}
-            {expanded&&<div style={{marginTop:8,paddingTop:6,borderTop:"1px solid #2a3942",fontSize:11,color:"#8696a0"}}>To opt out of these messages, reply STOP</div>}
             <div style={{textAlign:"right",fontSize:10.5,color:"#8696a0",marginTop:3}}>{now}</div>
           </div>
         </div>
@@ -4496,8 +4501,8 @@ function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,
         </div>}
     </div>
 
-    {/* RTBs — copy team can append proof points to the image copy */}
-    {Array.isArray(o.rtbs)&&o.rtbs.length>0&&<div style={{padding:"0 12px 10px"}}>
+    {/* RTBs — copy team can append proof points to the image copy (not for Push: no image) */}
+    {!isPush&&Array.isArray(o.rtbs)&&o.rtbs.length>0&&<div style={{padding:"0 12px 10px"}}>
       <div style={{fontSize:9.5,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.5,marginBottom:6,display:"flex",alignItems:"center",gap:5}}><Plus size={11}/>RTBs to place on the image</div>
       <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
         {o.rtbs.map((rtb,ri)=>{const on=(o.rtbsSelected||[]).includes(rtb);return<button key={ri}onClick={()=>onRtbToggle&&onRtbToggle(idx,rtb)}style={{fontSize:11.5,fontWeight:600,padding:"5px 11px",borderRadius:999,cursor:"pointer",border:`1px solid ${on?C.teal:C.line}`,background:on?C.tealSoft:"#fff",color:on?C.teal:C.ink,display:"inline-flex",alignItems:"center",gap:5}}>{on?<Check size={12}/>:<Plus size={12}/>}{rtb}</button>;})}
@@ -5543,25 +5548,24 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
     setExpandBusy(true);
     try{
       const iw=img.naturalWidth||img.width, ih=img.naturalHeight||img.height;
-      const maxD=1024, tw=sz.w>=sz.h?maxD:Math.round(maxD*sz.w/sz.h), th=sz.h>sz.w?maxD:Math.round(maxD*sz.h/sz.w);
+      // Full-resolution canvas at the exact canvas size — deterministic, no AI artefacts.
+      const tw=sz.w, th=sz.h;
       const oc=document.createElement("canvas");oc.width=tw;oc.height=th;
-      const g=oc.getContext("2d"), kx=tw/sz.w, ky=th/sz.h;
-      // mirror drawBgImage placement so we expand from EXACTLY where the user left the image
-      const cover=Math.max(sz.w/iw,sz.h/ih), contain=Math.min(sz.w/iw,sz.h/ih);
-      const s=(bgFit==="contain"?contain:cover)*(bgScale||1), dw=iw*s, dh=ih*s;
-      const dx=(sz.w-dw)/2+(bgOffX||0)*sz.w, dy=(sz.h-dh)/2+(bgOffY||0)*sz.h;
-      // 1) soft seed: blurred cover fills the empty margins with plausible colour/continuation
-      g.save();try{g.filter="blur(16px)";}catch(_){}
-      const cs=Math.max(tw/iw,th/ih), cdw=iw*cs, cdh=ih*cs;
-      g.drawImage(img,(tw-cdw)/2,(th-cdh)/2,cdw,cdh);
+      const g=oc.getContext("2d");
+      // 1) soft blurred backdrop that covers the whole frame (fills the empty bars with a clean wash of the same image)
+      const cs=Math.max(tw/iw,th/ih)*1.12, cdw=iw*cs, cdh=ih*cs;
+      g.save();try{g.filter="blur("+Math.round(Math.max(tw,th)*0.045)+"px)";}catch(_){}
+      g.drawImage(img,(tw-cdw)/2+(bgOffX||0)*tw,(th-cdh)/2+(bgOffY||0)*th,cdw,cdh);
       g.restore();
-      // 2) crisp image exactly where it currently sits on the canvas
-      g.drawImage(img,dx*kx,dy*ky,dw*kx,dh*ky);
-      const src=oc.toDataURL("image/png");
-      const r=await api.post("/api/expand-image",{image:src,aspectRatio:sz.ar,prompt:(genPrompt||"").trim(),mode:"refine"});
-      if(r&&r.image){const ni=await loadImage(r.image);setCustomBg(ni);setBgMode("custom");setBgFit("cover");setBgScale(1);setBgOffX(0);setBgOffY(0);if(toast)toast("Filled to frame ✓","success");}
-      else if(toast)toast("Couldn't expand — try again","error");
-    }catch(e){if(toast)toast("Expand failed — deploy the latest server.js (expand-image route)","error");}
+      // a gentle dark veil keeps the blurred wash from competing with the sharp image
+      g.fillStyle="rgba(0,0,0,0.06)";g.fillRect(0,0,tw,th);
+      // 2) the sharp image exactly where the user left it (current fit/zoom/offset)
+      const s=(bgFit==="contain"?Math.min(tw/iw,th/ih):Math.max(tw/iw,th/ih))*(bgScale||1), dw=iw*s, dh=ih*s;
+      g.drawImage(img,(tw-dw)/2+(bgOffX||0)*tw,(th-dh)/2+(bgOffY||0)*th,dw,dh);
+      const ni=await loadImage(oc.toDataURL("image/jpeg",0.95));
+      setCustomBg(ni);setBgMode("custom");setBgFit("cover");setBgScale(1);setBgOffX(0);setBgOffY(0);
+      if(toast)toast("Filled the frame ✓","success");
+    }catch(e){if(toast)toast("Couldn't fill the frame — try again","error");}
     setExpandBusy(false);
   };
   const runGenerate=async()=>{
@@ -5962,7 +5966,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
             {slider("Move ↑↓",Math.round(bgOffY*100),-50,50,v=>setBgOffY(v/100),v=>v+"%")}
             <div style={{fontSize:10.5,color:C.sub,lineHeight:1.4,marginTop:-2}}>Tip: just <b>drag the image on the canvas</b> to move it.</div>
             <Btn small variant="dark"disabled={expandBusy}onClick={smartExpand}style={{width:"100%",justifyContent:"center"}}>{expandBusy?"Expanding…":"✨ Smart expand to fill"}</Btn>
-            <div style={{fontSize:10.5,color:C.sub,lineHeight:1.4}}>Generatively paints the empty edges so the image fills the whole frame — like Canva/Adobe expand. Best for backgrounds, not packshots.</div>
+            <div style={{fontSize:10.5,color:C.sub,lineHeight:1.4}}>Fills the empty edges with a soft blurred continuation of the image so it fills the whole frame, keeping your sharp image where you left it. Instant, no AI artefacts. Best for backgrounds, not packshots.</div>
             {bgFit==="contain"&&<div style={{fontSize:10.5,color:C.sub,lineHeight:1.4}}>“Fit” shows the whole image and may leave empty edges — use <b>Smart expand</b> to fill them.</div>}
           </div>
         </div>}
