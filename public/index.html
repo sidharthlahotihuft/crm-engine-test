@@ -108,7 +108,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.92 - Product-first generate flow. The product picker is now step ① at the very top (the hero); the scene prompt is ②. For a brief-backed asset the scene prompt auto-fills from the brief once (edit freely); for a New asset it stays empty for you to describe. Product always composites on top exact. Includes v29.91 server-enforced copy hard-rules wiring.";
+const BUILD="v29.94 - 'Re-tag library' button in Brand Assets (super-admin): re-derives product / lifestyle / logo tags for the whole library in one click, so the bulk-uploaded scenes stop showing as products. Composer product picker already filters to real packshots (v29.93). Product-first generate flow + server-enforced copy hard-rules retained.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -3544,6 +3544,7 @@ function ImageLibraryTab({me,toast}){
   const[uploadH,setUploadH]=useState("");              // height_cm
   const[uploadW,setUploadW]=useState("");              // width_cm
   const[uploadLight,setUploadLight]=useState("left");  // key-light direction in the packshot
+  const[retagging,setRetagging]=useState(false);       // one-time library re-tag in progress
   const fileRef=useRef(null);
   const folderRef=useRef(null);
 
@@ -3606,6 +3607,7 @@ function ImageLibraryTab({me,toast}){
           </div>
           <Btn onClick={()=>fileRef.current&&fileRef.current.click()}><UploadIcon size={16}/>Upload images</Btn>
           <Btn variant="ghost"onClick={()=>folderRef.current&&folderRef.current.click()}><UploadIcon size={16}/>Upload folder</Btn>
+          {_r(me)==="super_admin"&&<Btn variant="ghost"disabled={retagging}title="Re-derive product / lifestyle / logo tags for the whole library from file type + AI category"onClick={async()=>{setRetagging(true);try{const r=await api.post("/api/image-library/retag",{});const c=Object.entries(r.counts||{}).map(([k,v])=>v+" "+k).join(" · ");if(toast)toast("Re-tagged "+(r.total||0)+" images"+(c?" — "+c:""),"success");await load(q);}catch(e){if(toast)toast("Re-tag failed — deploy the latest server.js first","error");}setRetagging(false);}}><Wand2 size={16}/>{retagging?"Re-tagging…":"Re-tag library"}</Btn>}
           <input ref={fileRef}type="file"accept="image/*"multiple style={{display:"none"}}onChange={e=>{if(e.target.files&&e.target.files.length)handleFiles(e.target.files);e.target.value="";}}/>
           <input ref={folderRef}type="file"webkitdirectory="" directory=""multiple style={{display:"none"}}onChange={e=>{const imgs=[...(e.target.files||[])].filter(f=>f.type&&f.type.startsWith("image/"));if(imgs.length)handleFiles(imgs);else if(toast)toast("No images found in that folder","error");e.target.value="";}}/>
         </div>
@@ -4982,8 +4984,19 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   const[saving,setSaving]=useState(false);
   // kind-aware lists: classified images go to the right picker; unclassified show in both
   const isResting=(i)=>i.last_used_at&&(Date.now()-new Date(i.last_used_at).getTime())<45*86400000; // rest a used image for 45 days
-  const productItems=items.filter(i=>i.kind==="product"||!i.kind);
-  const assetItems=items.filter(i=>(i.kind==="asset"||!i.kind)&&(!isResting(i)||i.id===bgId));
+  // A product packshot = a clean transparent PNG, or one the cataloguer explicitly called a "packshot".
+  // Lifestyle/scene shots are JPEGs (cataloguer category "lifestyle") and must NOT appear here — this is
+  // independent of the stored `kind`, since bulk uploads mis-tagged many scenes as products.
+  const isPackshot=(i)=>{
+    const k=String(i.kind||"").toLowerCase();
+    if(k==="logo"||k==="mockup")return false;
+    const cat=String(i.category||"").toLowerCase();
+    if(cat==="lifestyle")return false;
+    if(cat==="packshot")return true;
+    return String(i.file_type||"").toLowerCase().includes("png");
+  };
+  const productItems=items.filter(isPackshot);
+  const assetItems=items.filter(i=>!isPackshot(i)&&i.kind!=="logo"&&i.kind!=="mockup"&&(!isResting(i)||i.id===bgId));
   const logoItems=items.filter(i=>i.kind==="logo");
   const mockupItems=items.filter(i=>i.kind==="mockup"&&(!isResting(i)||i.id===bgId));
   // Auto-pick the brief's product into the first empty slot once the library loads
