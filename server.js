@@ -46,7 +46,7 @@ const db = async (sql, params = []) => {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const uid = () => Math.random().toString(36).slice(2, 11);
 const safeJson = (s) => { try { return JSON.parse(s); } catch (e) { return null; } };
-const SERVER_BUILD = "v29.58s - scene-placement now reads the scene in 3 steps (find foreground surface + groundline, find busy subject to avoid, then ground products on the surface) for accurate, non-random placement.";
+const SERVER_BUILD = "v29.59s - Product-aware image_library: new columns finish, light_direction, height_cm, width_cm, content_bbox, dominant_colors (stored on upload, returned by list, editable, and auto-inferred for finish/light by the cataloguer). Feeds the scene-spec generation + composite realism.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -1232,23 +1232,29 @@ app.get("/api/cron/sheet-sync", async (req, res) => {
 // Upload an image: the engine analyses it (product, category, tags, context) then stores it.
 // body: { file_name, file_data (data URL or raw base64), file_type, notes }
 app.post("/api/image-library", authMiddleware, roles("admin", "brand", "design", "business"), async (req, res) => {
-  const { file_name, file_data, file_type, notes, product, category, tags, description, dimensions_cm, kind } = req.body;
+  const { file_name, file_data, file_type, notes, product, category, tags, description, dimensions_cm, kind, finish, light_direction, height_cm, width_cm, content_bbox, dominant_colors } = req.body;
   if (!file_data) return res.status(400).json({ error: "file_data required" });
   // Strip a data: URL prefix if present, to get raw base64 for the vision call
   const b64 = String(file_data).includes(",") ? String(file_data).split(",")[1] : String(file_data);
   const mime = file_type || (String(file_data).match(/^data:(.*?);/)?.[1]) || "image/jpeg";
   const k = ["product","asset","logo","mockup"].includes(kind) ? kind : null;
+  const fin = ["matte","gloss","foil","plastic"].includes(finish) ? finish : null;
+  const lightDir = ["left","right","front","top"].includes(light_direction) ? light_direction : null;
+  const hCm = (height_cm != null && height_cm !== "" && !isNaN(Number(height_cm))) ? Number(height_cm) : null;
+  const wCm = (width_cm != null && width_cm !== "" && !isNaN(Number(width_cm))) ? Number(width_cm) : null;
+  const bbox = content_bbox ? (typeof content_bbox === "string" ? content_bbox : JSON.stringify(content_bbox)) : null;
+  const colors = dominant_colors ? (typeof dominant_colors === "string" ? dominant_colors : JSON.stringify(dominant_colors)) : null;
 
   // 1) SAVE THE IMAGE FIRST — the upload must always land, even if AI tagging is slow/unavailable.
   let row;
   try {
     const rows = await db(
-      `INSERT INTO image_library (file_name, file_data, file_type, product, category, tags, description, notes, dimensions_cm, kind, uploaded_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-       RETURNING id, file_name, file_type, product, category, tags, description, notes, dimensions_cm, kind, uploaded_by, uploaded_at`,
+      `INSERT INTO image_library (file_name, file_data, file_type, product, category, tags, description, notes, dimensions_cm, kind, uploaded_by, finish, light_direction, height_cm, width_cm, content_bbox, dominant_colors)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+       RETURNING id, file_name, file_type, product, category, tags, description, notes, dimensions_cm, kind, uploaded_by, uploaded_at, finish, light_direction, height_cm, width_cm, content_bbox, dominant_colors`,
       [file_name || null, file_data, mime, product || "", category || "",
        JSON.stringify(Array.isArray(tags) ? tags : []), description || "", notes || null,
-       dimensions_cm || null, k, req.user.id]
+       dimensions_cm || null, k, req.user.id, fin, lightDir, hCm, wCm, bbox, colors]
     );
     row = rows[0];
   } catch (e) { return res.status(500).json({ error: e.message }); }
@@ -1258,13 +1264,15 @@ app.post("/api/image-library", authMiddleware, roles("admin", "brand", "design",
   if (!product) {
     (async () => {
       try {
-        const sys = `You are an image cataloguer for HUFT, a premium Indian pet care brand with sub-brands like Sara's Wholesome Food, Hearty, Meowsi, NutriWag, NutriMeow, Yakies, HUFT Spa, HUFT Originals, DashDog and more. Look at the image and identify what it shows for a marketing image library. Return ONLY JSON: {"product":"best-guess product or sub-brand, or '' if unclear","category":"one of: dry food, wet food, treats, chews, grooming, accessories, apparel, toys, supplements, lifestyle, packshot, other","tags":["6-12 short descriptive tags: subject, setting, colours, mood, pet type, composition"],"description":"one sentence describing what the image shows and how it could be used"}`;
+        const sys = `You are an image cataloguer for HUFT, a premium Indian pet care brand with sub-brands like Sara's Wholesome Food, Hearty, Meowsi, NutriWag, NutriMeow, Yakies, HUFT Spa, HUFT Originals, DashDog and more. Look at the image and identify what it shows for a marketing image library. Return ONLY JSON: {"product":"best-guess product or sub-brand, or '' if unclear","category":"one of: dry food, wet food, treats, chews, grooming, accessories, apparel, toys, supplements, lifestyle, packshot, other","tags":["6-12 short descriptive tags: subject, setting, colours, mood, pet type, composition"],"description":"one sentence describing what the image shows and how it could be used","finish":"if this is a product pack, its surface finish: matte | gloss | foil | plastic — else ''","light_direction":"dominant key-light direction on the subject: left | right | front | top"}`;
         const out = await generateVision(sys, "Catalogue this image for our marketing library.", b64, mime);
         const parsed = JSON.parse(out.replace(/```json|```/g, "").trim().replace(/^[^[{]*/, ""));
+        const pf = ["matte","gloss","foil","plastic"].includes(parsed.finish) ? parsed.finish : null;
+        const pl = ["left","right","front","top"].includes(parsed.light_direction) ? parsed.light_direction : null;
         await db(
-          `UPDATE image_library SET product=$1, category=$2, tags=$3, description=$4 WHERE id=$5`,
+          `UPDATE image_library SET product=$1, category=$2, tags=$3, description=$4, finish=COALESCE(finish,$5), light_direction=COALESCE(light_direction,$6) WHERE id=$7`,
           [parsed.product || "", parsed.category || "other",
-           JSON.stringify(Array.isArray(parsed.tags) ? parsed.tags : []), parsed.description || "", row.id]
+           JSON.stringify(Array.isArray(parsed.tags) ? parsed.tags : []), parsed.description || "", pf, pl, row.id]
         );
       } catch (e) { console.error("Image analysis failed (image already saved):", e.message); }
     })();
@@ -1299,8 +1307,8 @@ app.post("/api/generate-image", authMiddleware, roles("admin", "brand", "design"
 app.get("/api/image-library", authMiddleware, async (req, res) => {
   const q = (req.query.q || "").trim().toLowerCase();
   const cols = req.query.withData === "1"
-    ? "id, file_name, file_data, file_type, product, category, tags, description, notes, dimensions_cm, kind, uploaded_at, last_used_at"
-    : "id, file_name, file_type, product, category, tags, description, notes, dimensions_cm, kind, uploaded_at, last_used_at";
+    ? "id, file_name, file_data, file_type, product, category, tags, description, notes, dimensions_cm, kind, uploaded_at, last_used_at, finish, light_direction, height_cm, width_cm, content_bbox, dominant_colors"
+    : "id, file_name, file_type, product, category, tags, description, notes, dimensions_cm, kind, uploaded_at, last_used_at, finish, light_direction, height_cm, width_cm, content_bbox, dominant_colors";
   try {
     let rows;
     if (q) {
@@ -1373,7 +1381,7 @@ app.get("/api/image-library/:id", authMiddleware, async (req, res) => {
 // Update tags/product/notes manually (admin/brand can correct the AI)
 app.put("/api/image-library/:id", authMiddleware, roles("admin", "brand"), async (req, res) => {
   const sets = [], vals = []; let i = 1;
-  for (const k of ["product", "category", "description", "notes"]) {
+  for (const k of ["product", "category", "description", "notes", "finish", "light_direction", "height_cm", "width_cm", "dimensions_cm"]) {
     if (req.body[k] !== undefined) { sets.push(`${k}=$${i++}`); vals.push(req.body[k]); }
   }
   if (req.body.tags !== undefined) { sets.push(`tags=$${i++}`); vals.push(JSON.stringify(req.body.tags)); }
@@ -1614,6 +1622,12 @@ app.listen(PORT, async () => {
     await pool.query("ALTER TABLE image_library ADD COLUMN IF NOT EXISTS dimensions_cm TEXT");
     await pool.query("ALTER TABLE image_library ADD COLUMN IF NOT EXISTS kind TEXT");
     await pool.query("ALTER TABLE image_library ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMPTZ");
+    await pool.query("ALTER TABLE image_library ADD COLUMN IF NOT EXISTS finish TEXT");
+    await pool.query("ALTER TABLE image_library ADD COLUMN IF NOT EXISTS light_direction TEXT");
+    await pool.query("ALTER TABLE image_library ADD COLUMN IF NOT EXISTS height_cm NUMERIC");
+    await pool.query("ALTER TABLE image_library ADD COLUMN IF NOT EXISTS width_cm NUMERIC");
+    await pool.query("ALTER TABLE image_library ADD COLUMN IF NOT EXISTS content_bbox TEXT");
+    await pool.query("ALTER TABLE image_library ADD COLUMN IF NOT EXISTS dominant_colors TEXT");
     // Approval slots: which approval gates a user can clear (copy / asset / final). A user may hold several.
     await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS approval_slots TEXT[] DEFAULT '{}'");
     // Sub-brands a user is scoped to (empty = all). Used to split what each brand person sees.
