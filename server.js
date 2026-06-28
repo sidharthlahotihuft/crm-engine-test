@@ -133,7 +133,7 @@ const enforceCopyHardRules = (text, limits) => {
   }
   return stripForbidden(text); // plain-text response → still strip forbidden tokens
 };
-const SERVER_BUILD = "v29.61s - Server-enforced HARDEST RULES on all copy generation (kind=copy), cannot be skipped by any client path: strips forbidden tokens (M-hash + unfilled merge/template placeholders) from every string field, normalises to British English, swaps banned terms (consumers→pet parents, furry friend/fur baby→furry family), and clamps hard length caps per channel (push title/body, subject, cta, header). Also injects these rules into the system prompt. Plus v29.60s: image-library list returns up to 2000 rows with column fallback.";
+const SERVER_BUILD = "v29.62s - Fix image tagging: new POST /api/image-library/retag re-derives `kind` for the whole library (transparent PNG → product packshot, cataloguer 'lifestyle' → asset/scene, logos/mockups preserved); the cataloguer now also fills `kind` on upload; PUT can edit `kind`. Plus v29.61s server-enforced copy hard-rules and v29.60s 2000-row library list.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -1356,10 +1356,13 @@ app.post("/api/image-library", authMiddleware, roles("admin", "brand", "design",
         const parsed = JSON.parse(out.replace(/```json|```/g, "").trim().replace(/^[^[{]*/, ""));
         const pf = ["matte","gloss","foil","plastic"].includes(parsed.finish) ? parsed.finish : null;
         const pl = ["left","right","front","top"].includes(parsed.light_direction) ? parsed.light_direction : null;
+        // Fill kind only if not already set: lifestyle scene → asset, transparent PNG → product packshot.
+        const kindGuess = String(parsed.category || "").toLowerCase() === "lifestyle" ? "asset"
+                        : String(mime || "").toLowerCase().includes("png") ? "product" : "asset";
         await db(
-          `UPDATE image_library SET product=$1, category=$2, tags=$3, description=$4, finish=COALESCE(finish,$5), light_direction=COALESCE(light_direction,$6) WHERE id=$7`,
+          `UPDATE image_library SET product=$1, category=$2, tags=$3, description=$4, finish=COALESCE(finish,$5), light_direction=COALESCE(light_direction,$6), kind=COALESCE(NULLIF(kind,''),$7) WHERE id=$8`,
           [parsed.product || "", parsed.category || "other",
-           JSON.stringify(Array.isArray(parsed.tags) ? parsed.tags : []), parsed.description || "", pf, pl, row.id]
+           JSON.stringify(Array.isArray(parsed.tags) ? parsed.tags : []), parsed.description || "", pf, pl, kindGuess, row.id]
         );
       } catch (e) { console.error("Image analysis failed (image already saved):", e.message); }
     })();
@@ -1467,7 +1470,7 @@ app.get("/api/image-library/:id", authMiddleware, async (req, res) => {
 // Update tags/product/notes manually (admin/brand can correct the AI)
 app.put("/api/image-library/:id", authMiddleware, roles("admin", "brand"), async (req, res) => {
   const sets = [], vals = []; let i = 1;
-  for (const k of ["product", "category", "description", "notes", "finish", "light_direction", "height_cm", "width_cm", "dimensions_cm"]) {
+  for (const k of ["product", "category", "description", "notes", "finish", "light_direction", "height_cm", "width_cm", "dimensions_cm", "kind"]) {
     if (req.body[k] !== undefined) { sets.push(`${k}=$${i++}`); vals.push(req.body[k]); }
   }
   if (req.body.tags !== undefined) { sets.push(`tags=$${i++}`); vals.push(JSON.stringify(req.body.tags)); }
@@ -1475,6 +1478,25 @@ app.put("/api/image-library/:id", authMiddleware, roles("admin", "brand"), async
   vals.push(req.params.id);
   try { await db(`UPDATE image_library SET ${sets.join(",")} WHERE id=$${i}`, vals); res.json({ ok: true }); }
   catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// One-time re-tag: re-derive `kind` for the whole library from reliable signals.
+// Packshots are clean transparent PNGs; lifestyle/scene shots (cataloguer category "lifestyle") are JPEGs.
+// Fixes bulk uploads that left kind null or mis-tagged scenes as products. Logos/mockups preserved.
+app.post("/api/image-library/retag", authMiddleware, roles("admin"), async (req, res) => {
+  try {
+    const rows = await db(`UPDATE image_library SET kind = CASE
+        WHEN lower(coalesce(kind,'')) = 'logo' THEN 'logo'
+        WHEN lower(coalesce(kind,'')) = 'mockup' THEN 'mockup'
+        WHEN lower(coalesce(category,'')) = 'logo' THEN 'logo'
+        WHEN lower(coalesce(category,'')) = 'lifestyle' THEN 'asset'
+        WHEN lower(coalesce(file_type,'')) LIKE '%png%' THEN 'product'
+        ELSE 'asset'
+      END RETURNING kind`);
+    const counts = {};
+    (rows || []).forEach(r => { const k = r.kind || "untagged"; counts[k] = (counts[k] || 0) + 1; });
+    res.json({ ok: true, total: (rows || []).length, counts });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.delete("/api/image-library/:id", authMiddleware, roles("admin", "brand"), async (req, res) => {
