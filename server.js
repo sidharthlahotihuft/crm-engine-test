@@ -136,7 +136,7 @@ const enforceCopyHardRules = (text, limits) => {
   }
   return stripForbidden(text); // plain-text response → still strip forbidden tokens
 };
-const SERVER_BUILD = "v29.68s - Server HARD_RULES + seed rulebook now enforce: action-led copy always, push action in the first line, push has no image (no image copy/RTBs), and no opt-out boilerplate. Plus v29.67s opt-out strip.";
+const SERVER_BUILD = "v29.70s - Prompt caching enabled on the Claude copy call: the large, stable system prompt (brand context + rules + voice + rulebook) is cached, so repeat copy generations pay ~10% of input price on the cached prefix. Copy already routes to Claude (Opus when CLAUDE_MODEL=claude-opus-4-8); vision/cataloguing/briefs stay on Gemini as long as LLM_PROVIDER is left unset. Plus v29.69s seed rulebook fun image-copy rule.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -265,7 +265,10 @@ async function generate(system, prompt, providerOverride) {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: CLAUDE_MODEL, max_tokens: 4096, system,
+        model: CLAUDE_MODEL, max_tokens: 4096,
+        // Prompt caching: the big, stable system prompt (brand context + rules + voice + rulebook) is cached,
+        // so repeat copy calls pay ~10% of input price on the cached prefix instead of the full rate.
+        system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: prompt }],
       }),
     });
@@ -422,6 +425,7 @@ async function seedBestPractices() {
     "Strong first line that sparks curiosity; use action verbs (discover, switch, try, get).",
     "Short and scannable — no fluff, filler or repetition. Make the next step obvious.",
     "No ALL-CAPS words and no spammy phrasing; emojis sparingly, only where they add warmth.",
+    "Image copy (the on-creative overlay / 'header') is a SHORT, FUN, punchy headline — 3-6 words, two short lines max, with real personality (playful, witty, warm). Never long, flat, generic or a literal restatement; the action goes in the CTA, the overlay's job is to make them feel something and stop scrolling.",
     "Every piece of copy must be ACTION-LED — give the reader a clear thing to do (tap, switch, try, shop, book, learn, save). Even awareness copy must drive an action, never just inform.",
     "Push notifications: the action must be in the FIRST line (the title). Every push — even an awareness one — drives an action; if the first line doesn't move the reader to act, rewrite it. Push has no image, so never write image/overlay copy or image RTBs for it.",
     "WhatsApp: a STRONG first line (hook) that earns the 'read more' tap → payoff → RTB/USP proof. Put the store/app/website action in the CTA field, not the body.",
