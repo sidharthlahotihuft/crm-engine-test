@@ -108,7 +108,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.94 - 'Re-tag library' button in Brand Assets (super-admin): re-derives product / lifestyle / logo tags for the whole library in one click, so the bulk-uploaded scenes stop showing as products. Composer product picker already filters to real packshots (v29.93). Product-first generate flow + server-enforced copy hard-rules retained.";
+const BUILD="v29.97 - Used-image cooldown extended to 3 months: once a scene/mockup is downloaded, saved or finalised it's tagged 'Used · resting' and hidden from the composer pickers, and locked (greyed, not selectable) with an 'Used already' badge in the design picker until the cooldown ends. Rulebook is now enforced server-side (no leaks) — new rules apply automatically.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -869,6 +869,9 @@ const isArchived=(c)=>!!(c&&c.data&&c.data.archived);
 // Map a campaign stage to the tab that should open for it
 const stageToTab=(s)=>s==="content"?"content":s==="design"?"design":s==="done"?"done":"brief";
 const activeRuleText=(rules)=>rules.filter(r=>r.active).map(r=>"- "+r.text).join("\n")||"(none yet)";
+const RESTING_MS=90*86400000; // once a scene/asset is used it rests (hidden from pickers, tagged "used") for ~3 months
+const isRestingImg=(i)=>!!(i&&i.last_used_at&&(Date.now()-new Date(i.last_used_at).getTime())<RESTING_MS);
+const restingUntil=(i)=>i&&i.last_used_at?new Date(new Date(i.last_used_at).getTime()+RESTING_MS):null;
 // HUFT image/photography guidelines (distilled from the brand Image Guidelines) — injected into every AI scene generation.
 const HUFT_VISUAL_GUIDELINES=`HUFT VISUAL GUIDELINES — apply to the generated scene:
 - Feeling: warm, real, specific, India-grounded — a real moment you walked into, not a staged studio shot. The core test is "belonging", not aspiration. Avoid stock/sterile looks, white-studio portraits, glossy perfection, and Western pet-brand aesthetics.
@@ -3664,7 +3667,7 @@ function ImageLibraryTab({me,toast}){
             <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4,flexWrap:"wrap"}}>
               {img.product&&<span style={{fontSize:11,fontWeight:700,color:C.coral}}>{img.product}</span>}
               {img.category&&<span style={{fontSize:10,fontWeight:600,color:C.teal,background:"#E6FFFA",padding:"1px 6px",borderRadius:999}}>{img.category}</span>}
-              {img.last_used_at&&(Date.now()-new Date(img.last_used_at).getTime())<45*86400000&&<span title={"Used recently — back in pickers on "+new Date(new Date(img.last_used_at).getTime()+45*86400000).toLocaleDateString()}style={{fontSize:9.5,fontWeight:700,color:"#92400E",background:"#FEF3C7",padding:"1px 6px",borderRadius:999}}>Resting 45d</span>}
+              {isRestingImg(img)&&<span title={"Already used — resting until "+restingUntil(img).toLocaleDateString()+" (3-month cooldown)"}style={{fontSize:9.5,fontWeight:700,color:"#92400E",background:"#FEF3C7",padding:"1px 6px",borderRadius:999}}>Used · resting</span>}
             </div>
             {img.description&&<div style={{fontSize:11.5,color:C.sub,lineHeight:1.4,marginBottom:6,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{img.description}</div>}
             <div style={{display:"flex",flexWrap:"wrap",gap:3,marginBottom:6}}>
@@ -4569,9 +4572,9 @@ function SmartLibraryPicker({d,setD,copy,brief,product,campaignId}){
   };
   React.useEffect(()=>{loadSuggested();},[campaignId]);
 
-  // Suggested = scenes/assets only (never product mockups). Search/browse = the WHOLE library so all uploads are pickable.
-  const all=searchMode?(items||[]):(items||[]).filter(i=>i.kind!=="product"&&i.kind!=="logo");
-  const usedRecently=(l)=>{if(!l.last_used_at)return false;const days=(Date.now()-new Date(l.last_used_at).getTime())/86400000;return days>=0&&days<=7;};
+  // Suggested = scenes/assets only, and never anything still resting from recent use. Search shows everything (rested ones are locked).
+  const all=searchMode?(items||[]):(items||[]).filter(i=>i.kind!=="product"&&i.kind!=="logo"&&!isRestingImg(i));
+  const usedRecently=(l)=>isRestingImg(l); // used in the last 3 months → locked
 
   return<div style={{marginBottom:12}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:8}}>
@@ -4597,8 +4600,8 @@ function SmartLibraryPicker({d,setD,copy,brief,product,campaignId}){
       {all.map(l=>{
         const picked=d.libraryPick===l.id;
         return<div key={l.id}style={{...(searchMode?{}:{flexShrink:0,width:230,scrollSnapAlign:"start"}),border:`2px solid ${picked?C.teal:C.line}`,borderRadius:10,overflow:"hidden",background:picked?C.tealSoft:"#fff"}}>
-          <div onClick={()=>setD({libraryPick:l.id,libraryPickMeta:{label:l.product||l.file_name||"Library image",desc:l.description||"",tags:l.tags||[]}})}style={{cursor:"pointer"}}>
-            <div style={{position:"relative",aspectRatio:"4/3",background:"#F3F4F6",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}><ImageThumb id={l.id}alt={l.description}/>{usedRecently(l)&&<span title={"Last used "+fmtDate(l.last_used_at)}style={{position:"absolute",top:6,left:6,fontSize:9.5,fontWeight:800,color:"#fff",background:"#B45309",padding:"2px 7px",borderRadius:999,boxShadow:"0 1px 3px rgba(0,0,0,.35)"}}>Used already</span>}</div>
+          <div onClick={()=>{if(usedRecently(l))return;setD({libraryPick:l.id,libraryPickMeta:{label:l.product||l.file_name||"Library image",desc:l.description||"",tags:l.tags||[]}});}}style={{cursor:usedRecently(l)?"not-allowed":"pointer",opacity:usedRecently(l)?0.55:1}}>
+            <div style={{position:"relative",aspectRatio:"4/3",background:"#F3F4F6",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}><ImageThumb id={l.id}alt={l.description}/>{usedRecently(l)&&<span title={"Already used — locked until "+(restingUntil(l)?restingUntil(l).toLocaleDateString():"")+" (3-month cooldown)"}style={{position:"absolute",top:6,left:6,fontSize:9.5,fontWeight:800,color:"#fff",background:"#B45309",padding:"2px 7px",borderRadius:999,boxShadow:"0 1px 3px rgba(0,0,0,.35)"}}>Used already</span>}</div>
             <div style={{padding:"8px 11px"}}>
               <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
                 {l.product&&<span style={{fontSize:11,fontWeight:700,color:C.coral}}>{l.product}</span>}
@@ -4915,6 +4918,11 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   const[bgId,setBgId]=useState("");
   const[bgImg,setBgImg]=useState(null);
   const[customBg,setCustomBg]=useState(null);
+  const[bgFit,setBgFit]=useState("cover");   // cover (fill) | contain (fit)
+  const[bgScale,setBgScale]=useState(1);      // extra zoom on the background image
+  const[bgOffX,setBgOffX]=useState(0);        // -0.5..0.5 of width
+  const[bgOffY,setBgOffY]=useState(0);        // -0.5..0.5 of height
+  const[expandBusy,setExpandBusy]=useState(false); // generative smart-expand in progress
   const[textBackdrop,setTextBackdrop]=useState(false);
   const[genImg,setGenImg]=useState(null);
   const[lockProduct,setLockProduct]=useState(true); // true = generate empty scene, composite exact PNG (never let AI redraw the product)
@@ -4974,6 +4982,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
     : {id:nextEl(),type:"text",text:"New text",x:0.5,y:0.5,size:1,color:"#FFFFFF",font:"Rubik",bold:true,align:"center"}]);
   const updEl=(id,patch)=>setElements(es=>es.map(e=>e.id===id?{...e,...patch}:e));
   const rmEl=(id)=>setElements(es=>es.filter(e=>e.id!==id));
+  const dupEl=(id)=>setElements(es=>{const e=es.find(x=>x.id===id);if(!e)return es;return [...es,{...e,id:nextEl(),x:Math.min(0.95,(e.x||0.5)+0.04),y:Math.min(0.95,(e.y||0.5)+0.04)}];});
   const elImgRef=React.useRef(null);
   const addImageElement=(file)=>{if(!file)return;const r=new FileReader();r.onload=()=>setElements(es=>[...es,{id:nextEl(),type:"image",src:r.result,x:0.5,y:0.5,size:1}]);r.readAsDataURL(file);};
   const[textAlign,setTextAlign]=useState("");        // "" = follow placement column; else left/center/right
@@ -4983,7 +4992,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   const[loadingItems,setLoadingItems]=useState(true);
   const[saving,setSaving]=useState(false);
   // kind-aware lists: classified images go to the right picker; unclassified show in both
-  const isResting=(i)=>i.last_used_at&&(Date.now()-new Date(i.last_used_at).getTime())<45*86400000; // rest a used image for 45 days
+  const isResting=(i)=>isRestingImg(i); // a used scene rests (hidden from pickers) for ~3 months
   // A product packshot = a clean transparent PNG, or one the cataloguer explicitly called a "packshot".
   // Lifestyle/scene shots are JPEGs (cataloguer category "lifestyle") and must NOT appear here — this is
   // independent of the stored `kind`, since bulk uploads mis-tagged many scenes as products.
@@ -5160,7 +5169,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
     for(const para of paras){const t=para.trim();if(t)fallback.push(t);}
     return{lines:fallback.length?fallback:[],px};
   };
-  const drawBgImage=(ctx,img)=>{const s=Math.max(sz.w/img.width,sz.h/img.height);const dw=img.width*s,dh=img.height*s;ctx.drawImage(img,(sz.w-dw)/2,(sz.h-dh)/2,dw,dh);};
+  const drawBgImage=(ctx,img)=>{const cover=Math.max(sz.w/img.width,sz.h/img.height),contain=Math.min(sz.w/img.width,sz.h/img.height);const s=(bgFit==="contain"?contain:cover)*(bgScale||1);const dw=img.width*s,dh=img.height*s;ctx.drawImage(img,(sz.w-dw)/2+(bgOffX||0)*sz.w,(sz.h-dh)/2+(bgOffY||0)*sz.h,dw,dh);};
   const drawMockupPreset=(ctx,k)=>{
     const p=MOCKUP_PRESETS.find(x=>x.k===k)||MOCKUP_PRESETS[0];
     if(p.type==="sweep"){
@@ -5422,9 +5431,13 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
     elements.forEach(el=>{
       if(isHidden(el.id))return;
       const ex=el.x*sz.w, ey=el.y*sz.h;
+      ctx.save();
+      if(el.opacity!=null)ctx.globalAlpha=el.opacity;
+      if(el.rot){ctx.translate(ex,ey);ctx.rotate(el.rot*Math.PI/180);ctx.translate(-ex,-ey);}
       if(el.type==="image"){
         const im=elImgs[el.id];
         if(im){const dw=sz.w*0.28*(el.size||1), dh=dw*(im.height/im.width||1);
+          if(el.flipH){ctx.translate(ex,0);ctx.scale(-1,1);ctx.translate(-ex,0);}
           ctx.drawImage(im,ex-dw/2,ey-dh/2,dw,dh);}
       }else if(el.type==="cta"){
         const fpx=sz.w*0.034*(el.size||1);
@@ -5447,9 +5460,10 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
         lines.forEach((ln,i)=>ctx.fillText(ln,ex,ey-total/2+lh/2+i*lh));
         ctx.restore();
       }
+      ctx.restore();
     });
     ctx.textAlign="left";ctx.textBaseline="top";
-  },[sz,bgMode,bgColor,bgImg,genImg,mockupPreset,products,prodImgs,procImgs,shadow,shadowDir,hl,sh,anchor,ct,ctaBg,logoImg,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,huftReady,divider,autoFit,textShadow,textAlign,oldPrice,copyScale,autoAvoid,genUsedProduct,editorOpen,elements,elImgs,customBg,textBackdrop,hidden]);
+  },[sz,bgMode,bgColor,bgImg,genImg,mockupPreset,products,prodImgs,procImgs,shadow,shadowDir,hl,sh,anchor,ct,ctaBg,logoImg,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,huftReady,divider,autoFit,textShadow,textAlign,oldPrice,copyScale,autoAvoid,genUsedProduct,editorOpen,elements,elImgs,customBg,textBackdrop,hidden,bgFit,bgScale,bgOffX,bgOffY]);
 
   React.useEffect(()=>{if(!canGenerate&&bgMode==="generate")setBgMode("mockup");},[canGenerate,bgMode]);
   React.useEffect(()=>{draw();},[draw]);
@@ -5478,6 +5492,22 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
     genScenePrompt();
   },[bgMode,genPrompt,promptBusy,c&&c.id]);
   const setDesign=(f)=>patch&&patch(c.id,{data:{...(c.data||{}),design:{...(d||{}),...f}}});
+  // Generative smart-expand: outpaint the current background to fill the canvas aspect.
+  const smartExpand=async()=>{
+    const img=bgMode==="generate"?genImg:bgMode==="custom"?customBg:bgImg;
+    if(!img){if(toast)toast("Pick or generate a background first","error");return;}
+    setExpandBusy(true);
+    try{
+      const iw=img.naturalWidth||img.width, ih=img.naturalHeight||img.height, sc=Math.min(1,1024/Math.max(iw,ih));
+      const oc=document.createElement("canvas");oc.width=Math.round(iw*sc);oc.height=Math.round(ih*sc);
+      oc.getContext("2d").drawImage(img,0,0,oc.width,oc.height);
+      const src=oc.toDataURL("image/jpeg",0.92);
+      const r=await api.post("/api/expand-image",{image:src,aspectRatio:sz.ar,prompt:(genPrompt||"").trim()});
+      if(r&&r.image){const ni=await loadImage(r.image);setCustomBg(ni);setBgMode("custom");setBgFit("cover");setBgScale(1);setBgOffX(0);setBgOffY(0);if(toast)toast("Expanded to fill ✓","success");}
+      else if(toast)toast("Couldn't expand — try again","error");
+    }catch(e){if(toast)toast("Expand failed — deploy the latest server.js (expand-image route)","error");}
+    setExpandBusy(false);
+  };
   const runGenerate=async()=>{
     if(!genPrompt.trim()){setGenErr("No prompt available to generate from.");return;}
     if(lockProduct&&!products.some(p=>p.id)){setGenErr("Pick a product first — the scene is generated to match its surface, finish, colours and size.");return;}
@@ -5547,8 +5577,10 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
     }catch(e){if(toast)toast("Could not send the request — try again","error");}
     setReqBusy(false);
   };
-  const exportPng=()=>{const cv=ref.current;if(!cv)return;cv.toBlob(b=>{const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download=(c.product||"creative").replace(/\s+/g,"_")+"_"+sz.w+"x"+sz.h+".png";a.click();URL.revokeObjectURL(u);},"image/png");};
-  const saveToLib=async()=>{const cv=ref.current;if(!cv)return;setSaving(true);try{const dataUrl=cv.toDataURL("image/png");await api.post("/api/image-library",{file_name:(c.product||"creative")+"_composed.png",file_data:dataUrl,file_type:"image/png",kind:"asset"});if(toast)toast("Saved to Image library ✓","success");}catch(e){if(toast)toast(e.status===403?"You don't have permission to save":"Save failed","error");}setSaving(false);};
+  // Once a scene/mockup is actually output (downloaded, saved, or finalised) it rests for ~3 months.
+  const markBgUsed=()=>{if((bgMode==="library"||bgMode==="mockup")&&bgId){api.post("/api/image-library/mark-used",{ids:[bgId]}).then(()=>reloadLib&&reloadLib()).catch(()=>{});}};
+  const exportPng=()=>{const cv=ref.current;if(!cv)return;cv.toBlob(b=>{const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download=(c.product||"creative").replace(/\s+/g,"_")+"_"+sz.w+"x"+sz.h+".png";a.click();URL.revokeObjectURL(u);},"image/png");markBgUsed();};
+  const saveToLib=async()=>{const cv=ref.current;if(!cv)return;setSaving(true);try{const dataUrl=cv.toDataURL("image/png");await api.post("/api/image-library",{file_name:(c.product||"creative")+"_composed.png",file_data:dataUrl,file_type:"image/png",kind:"asset"});markBgUsed();if(toast)toast("Saved to Image library ✓","success");}catch(e){if(toast)toast(e.status===403?"You don't have permission to save":"Save failed","error");}setSaving(false);};
   // Make the composed canvas the FINAL design file, so the design can be marked done in-app (no Canva export needed).
   // Templates = saved arrangements; they configure elements + pull palette. Copy already auto-fills headline/CTA.
   const applyTemplate=(name)=>{
@@ -5570,7 +5602,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   };
   const useAsFinal=()=>{const cv=ref.current;if(!cv||!patch)return;setFinalSaving(true);
     try{const dataUrl=cv.toDataURL("image/png");patch(c.id,{data:{...(c.data||{}),design:{...(d||{}),finalFile:{name:(c.product||"creative")+"_composed.png",type:"image/png",dataUrl},finalSource:"composer",pendingApproval:true,submittedForApprovalAt:new Date().toISOString(),approvalStage:"design"}}});
-      // rest the lifestyle/mockup image used here so it doesn't get reused for 45 days
+      // rest the scene/mockup used here so it isn't reused for ~3 months
       if((bgMode==="library"||bgMode==="mockup")&&bgId){api.post("/api/image-library/mark-used",{ids:[bgId]}).then(()=>reloadLib&&reloadLib()).catch(()=>{});}
       if(toast)toast("Submitted for approval ✓ — stays here, marked Pending approval","success");
       api.post("/api/notify",{toRole:"design_lead",campaignId:c.id,kind:"Design needs review",body:(c.product||c.name||"A design")+" — submitted by "+(me&&me.name||"design")+". Needs your approval."}).catch(()=>{});
@@ -5803,7 +5835,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
           if(ct.text)rows.push({key:"cta",name:"Button (CTA)",sel:()=>setEditCopy("cta")});
           if(sh.text)rows.push({key:"sh",name:"Sub-headline",sel:()=>setEditCopy("sh")});
           if(hl.text)rows.push({key:"hl",name:"Headline",sel:()=>setEditCopy("hl")});
-          products.filter(p=>p.id).forEach(p=>{const it=productItems.find(x=>x.id===p.id);rows.push({key:p.id,name:"Product — "+(((it&&(it.product||it.file_name))||"item").slice(0,18)),move:d=>moveProd(p.pid,d),del:()=>rmProduct(p.pid)});});
+          products.filter(p=>p.id).forEach(p=>{const it=productItems.find(x=>x.id===p.id);rows.push({key:p.id,name:"Product — "+(((it&&(it.product||it.file_name))||"item").slice(0,18)),move:d=>moveProd(p.pid,d),del:()=>rmProduct(p.pid),sel:()=>setProdPickFor(p.pid)});});
           rows.push({key:"__bg__",name:"Background",noHide:true});
           const iconBtn={border:"none",background:"none",cursor:"pointer",padding:"2px 4px",fontSize:13,lineHeight:1,color:C.sub,borderRadius:5};
           return<div style={{marginBottom:14,border:`1px solid ${C.line}`,borderRadius:10,overflow:"hidden"}}>
@@ -5814,6 +5846,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
             <div style={{maxHeight:220,overflowY:"auto",padding:6}}>
               {rows.map(r=>{const hid=isHidden(r.key);return<div key={r.key}onClick={()=>{setSelLayer(r.key);r.sel&&r.sel();}}style={{display:"flex",alignItems:"center",gap:3,padding:"4px 6px",borderRadius:7,border:`1px solid ${selLayer===r.key?C.coral:"transparent"}`,background:selLayer===r.key?C.coral+"0E":"transparent",cursor:"pointer",marginBottom:2}}>
                 <span style={{flex:1,minWidth:0,fontSize:11.5,fontWeight:600,color:hid?C.line:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textDecoration:hid?"line-through":"none"}}>{r.name}</span>
+                {r.sel&&<button title="Edit"onClick={e=>{e.stopPropagation();setSelLayer(r.key);r.sel();}}style={iconBtn}>✎</button>}
                 {r.move&&<><button title="Bring forward"onClick={e=>{e.stopPropagation();r.move(1);}}style={iconBtn}>↑</button><button title="Send back"onClick={e=>{e.stopPropagation();r.move(-1);}}style={iconBtn}>↓</button></>}
                 {!r.noHide&&<button title={hid?"Show":"Hide"}onClick={e=>{e.stopPropagation();toggleHidden(r.key);}}style={{...iconBtn,color:hid?C.line:C.coral,fontSize:12}}>{hid?"◯":"⬤"}</button>}
                 {r.del&&<button title="Delete"onClick={e=>{e.stopPropagation();r.del();}}style={{...iconBtn,color:"#B91C1C",fontWeight:700}}>×</button>}
@@ -5821,6 +5854,23 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
             </div>
           </div>;
         })()}
+        {(bgImg||customBg||genImg)&&<div style={{marginBottom:14,border:`1px solid ${C.line}`,borderRadius:10,overflow:"hidden"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:6,padding:"8px 11px",borderBottom:`1px solid ${C.line}`,background:C.paper}}>
+            <span style={{fontSize:11,fontWeight:800,color:C.ink,textTransform:"uppercase",letterSpacing:.6}}>Background image</span>
+            <button onClick={()=>{setBgFit("cover");setBgScale(1);setBgOffX(0);setBgOffY(0);}}style={{border:"none",background:"none",color:C.coral,fontSize:11,fontWeight:700,cursor:"pointer",padding:0}}>Reset</button>
+          </div>
+          <div style={{padding:11,display:"grid",gap:9}}>
+            <div style={{display:"flex",gap:6}}>
+              {[["cover","Fill"],["contain","Fit"]].map(([k,lbl])=><button key={k}onClick={()=>setBgFit(k)}style={{flex:1,padding:"6px 0",fontSize:12,fontWeight:700,borderRadius:8,cursor:"pointer",border:`1.5px solid ${bgFit===k?C.coral:C.line}`,background:bgFit===k?C.coral:"#fff",color:bgFit===k?"#fff":C.ink}}>{lbl}</button>)}
+            </div>
+            {slider("Zoom",Math.round(bgScale*100),50,250,v=>setBgScale(v/100),v=>v+"%")}
+            {slider("Move ←→",Math.round(bgOffX*100),-50,50,v=>setBgOffX(v/100),v=>v+"%")}
+            {slider("Move ↑↓",Math.round(bgOffY*100),-50,50,v=>setBgOffY(v/100),v=>v+"%")}
+            <Btn small variant="dark"disabled={expandBusy}onClick={smartExpand}style={{width:"100%",justifyContent:"center"}}>{expandBusy?"Expanding…":"✨ Smart expand to fill"}</Btn>
+            <div style={{fontSize:10.5,color:C.sub,lineHeight:1.4}}>Generatively paints the empty edges so the image fills the whole frame — like Canva/Adobe expand. Best for backgrounds, not packshots.</div>
+            {bgFit==="contain"&&<div style={{fontSize:10.5,color:C.sub,lineHeight:1.4}}>“Fit” shows the whole image and may leave empty edges — use <b>Smart expand</b> to fill them.</div>}
+          </div>
+        </div>}
         <div style={{fontSize:11,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.6,marginBottom:10}}>Content &amp; styling</div>
         <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:11,alignContent:"start"}}>
         {bgMode!=="generate"&&<>
@@ -5940,6 +5990,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
               <span style={{fontSize:10,fontWeight:800,color:el.type==="cta"?C.coral:el.type==="image"?C.purple:C.teal,background:(el.type==="cta"?C.coral:el.type==="image"?C.purple:C.teal)+"18",padding:"2px 7px",borderRadius:999,textTransform:"uppercase"}}>{el.type==="cta"?"CTA":el.type==="image"?"Image":"Text"}</span>
               {el.type==="image"&&el.src&&<img src={el.src}alt=""style={{height:24,maxWidth:60,objectFit:"contain",borderRadius:3}}/>}
               <span style={{flex:1}}/>
+              <button onClick={()=>dupEl(el.id)}style={{border:"none",background:"transparent",cursor:"pointer",color:C.coral,fontSize:11.5,fontWeight:700}}>Duplicate</button>
               <button onClick={()=>rmEl(el.id)}style={{border:"none",background:"transparent",cursor:"pointer",color:"#B91C1C",fontSize:11.5,fontWeight:700}}>Remove</button>
             </div>
             {el.type!=="image"&&<><textarea value={el.text}onChange={e=>updEl(el.id,{text:e.target.value})}rows={el.type==="cta"?1:2}placeholder={el.type==="cta"?"Button text":"Type your text (Enter = new line)"}style={{...ctrl,resize:"vertical",marginBottom:8}}/>
@@ -5950,9 +6001,11 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
               {el.type==="text"&&<div><label style={fieldL}>Align</label><select value={el.align}onChange={e=>updEl(el.id,{align:e.target.value})}style={ctrl}><option value="center">Center</option><option value="left">Left</option><option value="right">Right</option></select></div>}
             </div></>}
             {slider("Size",Math.round((el.size||1)*100),40,260,v=>updEl(el.id,{size:v/100}),v=>v+"%")}
+            {slider("Opacity",Math.round((el.opacity!=null?el.opacity:1)*100),0,100,v=>updEl(el.id,{opacity:v/100}),v=>v+"%")}
+            {slider("Rotate",Math.round(el.rot||0),-180,180,v=>updEl(el.id,{rot:v}),v=>v+"°")}
             {slider("Horizontal",Math.round(el.x*100),0,100,v=>updEl(el.id,{x:v/100}),v=>v+"%")}
             {slider("Vertical",Math.round(el.y*100),0,100,v=>updEl(el.id,{y:v/100}),v=>v+"%")}
-            {el.type==="image"&&<Btn small variant="ghost"onClick={()=>{const im=new Image();im.onload=()=>{setCustomBg(im);setBgMode("custom");rmEl(el.id);};im.src=el.src;}}style={{marginTop:6}}><ImageIcon size={13}/>Set as background</Btn>}
+            {el.type==="image"&&<div style={{display:"flex",gap:8,marginTop:6,flexWrap:"wrap"}}><Btn small variant="ghost"onClick={()=>updEl(el.id,{flipH:!el.flipH})}>⇋ Flip</Btn><Btn small variant="ghost"onClick={()=>{const im=new Image();im.onload=()=>{setCustomBg(im);setBgMode("custom");rmEl(el.id);};im.src=el.src;}}><ImageIcon size={13}/>Set as background</Btn></div>}
             {el.type!=="image"&&<label style={{display:"flex",alignItems:"center",gap:7,fontSize:12.5,fontWeight:600,color:C.ink,cursor:"pointer",marginTop:6}}><input type="checkbox"checked={!!el.bold}onChange={e=>updEl(el.id,{bold:e.target.checked})}/>Bold</label>}
           </div>)}
         </div>
