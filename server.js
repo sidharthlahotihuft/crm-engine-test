@@ -64,6 +64,9 @@ const stripForbidden = (s) => {
   out = out.replace(/\[[A-Za-z][A-Za-z0-9_ .#-]{1,30}\]/g, "");       // [VARIABLE]
   out = out.replace(/[<\u2039][A-Za-z][A-Za-z0-9_ .#-]{1,30}[>\u203A]/g, ""); // <VAR>
   out = out.replace(/[(\[\{][\s,.;:\u2013\u2014-]*[)\]\}]/g, "");     // empty () [] {} left behind
+  // Remove opt-out / unsubscribe / "reply STOP" boilerplate — the platform handles this, it is never creative copy.
+  out = out.replace(/[^.!?\n]*\b(?:opt[\s-]?out|unsubscribe)\b[^.!?\n]*[.!?]?/gi, "");
+  out = out.replace(/[^.!?\n]*\breply\s+stop\b[^.!?\n]*[.!?]?/gi, "");
   out = out.replace(/[ \t]{2,}/g, " ").replace(/ +([,.!?])/g, "$1").replace(/\s+([,.])/g, "$1").replace(/^[\s,;:]+/gm, "").replace(/\n{3,}/g, "\n\n").trim();
   return out;
 };
@@ -133,7 +136,7 @@ const enforceCopyHardRules = (text, limits) => {
   }
   return stripForbidden(text); // plain-text response → still strip forbidden tokens
 };
-const SERVER_BUILD = "v29.66s - expand-image gains a refine mode: when the client sends the current placement as a soft-seeded full frame, the model repaints only the blurry seed areas and keeps the crisp photo where it sits (fill-from-where-you-left-it). Plus v29.65s vision reclassify, v29.64s no-leak rulebook.";
+const SERVER_BUILD = "v29.68s - Server HARD_RULES + seed rulebook now enforce: action-led copy always, push action in the first line, push has no image (no image copy/RTBs), and no opt-out boilerplate. Plus v29.67s opt-out strip.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -419,7 +422,10 @@ async function seedBestPractices() {
     "Strong first line that sparks curiosity; use action verbs (discover, switch, try, get).",
     "Short and scannable — no fluff, filler or repetition. Make the next step obvious.",
     "No ALL-CAPS words and no spammy phrasing; emojis sparingly, only where they add warmth.",
-    "WhatsApp: hook (pre-'read more') → payoff → RTB/USP proof → CTA → light opt-out line.",
+    "Every piece of copy must be ACTION-LED — give the reader a clear thing to do (tap, switch, try, shop, book, learn, save). Even awareness copy must drive an action, never just inform.",
+    "Push notifications: the action must be in the FIRST line (the title). Every push — even an awareness one — drives an action; if the first line doesn't move the reader to act, rewrite it. Push has no image, so never write image/overlay copy or image RTBs for it.",
+    "WhatsApp: a STRONG first line (hook) that earns the 'read more' tap → payoff → RTB/USP proof. Put the store/app/website action in the CTA field, not the body.",
+    "Never include opt-out, unsubscribe or 'reply STOP' lines, or any channel/system boilerplate — that is handled by the platform, not the creative copy.",
     "Never output placeholder tokens or merge tags (e.g. 'M-hash', {{1}}, {name}) — write the real words.",
   ];
   try {
@@ -1697,7 +1703,10 @@ app.post("/api/generate", authMiddleware, async (req, res) => {
     + "(3) Say \"pet parents\", never \"consumers\". Use \"furry family\", never \"furry friend\" or \"fur baby\". "
     + "(4) Never use: premium, luxury, cutting-edge, state-of-the-art, revolutionary, game-changing. "
     + "(5) No fear-based messaging, no medical/cure claims, never shame pet parents. "
-    + "(6) Respect the length limits for the channel exactly (push title and body are hard character caps).";
+    + "(6) Respect the length limits for the channel exactly (push title and body are hard character caps). "
+    + "(7) ACTION-LED ALWAYS: every piece of copy must drive a clear action (tap, switch, try, shop, book, learn, save); even awareness copy moves the reader to act, never just informs. "
+    + "(8) Push notifications: the action MUST be in the FIRST line (the title) — every push, even awareness ones, drives an action. Push has NO image, so never write image/overlay copy or image RTBs for a push. "
+    + "(9) No opt-out / unsubscribe / 'reply STOP' lines or any channel/system boilerplate — the platform adds those, not the copy.";
   const sys0 = kind === "copy" ? (system + HARD_RULES) : system;
   // No-leak guarantee: the server fetches the active copy rulebook from the DB and injects it itself,
   // so the rules apply even if a client omits them, and any newly added rule takes effect immediately.
