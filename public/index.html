@@ -108,7 +108,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.85 - Product-aware processing is scoped to product mockups only: the crop/white-balance/despill applies solely to kind=product packshots used as the product layer (backgrounds, lifestyle scenes and logos are never cropped or colour-shifted), and crop-box + colour sampling at upload now runs only for product-mockup uploads, not all images.";
+const BUILD="v29.87 - Composer product picker is now visual: instead of a name-only dropdown it shows a searchable thumbnail grid of ALL your product packshots, so you can see the right image and pick from the whole library (search by product, file name or tag). Selected product shows as a thumbnail + name.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -4992,6 +4992,8 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
     if(match){autoPickedRef.current=true;setProducts(ps=>{const a=[...ps];a[0]={...(a[0]||{pid:nextPid(),scale:0.5,x:0.5,y:0.62}),id:match.id};return a;});}
   },[productItems,c&&c.product]);
   const[finalSaving,setFinalSaving]=useState(false);
+  const[prodPickFor,setProdPickFor]=useState(null); // product slot pid currently browsing the library
+  const[prodQ,setProdQ]=useState("");               // product browser search
 
   // ===== Undo / redo history (snapshots editable state; excludes loaded image bitmaps) =====
   const snapshot=React.useCallback(()=>({sizeIdx,template,linkSizes,autoFit,bgMode,bgColor,bgId,genPrompt,genNeg,products,shadow,shadowDir,logoId,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,hl,sh,anchor,divider,ct,ctaBg,textShadow,textAlign,oldPrice,copyScale,elements}),[sizeIdx,template,linkSizes,autoFit,bgMode,bgColor,bgId,genPrompt,genNeg,products,shadow,shadowDir,logoId,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,hl,sh,anchor,divider,ct,ctaBg,textShadow,textAlign,oldPrice,copyScale,elements]);
@@ -5441,6 +5443,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   const setDesign=(f)=>patch&&patch(c.id,{data:{...(c.data||{}),design:{...(d||{}),...f}}});
   const runGenerate=async()=>{
     if(!genPrompt.trim()){setGenErr("No prompt available to generate from.");return;}
+    if(lockProduct&&!products.some(p=>p.id)){setGenErr("Pick a product first — the scene is generated to match its surface, finish, colours and size.");return;}
     setGenBusy(true);setGenErr("");
     try{
       const rulesText=(promptRules&&promptRules.length)?activeRuleText(promptRules):"";
@@ -5676,18 +5679,41 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
           <div><label style={fieldL}>Avoid (optional)</label><input value={genNeg}onChange={e=>setGenNeg(e.target.value)}style={ctrl}placeholder="text, watermarks, other products"/></div>
           <RefImagePicker d={d}setD={setDesign}campaignId={c.id}product={c.product}/>
           <label style={{display:"flex",alignItems:"flex-start",gap:7,fontSize:12,color:C.ink,cursor:"pointer",marginBottom:8,lineHeight:1.4}}><input type="checkbox"checked={lockProduct}onChange={e=>setLockProduct(e.target.checked)}style={{marginTop:2}}/><span>Keep my product exact <span style={{fontSize:10.5,color:C.sub}}>— generates an empty scene, then your real packshot composites on top (the AI never redraws it). Uncheck only if you want the AI to blend/restyle the product.</span></span></label>
-          <Btn small disabled={genBusy}onClick={runGenerate}style={{width:"100%",justifyContent:"center"}}>{genBusy?"Generating…":"Generate scene"}</Btn>
           {<div style={{borderTop:`1px solid ${C.line}`,paddingTop:8}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <span style={{fontSize:11,fontWeight:800,color:C.ink}}>Products in the scene{products.length>1?" · "+products.length:""}</span>
               {products.length<3&&<button onClick={addProduct}style={{border:"none",background:"none",color:C.coral,fontSize:11,fontWeight:700,cursor:"pointer",padding:0}}>+ Add</button>}
             </div>
-            <div style={{fontSize:10.5,color:C.sub,margin:"2px 0 8px"}}>Up to 3. Auto-picks your brief product. With ‘Keep my product exact’ on, your real packshot composites on top of the scene with a natural shadow — the label stays 100% accurate. Set the light direction in the shadow control to match the scene.</div>
-            {products.map((p,idx)=><div key={p.pid}style={{display:"flex",gap:6,alignItems:"center",marginBottom:6}}>
-              <select value={p.id}onChange={e=>updProduct(p.pid,{id:e.target.value})}style={{...ctrl,flex:1,minWidth:0}}><option value="">— product {idx+1} —</option>{productItems.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select>
-              {products.length>1&&<button onClick={()=>rmProduct(p.pid)}title="Remove"style={{border:"none",background:"none",color:"#B91C1C",fontSize:16,fontWeight:700,cursor:"pointer",padding:"0 4px",lineHeight:1}}>×</button>}
-            </div>)}
+            <div style={{fontSize:10.5,color:C.sub,margin:"2px 0 8px"}}>Pick the product first — the scene is generated around its surface, finish, colours and size. Up to 3; auto-picks your brief product. With ‘Keep my product exact’ on, your real packshot composites on top with a natural shadow — the label stays 100% accurate.</div>
+            {products.map((p,idx)=>{
+              const sel=productItems.find(i=>i.id===p.id);
+              const openPick=prodPickFor===p.pid;
+              const q=prodQ.trim().toLowerCase();
+              const list=q?productItems.filter(i=>(((i.product||"")+" "+(i.file_name||"")+" "+((i.tags||[]).join(" ")))).toLowerCase().includes(q)):productItems;
+              return<div key={p.pid}style={{marginBottom:8}}>
+                <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                  <button onClick={()=>{setProdPickFor(openPick?null:p.pid);setProdQ("");}}style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:8,border:`1px solid ${openPick?C.coral:C.line}`,borderRadius:8,padding:"6px 9px",background:"#fff",cursor:"pointer",textAlign:"left"}}>
+                    <span style={{width:34,height:34,flexShrink:0,borderRadius:6,overflow:"hidden",background:"#F3F4F6",display:"flex",alignItems:"center",justifyContent:"center"}}>{sel?<ImageThumb id={sel.id}alt={sel.product}/>:<ImageIcon size={15}color={C.line}/>}</span>
+                    <span style={{flex:1,minWidth:0,fontSize:12.5,fontWeight:600,color:sel?C.ink:C.sub,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sel?(sel.product||sel.file_name):("Choose product "+(idx+1)+" — browse all")}</span>
+                    <ChevronDown size={15}color={C.sub}/>
+                  </button>
+                  {products.length>1&&<button onClick={()=>rmProduct(p.pid)}title="Remove"style={{border:"none",background:"none",color:"#B91C1C",fontSize:16,fontWeight:700,cursor:"pointer",padding:"0 4px",lineHeight:1}}>×</button>}
+                </div>
+                {openPick&&<div style={{marginTop:6,border:`1px solid ${C.line}`,borderRadius:8,padding:8,background:"#FCFCFD"}}>
+                  <input autoFocus value={prodQ}onChange={e=>setProdQ(e.target.value)}placeholder={"Search all "+productItems.length+" products…"}style={{...ctrl,marginBottom:8}}/>
+                  {list.length===0?<div style={{fontSize:11.5,color:C.sub,padding:"4px 2px"}}>No products match “{prodQ}”.</div>
+                  :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(72px,1fr))",gap:6,maxHeight:250,overflowY:"auto"}}>
+                    {list.map(i=><button key={i.id}onClick={()=>{updProduct(p.pid,{id:i.id});setProdPickFor(null);setProdQ("");}}title={i.product||i.file_name}style={{border:`2px solid ${p.id===i.id?C.coral:C.line}`,borderRadius:8,overflow:"hidden",background:"#fff",cursor:"pointer",padding:0}}>
+                      <span style={{display:"block",aspectRatio:"1/1",background:"#F3F4F6"}}><ImageThumb id={i.id}alt={i.product}/></span>
+                      <span style={{display:"block",fontSize:9,color:C.sub,padding:"2px 3px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{i.product||i.file_name}</span>
+                    </button>)}
+                  </div>}
+                </div>}
+              </div>;
+            })}
           </div>}
+          {lockProduct&&!products.some(p=>p.id)&&<div style={{fontSize:11.5,color:C.coral,fontWeight:600,background:"#FFF7ED",border:`1px solid ${C.coral}40`,borderRadius:7,padding:"7px 10px"}}>Choose your product above so the scene is generated to match it (surface, finish, colours, size).</div>}
+          <Btn small disabled={genBusy||(lockProduct&&!products.some(p=>p.id))}onClick={runGenerate}style={{width:"100%",justifyContent:"center"}}>{genBusy?"Generating…":(lockProduct&&!products.some(p=>p.id))?"Pick a product first":"Generate scene"}</Btn>
           {genErr&&(()=>{
             const low=genErr.toLowerCase();
             const isQuota=low.includes("quota")||low.includes("limit: 0")||low.includes("billing")||low.includes("free_tier");
