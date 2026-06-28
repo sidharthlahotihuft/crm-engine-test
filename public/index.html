@@ -108,7 +108,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.82 - Library fixes: (1) thumbnails now lazy-load (only fetch when scrolled into view) so 200+ images render instead of staying blank. (2) Design-tab 'Search' now opens the WHOLE library — product packshots and logos included — as a selectable grid, so all your uploads are pickable. Suggested still shows only matched scenes.";
+const BUILD="v29.85 - Product-aware processing is scoped to product mockups only: the crop/white-balance/despill applies solely to kind=product packshots used as the product layer (backgrounds, lifestyle scenes and logos are never cropped or colour-shifted), and crop-box + colour sampling at upload now runs only for product-mockup uploads, not all images.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -874,6 +874,140 @@ const HUFT_VISUAL_GUIDELINES=`HUFT VISUAL GUIDELINES — apply to the generated 
 - Any pet must look like a real, specific individual (never clip-art, toy-like or cute-ified AI): anatomically correct with the right number of paws, toes, ears and eyes; natural varied fur (no plastic sheen); eyes symmetrical and naturally lit with a dark pupil (no glowing); shot at the pet's eye level. Expression: relaxed, happy, curious, alert or playful. Include Indian-breed (Indie/INDog) and senior dogs where natural. Never scared, cowering, aggressive, baring teeth, or a human-like smile.
 - Human–pet bond (when both are present): genuine physical closeness and habitual touch; the pet is the emotional anchor and the dominant subject (≈40%+ of the frame); the human is a supporting character, often looking at the pet.
 - Do NOT render any packaging, product packs, labels, sub-brand logos, badges, text, prices or watermarks — these are composited separately as approved artwork.`;
+
+/* ===== Product-aware scene realism ======================================
+   One source (the product's own attributes) drives BOTH the scene prompt and
+   the composite rebuild, so they can never disagree. Everything degrades
+   gracefully: with no tagged finish/size it still works off sensible defaults. */
+const SURFACE={
+  floor:     {id:"floor",     pxPerCm:0.012, camera:"a slightly elevated camera angle looking down", shadow:{sk:0.55,squash:0.30}, fragment:"on a wooden floor"},
+  table:     {id:"table",     pxPerCm:0.015, camera:"an eye-level shot with the table visible in the lower third", shadow:{sk:-0.35,squash:0.26}, fragment:"on a clean table surface"},
+  countertop:{id:"countertop",pxPerCm:0.018, camera:"an eye-level shot, close, with a shallow depth of field", shadow:{sk:-0.30,squash:0.22}, fragment:"on a kitchen countertop"},
+  outdoor:   {id:"outdoor",   pxPerCm:0.013, camera:"a low, ground-level angle", shadow:{sk:0.40,squash:0.30}, fragment:"on grass outdoors in soft natural light"},
+  hero:      {id:"hero",      pxPerCm:0.020, camera:"a straight-on studio angle", shadow:{sk:0,squash:0.18}, fragment:"on a seamless studio surface with a soft gradient"},
+};
+const MATERIAL={
+  matte:  {lighting:"soft diffuse light with no harsh reflections"},
+  gloss:  {lighting:"a soft rim light, a subtle specular highlight and a faint reflection on the surface just below"},
+  foil:   {lighting:"a directional highlight catching the foil with controlled glare"},
+  plastic:{lighting:"even soft light with a faint sheen and a soft reflection"},
+};
+function pickSurface(meta){
+  const t=(((meta&&meta.kind)||"")+" "+((meta&&meta.category)||"")+" "+((meta&&meta.product)||"")+" "+(((meta&&meta.tags)||[]).join(" "))).toLowerCase();
+  if(/\b(toy|chew|ball|rope|dumbbell|frisbee)\b/.test(t))return "floor";
+  if(/\b(can|tin|wet food|jar|bottle|gravy)\b/.test(t))return "countertop";
+  if(/\b(pouch|treat|sachet|topper|stick|biscuit)\b/.test(t))return "table";
+  if(/\b(bag|kibble|dry food|sack|pack)\b/.test(t))return "floor";
+  if(/\b(outdoor|park|grass|adventure|walk)\b/.test(t))return "outdoor";
+  return "table";
+}
+function parseHeightCm(meta){
+  if(meta&&meta.height_cm!=null&&!isNaN(Number(meta.height_cm))&&Number(meta.height_cm)>0)return Number(meta.height_cm);
+  const nums=String((meta&&meta.dimensions_cm)||"").match(/[\d.]+/g);
+  if(nums&&nums.length){const a=nums.slice(0,3).map(Number).filter(n=>n>0&&n<200);if(a.length)return Math.max(...a);}
+  return null;
+}
+function readColors(meta){try{const c=meta&&meta.dominant_colors;return c?(typeof c==="string"?JSON.parse(c):c):[];}catch(e){return [];}}
+// Same source → prompt + rebuild params.
+function buildSceneSpec(meta,archetypeScene){
+  const surf=SURFACE[pickSurface(meta)]||SURFACE.table;
+  const fin=(meta&&meta.finish&&MATERIAL[meta.finish])?meta.finish:null;
+  const lightDir=(meta&&meta.light_direction)||"left";
+  const colors=readColors(meta);
+  const heightCm=parseHeightCm(meta);
+  const prompt=[
+    archetypeScene||"",
+    surf.fragment,
+    "a clear empty area in the centre foreground, nothing placed on the surface",
+    "key light from the "+lightDir+", "+(fin?MATERIAL[fin].lighting:"soft natural light"),
+    colors.length?("a palette harmonising with "+colors.slice(0,3).join(", ")):"",
+    surf.camera,
+  ].filter(Boolean).join(", ");
+  return {
+    surface:surf.id, surf, lightDir, finish:fin, palette:colors, heightCm,
+    scalePct: heightCm?Math.min(0.62,Math.max(0.14, heightCm*surf.pxPerCm)) : null,  // product HEIGHT as fraction of frame height
+    prompt,
+    negative:"no products, no packaging, no bottles, no clutter in the foreground, no text, no logos",
+    lockRegions:["label","logo","brand_color"],
+  };
+}
+// Find the real product bounds inside a frame — works for transparent PNGs AND solid-bg packshots.
+function detectContentBounds(d,w,h,alphaOnly){
+  let transparent=false;for(let i=3;i<d.length;i+=4){if(d[i]<200){transparent=true;break;}}
+  if(alphaOnly)transparent=true; // PNG product shots: trim by transparency only, never colour-key
+  let minX=w,minY=h,maxX=0,maxY=0,any=false;
+  if(transparent){
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++){if(d[(y*w+x)*4+3]>20){any=true;if(x<minX)minX=x;if(x>maxX)maxX=x;if(y<minY)minY=y;if(y>maxY)maxY=y;}}
+    return any?{minX,minY,maxX,maxY,transparent:true,bg:null}:null;
+  }
+  const corner=(x,y)=>{const i=(y*w+x)*4;return [d[i],d[i+1],d[i+2]];};
+  const cs=[corner(1,1),corner(w-2,1),corner(1,h-2),corner(w-2,h-2)];
+  const bg=[0,1,2].map(j=>Math.round((cs[0][j]+cs[1][j]+cs[2][j]+cs[3][j])/4));
+  const thr=40;
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=(y*w+x)*4;if(Math.abs(d[i]-bg[0])+Math.abs(d[i+1]-bg[1])+Math.abs(d[i+2]-bg[2])>thr){any=true;if(x<minX)minX=x;if(x>maxX)maxX=x;if(y<minY)minY=y;if(y>maxY)maxY=y;}}
+  return any?{minX,minY,maxX,maxY,transparent:false,bg}:null;
+}
+// content_bbox → {x,y,w,h} normalised 0..1.
+function computeContentBBox(img){
+  try{
+    const W=img.naturalWidth||img.width,H=img.naturalHeight||img.height;if(!W||!H)return null;
+    const s=Math.min(1,260/Math.max(W,H));const w=Math.max(1,Math.round(W*s)),h=Math.max(1,Math.round(H*s));
+    const cv=document.createElement("canvas");cv.width=w;cv.height=h;const ctx=cv.getContext("2d");ctx.drawImage(img,0,0,w,h);
+    const b=detectContentBounds(ctx.getImageData(0,0,w,h).data,w,h);if(!b)return null;
+    return {x:+(b.minX/w).toFixed(4),y:+(b.minY/h).toFixed(4),w:+((b.maxX-b.minX+1)/w).toFixed(4),h:+((b.maxY-b.minY+1)/h).toFixed(4)};
+  }catch(e){return null;}
+}
+// Sample the N dominant colours of an image (opaque pixels) → ["#rrggbb",...].
+function dominantColors(img,k){
+  try{
+    const W=img.naturalWidth||img.width,H=img.naturalHeight||img.height;if(!W||!H)return [];
+    const s=Math.min(1,64/Math.max(W,H));const w=Math.max(1,Math.round(W*s)),h=Math.max(1,Math.round(H*s));
+    const cv=document.createElement("canvas");cv.width=w;cv.height=h;const ctx=cv.getContext("2d");ctx.drawImage(img,0,0,w,h);
+    const d=ctx.getImageData(0,0,w,h).data;const b={};
+    for(let i=0;i<d.length;i+=4){if(d[i+3]<32)continue;const key=((d[i]>>5)<<10)|((d[i+1]>>5)<<5)|(d[i+2]>>5);(b[key]||(b[key]=[0,0,0,0]));b[key][0]+=d[i];b[key][1]+=d[i+1];b[key][2]+=d[i+2];b[key][3]++;}
+    return Object.values(b).filter(v=>v[3]>0).sort((a,c)=>c[3]-a[3]).slice(0,k||4).map(v=>"#"+[0,1,2].map(j=>Math.round(v[j]/v[3]).toString(16).padStart(2,"0")).join(""));
+  }catch(e){return [];}
+}
+// Sample the average colour of a region of a loaded scene Image → [r,g,b] (white-balance target).
+function sampleSceneWB(img,x0,y0,x1,y1){
+  try{
+    const W=img.naturalWidth||img.width,H=img.naturalHeight||img.height;if(!W||!H)return null;
+    const sx=Math.max(0,Math.floor(x0*W)),sy=Math.max(0,Math.floor(y0*H));
+    const sw=Math.max(1,Math.floor((x1-x0)*W)),sh=Math.max(1,Math.floor((y1-y0)*H));
+    const cv=document.createElement("canvas");cv.width=Math.min(48,sw);cv.height=Math.min(48,sh);
+    const ctx=cv.getContext("2d");ctx.drawImage(img,sx,sy,sw,sh,0,0,cv.width,cv.height);
+    const d=ctx.getImageData(0,0,cv.width,cv.height).data;let r=0,g=0,b=0,n=0;
+    for(let i=0;i<d.length;i+=4){r+=d[i];g+=d[i+1];b+=d[i+2];n++;}
+    if(!n)return null;return [r/n,g/n,b/n];
+  }catch(e){return null;}
+}
+// Build a composite-ready product: crop to the real product, remove a solid bg if present,
+// gently white-balance toward the scene, despill the fringe. Returns {canvas,aspect} or null.
+function processProduct(img,wb,bbox,alphaOnly){
+  try{
+    const W=img.naturalWidth||img.width,H=img.naturalHeight||img.height;if(!W||!H)return null;
+    const s=Math.min(1,620/Math.max(W,H));const w=Math.max(2,Math.round(W*s)),h=Math.max(2,Math.round(H*s));
+    const c0=document.createElement("canvas");c0.width=w;c0.height=h;const x0=c0.getContext("2d");x0.drawImage(img,0,0,w,h);
+    let dat;try{dat=x0.getImageData(0,0,w,h);}catch(e){return null;}const d=dat.data;
+    const b=detectContentBounds(d,w,h,alphaOnly);if(!b)return null;
+    let minX=b.minX,minY=b.minY,maxX=b.maxX,maxY=b.maxY;
+    // honour a stored bbox if supplied (already in 0..1)
+    if(bbox&&bbox.w>0&&bbox.h>0){minX=Math.round(bbox.x*w);minY=Math.round(bbox.y*h);maxX=Math.round((bbox.x+bbox.w)*w)-1;maxY=Math.round((bbox.y+bbox.h)*h)-1;}
+    minX=Math.max(0,minX);minY=Math.max(0,minY);maxX=Math.min(w-1,maxX);maxY=Math.min(h-1,maxY);
+    // knock out a solid background (so a white/coloured packshot frame doesn't composite as a box)
+    if(b.bg){const bgc=b.bg,soft=70;for(let i=0;i<d.length;i+=4){const dist=Math.abs(d[i]-bgc[0])+Math.abs(d[i+1]-bgc[1])+Math.abs(d[i+2]-bgc[2]);if(dist<40)d[i+3]=0;else if(dist<40+soft)d[i+3]=Math.round(d[i+3]*((dist-40)/soft));}}
+    // white-balance toward scene + despill fringe
+    let pr=0,pg=0,pb=0,pn=0;for(let i=0;i<d.length;i+=4){if(d[i+3]>60){pr+=d[i];pg+=d[i+1];pb+=d[i+2];pn++;}}
+    if(wb&&pn){pr/=pn;pg/=pn;pb/=pn;const gr=(wb[0]-pr)*0.20,gg=(wb[1]-pg)*0.20,gb=(wb[2]-pb)*0.20;
+      for(let i=0;i<d.length;i+=4){if(d[i+3]>8){d[i]=Math.max(0,Math.min(255,d[i]+gr));d[i+1]=Math.max(0,Math.min(255,d[i+1]+gg));d[i+2]=Math.max(0,Math.min(255,d[i+2]+gb));}}}
+    for(let i=0;i<d.length;i+=4){const a=d[i+3];if(a>8&&a<150)d[i+3]=Math.round(a*0.72);}
+    x0.putImageData(dat,0,0);
+    const bw=Math.max(2,maxX-minX+1),bh=Math.max(2,maxY-minY+1);
+    const c1=document.createElement("canvas");c1.width=bw;c1.height=bh;const x1=c1.getContext("2d");
+    x1.drawImage(c0,minX,minY,bw,bh,0,0,bw,bh);
+    return {canvas:c1,aspect:bh/bw};
+  }catch(e){return null;}
+}
 
 /* ===== SVG icons ========================================================= */
 function Svg({size=18,color,style,children}){return<svg width={size}height={size}viewBox="0 0 24 24"fill="none"stroke={color||"currentColor"}strokeWidth="2"strokeLinecap="round"strokeLinejoin="round"style={style}>{children}</svg>;}
@@ -3403,6 +3537,10 @@ function ImageLibraryTab({me,toast}){
   const[uploadKind,setUploadKind]=useState("product"); // product mockup | asset
   const[viewKind,setViewKind]=useState("all");          // grid filter by kind
   const[uploadDims,setUploadDims]=useState("");        // optional packaging size, applies to this batch
+  const[uploadFinish,setUploadFinish]=useState("");    // matte|gloss|foil|plastic
+  const[uploadH,setUploadH]=useState("");              // height_cm
+  const[uploadW,setUploadW]=useState("");              // width_cm
+  const[uploadLight,setUploadLight]=useState("left");  // key-light direction in the packshot
   const fileRef=useRef(null);
   const folderRef=useRef(null);
 
@@ -3426,7 +3564,16 @@ function ImageLibraryTab({me,toast}){
         const{dataUrl,recompressed}=await prepUpload(f,uploadKind);
         const mime=!recompressed?f.type:((uploadKind==="product"||uploadKind==="logo")?"image/png":"image/jpeg");
         setUploading(u=>u.map(x=>x.key===key?{...x,status:"analysing"}:x));
-        const row=await api.post("/api/image-library",{file_name:f.name,file_data:dataUrl,file_type:mime,kind:uploadKind,dimensions_cm:uploadDims||null});
+        // Product-aware ingest applies to PRODUCT MOCKUPS only — auto-trim margins (content_bbox) + sample colours.
+        let content_bbox=null,dominant_colors=null;
+        if(uploadKind==="product"){try{const im=await loadImage(dataUrl);content_bbox=computeContentBBox(im);dominant_colors=dominantColors(im,4);}catch(e){}}
+        const extra=uploadKind==="product"?{
+          finish:["matte","gloss","foil","plastic"].includes(uploadFinish)?uploadFinish:null,
+          light_direction:uploadLight||null,
+          height_cm:uploadH!==""&&!isNaN(Number(uploadH))?Number(uploadH):null,
+          width_cm:uploadW!==""&&!isNaN(Number(uploadW))?Number(uploadW):null,
+        }:{};
+        const row=await api.post("/api/image-library",{file_name:f.name,file_data:dataUrl,file_type:mime,kind:uploadKind,dimensions_cm:uploadDims||null,content_bbox,dominant_colors,...extra});
         setItems(list=>[{...(row||{}),file_data:dataUrl,file_name:f.name,file_type:mime,kind:uploadKind,product:(row&&row.product)||"",category:(row&&row.category)||"",tags:(row&&row.tags)||[]},...(list||[])]);
         setUploading(u=>u.filter(x=>x.key!==key));
         if(toast)toast(`${f.name} added${recompressed?" (resized to fit)":""} ✓`,"success");
@@ -3459,7 +3606,15 @@ function ImageLibraryTab({me,toast}){
           <input ref={fileRef}type="file"accept="image/*"multiple style={{display:"none"}}onChange={e=>{if(e.target.files&&e.target.files.length)handleFiles(e.target.files);e.target.value="";}}/>
           <input ref={folderRef}type="file"webkitdirectory="" directory=""multiple style={{display:"none"}}onChange={e=>{const imgs=[...(e.target.files||[])].filter(f=>f.type&&f.type.startsWith("image/"));if(imgs.length)handleFiles(imgs);else if(toast)toast("No images found in that folder","error");e.target.value="";}}/>
         </div>
-        {uploadKind==="product"&&<input value={uploadDims}onChange={e=>setUploadDims(e.target.value)}placeholder="Packaging size (cm) — optional, e.g. 22.4 x 16.3 x 3.1 cm"style={{width:300,border:`1px solid ${C.line}`,borderRadius:8,padding:"6px 9px",fontSize:12}}/>}
+        {uploadKind==="product"&&<div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end",alignItems:"center"}}>
+          <input value={uploadDims}onChange={e=>setUploadDims(e.target.value)}placeholder="Packaging size (cm) — optional, e.g. 22.4 x 16.3 x 3.1 cm"style={{width:300,border:`1px solid ${C.line}`,borderRadius:8,padding:"6px 9px",fontSize:12}}/>
+          <input value={uploadH}onChange={e=>setUploadH(e.target.value)}placeholder="Height cm"title="Real product height — drives true scale in scenes"style={{width:84,border:`1px solid ${C.line}`,borderRadius:8,padding:"6px 9px",fontSize:12}}/>
+          <input value={uploadW}onChange={e=>setUploadW(e.target.value)}placeholder="Width cm"style={{width:80,border:`1px solid ${C.line}`,borderRadius:8,padding:"6px 9px",fontSize:12}}/>
+          <select value={uploadFinish}onChange={e=>setUploadFinish(e.target.value)}title="Surface finish — drives reflections & lighting"style={{border:`1px solid ${C.line}`,borderRadius:8,padding:"6px 9px",fontSize:12,background:"#fff"}}>
+            <option value="">Finish…</option><option value="matte">Matte</option><option value="gloss">Gloss</option><option value="foil">Foil</option><option value="plastic">Plastic</option></select>
+          <select value={uploadLight}onChange={e=>setUploadLight(e.target.value)}title="Key-light direction in the packshot"style={{border:`1px solid ${C.line}`,borderRadius:8,padding:"6px 9px",fontSize:12,background:"#fff"}}>
+            <option value="left">Light: left</option><option value="right">Light: right</option><option value="front">Light: front</option><option value="top">Light: top</option></select>
+        </div>}
         <span style={{fontSize:10.5,color:C.sub}}>“{({product:"Product packshot",asset:"Lifestyle / scene",mockup:"Mockup background",logo:"Logo / lockup"})[uploadKind]||"Asset"}” applies to this upload · pick multiple files, or “Upload folder” to add a whole folder at once (one folder = one kind)</span>
       </div>
     </div>
@@ -4767,6 +4922,9 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   // products / mockups — MULTI (library only). A post can feature several products (per the brief).
   const[products,setProducts]=useState([{pid:nextPid(),id:"",scale:0.55,x:0.5,y:0.62}]);
   const[prodImgs,setProdImgs]=useState({});   // id -> Image
+  const[procImgs,setProcImgs]=useState({});   // id -> {canvas,aspect} cropped + graded for compositing
+  const[sceneWB,setSceneWB]=useState(null);   // [r,g,b] sampled from the generated scene foreground
+  const[prodMeta,setProdMeta]=useState({});   // id -> library row (finish, dims, content_bbox, dominant_colors)
   const[elImgs,setElImgs]=useState({});       // element id -> Image (uploaded image elements)
   const[shadow,setShadow]=useState(true);
   const[shadowDir,setShadowDir]=useState("right"); // direction the cast shadow falls: left | right | back
@@ -4889,8 +5047,19 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   React.useEffect(()=>{let on=true;if(!logoId){setLogoImg(null);return;}api.get("/api/image-library/"+logoId).then(r=>loadImage(r.file_data)).then(im=>{if(on)setLogoImg(im);}).catch(()=>{});return()=>{on=false;};},[logoId]);
   // load any product image we don't have yet
   React.useEffect(()=>{let on=true;const need=products.map(p=>p.id).filter(id=>id&&!prodImgs[id]);
-    need.forEach(id=>api.get("/api/image-library/"+id).then(r=>loadImage(r.file_data)).then(im=>{if(on)setProdImgs(m=>({...m,[id]:im}));}).catch(()=>{}));
+    need.forEach(id=>api.get("/api/image-library/"+id).then(r=>{if(on)setProdMeta(m=>({...m,[id]:r}));return loadImage(r.file_data);}).then(im=>{if(on)setProdImgs(m=>({...m,[id]:im}));}).catch(()=>{}));
     return()=>{on=false;};},[products,prodImgs]);
+  // sample the scene's foreground white-balance once a scene is generated
+  React.useEffect(()=>{if(genImg&&bgMode==="generate"){try{setSceneWB(sampleSceneWB(genImg,0.28,0.6,0.72,0.92));}catch(e){}}else{setSceneWB(null);}},[genImg,bgMode]);
+  // (re)build cropped + graded products whenever the source images or scene white-balance change
+  React.useEffect(()=>{
+    const next={};
+    Object.keys(prodImgs).forEach(id=>{
+      let bbox=null;const meta=prodMeta[id];try{bbox=meta&&meta.content_bbox?(typeof meta.content_bbox==="string"?JSON.parse(meta.content_bbox):meta.content_bbox):null;}catch(e){}
+      const p=processProduct(prodImgs[id],sceneWB,bbox,true);if(p)next[id]=p;
+    });
+    setProcImgs(next);
+  },[prodImgs,prodMeta,sceneWB]);
   React.useEffect(()=>{let on=true;
     elements.filter(e=>e.type==="image"&&e.src&&!elImgs[e.id]).forEach(e=>loadImage(e.src).then(im=>{if(on)setElImgs(m=>({...m,[e.id]:im}));}).catch(()=>{}));
     return()=>{on=false;};},[elements,elImgs]);
@@ -5104,7 +5273,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
     const regH=Math.max(sz.h*0.12, regBot-regTop), nP=rendered.length;
     prodHitsRef.current=[];
     rendered.forEach((p,pi)=>{
-      const img=prodImgs[p.id], aspect=img.height/img.width;
+      const img=prodImgs[p.id]; const proc=procImgs[p.id]; const drawImg=(proc&&proc.canvas)||img; const aspect=(proc&&proc.aspect)||(img.height/img.width);
       let pw,ph,cx,cy;
       if(autoFit){
         const gapW=sz.w*0.02, maxPw=(sz.w-pad*2-(nP-1)*gapW)/Math.max(1,nP);
@@ -5125,7 +5294,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
           const sw=Math.max(2,Math.round(pw)), shh=Math.max(2,Math.round(ph));
           const soff=document.createElement("canvas");soff.width=sw;soff.height=shh;
           const sctx=soff.getContext("2d");
-          sctx.drawImage(img,0,0,sw,shh);
+          sctx.drawImage(drawImg,0,0,sw,shh);
           sctx.globalCompositeOperation="source-in";sctx.fillStyle="#000";sctx.fillRect(0,0,sw,shh);
           ctx.save();
           ctx.translate(px+pw/2, py+ph*0.965);
@@ -5143,7 +5312,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
         ctx.save();ctx.translate(scx,scy);ctx.scale(1,ry/rx);ctx.fillStyle=g;
         ctx.beginPath();ctx.arc(0,0,rx,0,Math.PI*2);ctx.fill();ctx.restore();
       }
-      ctx.drawImage(img,px,py,pw,ph);
+      ctx.drawImage(drawImg,px,py,pw,ph);
     });
 
     // 3) image copy — headline + sub-headline
@@ -5252,7 +5421,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
       }
     });
     ctx.textAlign="left";ctx.textBaseline="top";
-  },[sz,bgMode,bgColor,bgImg,genImg,mockupPreset,products,prodImgs,shadow,shadowDir,hl,sh,anchor,ct,ctaBg,logoImg,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,huftReady,divider,autoFit,textShadow,textAlign,oldPrice,copyScale,autoAvoid,genUsedProduct,editorOpen,elements,elImgs,customBg,textBackdrop]);
+  },[sz,bgMode,bgColor,bgImg,genImg,mockupPreset,products,prodImgs,procImgs,shadow,shadowDir,hl,sh,anchor,ct,ctaBg,logoImg,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,huftReady,divider,autoFit,textShadow,textAlign,oldPrice,copyScale,autoAvoid,genUsedProduct,editorOpen,elements,elImgs,customBg,textBackdrop]);
 
   React.useEffect(()=>{if(!canGenerate&&bgMode==="generate")setBgMode("mockup");},[canGenerate,bgMode]);
   React.useEffect(()=>{draw();},[draw]);
@@ -5287,10 +5456,12 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
       let basePrompt=genPrompt.trim();
       let negP=genNeg;
       if(lockProduct){
-        // Product-locked: generate an EMPTY scene so the model never draws (and never distorts) the product.
-        const lightWord=shadowDir==="back"?"from the top / front":shadowDir==="left"?"from the right side":"from the left side";
-        basePrompt=genPrompt.trim()+"\n\nIMPORTANT: Render the SCENE ONLY with NO product, packaging, pouch, box, bottle, can, jar, label or item anywhere. Photorealistic setting with ONE clearly readable flat surface in the FOREGROUND (floor / table / counter) across the lower third, shot at product eye-level. Keep "+productZone+" clean and uncluttered as a believable hero spot where a single product will be placed afterwards, with soft directional light coming "+lightWord+" and natural ground contact on that surface.";
-        negP=[genNeg,"product, packaging, bottle, box, pouch, can, jar, label, item"].filter(Boolean).join(", ");
+        // Product-locked: generate an EMPTY but PRODUCT-AWARE scene (surface + finish-driven light + light dir + palette),
+        // so the model never draws the product; the real cropped packshot is composited on top afterwards.
+        const firstId=(sel.find(p=>p.id)||{}).id;
+        const spec=buildSceneSpec((firstId&&prodMeta[firstId])||{},genPrompt.trim());
+        basePrompt=spec.prompt+"\n\nIMPORTANT: Render the SCENE ONLY with NO product, packaging, pouch, box, bottle, can, jar, label or item anywhere — just the empty setting and surface described, shot at product eye-level, with "+productZone+" left clear and uncluttered as the hero landing spot, and natural ground contact on that surface.";
+        negP=[genNeg,spec.negative].filter(Boolean).join(", ");
       }else{
         for(const p of sel){try{const lib=await api.get("/api/image-library/"+p.id);if(lib&&lib.file_data)productImages.push(lib.file_data);}catch(e){}}
       }
@@ -5306,7 +5477,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
           const items=(place&&place.items)||[];
           if(items.length){
             setAutoFit(false);
-            setProducts(ps=>ps.map(pp=>{const k=withId.findIndex(w=>w.pid===pp.pid);if(k<0||!items[k])return pp;const it=items[k];const pimg=prodImgs[pp.id];const aspect=pimg?(pimg.height/pimg.width):1.3;const ph=it.w*sz.w*aspect;const y=Math.min(0.95,Math.max(0.08,it.baseY-(ph/2)/sz.h));return {...pp,x:it.cx,y,scale:it.w};}));
+            setProducts(ps=>ps.map(pp=>{const k=withId.findIndex(w=>w.pid===pp.pid);if(k<0||!items[k])return pp;const it=items[k];const proc=procImgs[pp.id];const pimg=prodImgs[pp.id];const aspect=(proc&&proc.aspect)||(pimg?(pimg.height/pimg.width):1.3);const meta=prodMeta[pp.id];const hcm=meta&&Number(meta.height_cm)>0?Number(meta.height_cm):null;let scaleW=it.w;if(hcm){const surf=SURFACE[pickSurface(meta)]||SURFACE.table;const phFrac=Math.min(0.62,Math.max(0.14,hcm*surf.pxPerCm));scaleW=Math.max(0.08,Math.min(0.7,(phFrac*sz.h/aspect)/sz.w));}const ph=scaleW*sz.w*aspect;const y=Math.min(0.95,Math.max(0.08,it.baseY-(ph/2)/sz.h));return {...pp,x:it.cx,y,scale:scaleW};}));
             didPlace=true;
           }
         }catch(e){
