@@ -53,8 +53,8 @@ const api = {
   get(p){return this.req("GET",p)},post(p,b){return this.req("POST",p,b)},
   put(p,b){return this.req("PUT",p,b)},del(p){return this.req("DELETE",p)},
 };
-async function callClaude(system,prompt,expectJson,kind){
-  const data=await api.post("/api/generate",{system,prompt,kind});
+async function callClaude(system,prompt,expectJson,kind,limits){
+  const data=await api.post("/api/generate",{system,prompt,kind,limits});
   const text=data.text||"";
   if(!expectJson)return text;
   const clean=text.replace(/```json|```/g,"").trim();
@@ -108,7 +108,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.90 - Canva-style Layers panel in the composer's right column: every layer (headline, sub-headline, button, each product, sub-brand & HUFT logos, extra text/CTA/image elements, background) is listed top=front. Each row has show/hide (eye), and products + extra elements also get bring-forward / send-back reorder and delete. Click a copy layer to edit it on the canvas. Layer typography & styling controls remain below.";
+const BUILD="v29.91 - Copy hard-rules now enforced server-side (cannot be skipped): client forwards channel-aware length limits on every copy generation, and the composer sanitises seeded copy so M-hash / placeholders never render even from older stored copy. Includes v29.90 Layers panel, v29.89 brief-less composer, v29.88 product-picker fix.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -205,6 +205,8 @@ const stripForbidden=(s)=>{
 };
 const sanitizeOption=(o)=>{if(!o||typeof o!=="object")return o;const f={...o};["subject","header","body","cta","direction"].forEach(k=>{if(typeof f[k]==="string")f[k]=stripForbidden(f[k]);});if(Array.isArray(f.rtbs))f.rtbs=f.rtbs.map(x=>typeof x==="string"?stripForbidden(x):x).filter(Boolean).slice(0,3);return f;};
 const sanitizeOptions=(arr)=>Array.isArray(arr)?arr.map(sanitizeOption):arr;
+// Hard length caps per channel — passed to the server, which clamps regardless of what the model returns.
+const copyLimits=(isPush,isEmail)=>isPush?{header:50,body:90,cta:25}:isEmail?{subject:50,cta:30}:{cta:30};
 // Shared shape/format spec for copy generation — used by BOTH the bulk generator and the per-card generator so they never drift.
 // header = the IMAGE COPY / on-creative overlay: must be a short, crisp, FLOWING line (or two) — never broken-up word fragments. Surface the offer here when the brief has one.
 const COPY_SHAPE=(isPush,isEmail)=>(isPush
@@ -1110,7 +1112,8 @@ async function genCopyOptionsFor(c, ruleStr, fb){
   const nOpts=copyOptionCount(c.channel);
   const shape=COPY_SHAPE(isPush,isEmail);
   const sys="You write "+(c.channel||"WhatsApp")+" CRM copy for HUFT.\n"+BRAND_CONTEXT+"\n"+channelRules+"\n"+COPY_BEST_PRACTICES+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nTeam feedback:\n"+fb:"")+"\nReturn ONLY JSON array of "+nOpts+" options, "+shape;
-  return sanitizeOptions(await callClaude(sys, briefBlockFor(c), true, "copy"));
+  const limits=copyLimits(isPush,isEmail);
+  return sanitizeOptions(await callClaude(sys, briefBlockFor(c), true, "copy", limits));
 }
 // One-click "Copy text" button with copied-state feedback
 function CopyBtn({text,label="Copy text",small=true,style}){
@@ -3787,7 +3790,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         const nOpts=copyOptionCount(c.channel);
         const shape=COPY_SHAPE(isPush,isEmail);
         const sys="You write "+(c.channel||"WhatsApp")+" CRM copy for HUFT.\n"+BRAND_CONTEXT+"\n"+channelRules+"\n"+COPY_BEST_PRACTICES+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nTeam feedback:\n"+fb:"")+`\nReturn ONLY JSON array of ${nOpts} options, `+shape;
-        const j=sanitizeOptions(await callClaude(sys,briefBlock,true,"copy"));
+        const j=sanitizeOptions(await callClaude(sys,briefBlock,true,"copy",copyLimits(isPush,isEmail)));
         patch(c.id,{data:{...(c.data||{}),copyOptions:j,selectedCopyIdx:null,sentBack:false},copy_approver:null,stage:"content"});
         setShowAll(false);
       }catch(e){console.error("Gen error:",e);setErr("Generation failed: "+(e.message||"unknown error — check Vercel logs"));}setBusy(false);
@@ -3801,7 +3804,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         const channelRules=isPush?PUSH_RULES:isEmail?EMAIL_RULES:WHATSAPP_RULES;
         const sys="You refine ONE "+(c.channel||"WhatsApp")+" CRM copy for HUFT.\n"+BRAND_CONTEXT+"\n"+channelRules+"\n"+COPY_BEST_PRACTICES+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nFeedback:\n"+fb:"")+(isPush?"\nPUSH: title max 40 (hard 50); body max 70 chars (HARD LIMIT — second line never exceeds 70), at most two short flowing lines.":"")+"\nThe header is the IMAGE COPY / overlay — keep it a short, crisp, FLOWING line, never broken-up word fragments. Return ONLY JSON: {direction,header,body,cta}.";
         const usr=briefBlock+"\n\nCurrent:\n"+JSON.stringify(opts[idx])+"\n\nSteer (one-time): "+refineText;
-        const j=sanitizeOption(await callClaude(sys,usr,true,"copy"));
+        const j=sanitizeOption(await callClaude(sys,usr,true,"copy",copyLimits(isPush,isEmail)));
         const wasSelected=sel===idx;
         const newData={...(c.data||{}),copyOptions:opts.map((o,i)=>i===idx?j:o),sentBack:false};
         if(wasSelected)newData.selectedCopyIdx=null;
@@ -3819,7 +3822,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         const channelRules=isPush?PUSH_RULES:isEmail?EMAIL_RULES:WHATSAPP_RULES;
         const sys="You revise ONE "+(c.channel||"WhatsApp")+" CRM copy for HUFT to address a reviewer's send-back.\n"+BRAND_CONTEXT+"\n"+channelRules+"\n"+COPY_BEST_PRACTICES+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nFeedback:\n"+fb:"")+(isPush?"\nPUSH: title max 40 (hard 50); body max 70 chars (HARD LIMIT — second line never exceeds 70), at most two short flowing lines.":"")+"\nThe header is the IMAGE COPY / overlay — keep it a short, crisp, FLOWING line, never broken-up word fragments. Return ONLY JSON: {direction,header,body,cta}.";
         const usr=briefBlock+"\n\nCurrent copy:\n"+JSON.stringify(opts[idx])+"\n\nThe reviewer sent this back for changes. Revise the copy to fully address this feedback while staying true to the brief and rulebook:\n"+(reason||"Improve clarity, brand fit, and impact.");
-        const j=sanitizeOption(await callClaude(sys,usr,true,"copy"));
+        const j=sanitizeOption(await callClaude(sys,usr,true,"copy",copyLimits(isPush,isEmail)));
         const newData={...(c.data||{}),copyOptions:opts.map((o,i)=>i===idx?j:o),sentBack:false};
         patch(c.id,{data:newData});
         setRefineFor(null);
@@ -4943,14 +4946,14 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   const[huftReady,setHuftReady]=useState(false);
 
   // image copy ONLY (copy.header = on-image overlay; never copy.body)
-  const headerLines=(((copy&&copy.header)||"").split(/\r?\n/).map(s=>s.trim()).filter(Boolean));
+  const headerLines=((stripForbidden((copy&&copy.header)||"")).split(/\r?\n/).map(s=>s.trim()).filter(Boolean));
   const[hl,setHl]=useState({text:headerLines[0]||"",font:"Korolev",size:1,kern:0,dx:0,dy:0,bold:true,color:"#FFFFFF",strike:false});
   const[sh,setSh]=useState({text:headerLines.slice(1).join(" ")||"",font:"Rubik",size:1,kern:0,dx:0,dy:0,bold:false,color:"#FFFFFF",strike:false});
   const[anchor,setAnchor]=useState("top-left");
   const[divider,setDivider]=useState({on:false,y:0.5,w:0.5,color:"#FFFFFF"});
   const[open,setOpen]=useState({hl:true,sh:false,cta:false});
 
-  const[ct,setCt]=useState({text:(copy&&copy.cta)||"",font:"Rubik",size:1,kern:0,dx:0,dy:0,bold:true,color:"#FFFFFF"});
+  const[ct,setCt]=useState({text:stripForbidden((copy&&copy.cta)||""),font:"Rubik",size:1,kern:0,dx:0,dy:0,bold:true,color:"#FFFFFF"});
   const[ctaBg,setCtaBg]=useState(C.coral);
   const[textShadow,setTextShadow]=useState("none"); // none | soft | drop
   const[copyScale,setCopyScale]=useState(1); // master scale for the whole image-copy block
