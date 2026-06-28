@@ -133,7 +133,7 @@ const enforceCopyHardRules = (text, limits) => {
   }
   return stripForbidden(text); // plain-text response → still strip forbidden tokens
 };
-const SERVER_BUILD = "v29.62s - Fix image tagging: new POST /api/image-library/retag re-derives `kind` for the whole library (transparent PNG → product packshot, cataloguer 'lifestyle' → asset/scene, logos/mockups preserved); the cataloguer now also fills `kind` on upload; PUT can edit `kind`. Plus v29.61s server-enforced copy hard-rules and v29.60s 2000-row library list.";
+const SERVER_BUILD = "v29.64s - No-leak rulebook: /api/generate now fetches the active copy rules from the DB and injects them into the system prompt server-side, so the rulebook always applies (even if a client omits it) and any newly added rule takes effect immediately. Plus v29.63s smart-expand/outpaint, v29.62s image re-tag, v29.61s copy hard-rules, v29.60s 2000-row list.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -1392,6 +1392,20 @@ app.post("/api/generate-image", authMiddleware, roles("admin", "brand", "design"
   }
 });
 
+// Generative expand / smart-fill (outpaint): extend an image to fill a target aspect ratio.
+app.post("/api/expand-image", authMiddleware, roles("admin", "brand", "design", "business"), async (req, res) => {
+  const { image, aspectRatio, prompt } = req.body || {};
+  if (!image || !String(image).startsWith("data:")) return res.status(400).json({ error: "image (data URL) required" });
+  const ar = aspectRatio || "1:1";
+  const full = `You are given ONE photograph as input. Extend it to completely fill a ${ar} frame using generative outpainting.
+HARD RULES: keep the original photo's existing content EXACTLY as-is — do not move, crop, recolour, restyle, or regenerate any part that already exists; place it unchanged and centred. Paint MORE of the same scene outward into the new empty areas (continue the background, surface, surroundings, textures) so nothing looks cut off or bordered. Seamlessly match the lighting direction, colour temperature, grain, depth of field and perspective at the seams. Photorealistic. No added text, words, logos, badges, frames or watermarks.${prompt ? "\nScene note: " + String(prompt) : ""}`;
+  try {
+    const out = await generateImageFromPrompt(full, ar, [image]);
+    res.json({ image: out });
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+
+
 // List / search the library. ?q= free-text across product/category/tags/description.
 // Metadata only by default (no base64) for speed; ?withData=1 to include image data.
 app.get("/api/image-library", authMiddleware, async (req, res) => {
@@ -1657,7 +1671,16 @@ app.post("/api/generate", authMiddleware, async (req, res) => {
     + "(4) Never use: premium, luxury, cutting-edge, state-of-the-art, revolutionary, game-changing. "
     + "(5) No fear-based messaging, no medical/cure claims, never shame pet parents. "
     + "(6) Respect the length limits for the channel exactly (push title and body are hard character caps).";
-  const sys = kind === "copy" ? (system + HARD_RULES) : system;
+  const sys0 = kind === "copy" ? (system + HARD_RULES) : system;
+  // No-leak guarantee: the server fetches the active copy rulebook from the DB and injects it itself,
+  // so the rules apply even if a client omits them, and any newly added rule takes effect immediately.
+  let sys = sys0;
+  if (kind === "copy") {
+    try {
+      const rules = await db("SELECT text FROM rules WHERE type='copy' AND active=true ORDER BY id");
+      if (rules && rules.length) sys = sys0 + "\n\nACTIVE RULEBOOK (authoritative — always apply every rule, never ignore):\n" + rules.map(r => "- " + r.text).join("\n");
+    } catch (e) {}
+  }
   try {
     let text = await generate(sys, prompt, want);
     if (kind === "copy") text = enforceCopyHardRules(text, limits); // strip forbidden tokens + clamp lengths — cannot be skipped
