@@ -108,7 +108,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.91 - Copy hard-rules now enforced server-side (cannot be skipped): client forwards channel-aware length limits on every copy generation, and the composer sanitises seeded copy so M-hash / placeholders never render even from older stored copy. Includes v29.90 Layers panel, v29.89 brief-less composer, v29.88 product-picker fix.";
+const BUILD="v29.92 - Product-first generate flow. The product picker is now step ① at the very top (the hero); the scene prompt is ②. For a brief-backed asset the scene prompt auto-fills from the brief once (edit freely); for a New asset it stays empty for you to describe. Product always composites on top exact. Includes v29.91 server-enforced copy hard-rules wiring.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -5453,6 +5453,17 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
     const j=await callClaude(sys,usr,true);
     if(j&&j.prompt)setGenPrompt(j.prompt);if(j&&j.negativePrompt)setGenNeg(j.negativePrompt);
   }catch(e){}setPromptBusy(false);};
+  // For a brief-backed asset, auto-build the scene prompt from the brief once (product stays hero).
+  // For a new/blank asset (no brief), leave the prompt empty for the user to type.
+  const autoPromptRef=React.useRef(false);
+  React.useEffect(()=>{
+    if(autoPromptRef.current||bgMode!=="generate"||genPrompt.trim()||promptBusy)return;
+    const brief=(c&&c.data&&c.data.brief)||{};
+    const hasBrief=!!((c&&c.product)||brief.idea||brief.copyDirection);
+    if(!hasBrief)return;
+    autoPromptRef.current=true;
+    genScenePrompt();
+  },[bgMode,genPrompt,promptBusy,c&&c.id]);
   const setDesign=(f)=>patch&&patch(c.id,{data:{...(c.data||{}),design:{...(d||{}),...f}}});
   const runGenerate=async()=>{
     if(!genPrompt.trim()){setGenErr("No prompt available to generate from.");return;}
@@ -5688,17 +5699,17 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
 
 
         {bgMode==="generate"&&canGenerate&&<div style={{gridColumn:"1 / -1",display:"grid",gap:8,padding:"10px 12px",background:C.paper,border:`1px solid ${C.line}`,borderRadius:8}}>
-          <div><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}><label style={fieldL}>Prompt (scene / background)</label><button onClick={genScenePrompt}disabled={promptBusy}style={{border:"none",background:"none",cursor:promptBusy?"wait":"pointer",color:C.coral,fontSize:11,fontWeight:700,padding:0,whiteSpace:"nowrap"}}>{promptBusy?"Writing…":"✨ From art direction"}</button></div><textarea value={genPrompt}onChange={e=>setGenPrompt(e.target.value)}rows={2}style={{...ctrl,resize:"vertical"}}placeholder="e.g. warm rustic kitchen counter, soft morning light"/></div>
+          <div><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}><label style={fieldL}>② Scene / background {(c&&c.product)?"(auto-filled from the brief — edit freely)":"(describe the scene)"}</label><button onClick={genScenePrompt}disabled={promptBusy}style={{border:"none",background:"none",cursor:promptBusy?"wait":"pointer",color:C.coral,fontSize:11,fontWeight:700,padding:0,whiteSpace:"nowrap"}}>{promptBusy?"Writing…":"✨ From art direction"}</button></div><textarea value={genPrompt}onChange={e=>setGenPrompt(e.target.value)}rows={2}style={{...ctrl,resize:"vertical"}}placeholder="e.g. warm rustic kitchen counter, soft morning light"/></div>
           <div><label style={fieldL}>Avoid (optional)</label><input value={genNeg}onChange={e=>setGenNeg(e.target.value)}style={ctrl}placeholder="text, watermarks, other products"/></div>
           <button onClick={()=>setShowAdv(a=>!a)}style={{border:"none",background:"none",color:C.coral,fontSize:11.5,fontWeight:700,cursor:"pointer",padding:0,textAlign:"left",width:"fit-content"}}>{showAdv?"▾ Fewer options":"▸ More options — style reference & product handling"}</button>
           {showAdv&&<><RefImagePicker d={d}setD={setDesign}campaignId={c.id}product={c.product}/>
           <label style={{display:"flex",alignItems:"flex-start",gap:7,fontSize:12,color:C.ink,cursor:"pointer",marginBottom:8,lineHeight:1.4}}><input type="checkbox"checked={lockProduct}onChange={e=>setLockProduct(e.target.checked)}style={{marginTop:2}}/><span>Keep my product exact <span style={{fontSize:10.5,color:C.sub}}>— generates an empty scene, then your real packshot composites on top (the AI never redraws it). Uncheck only if you want the AI to blend/restyle the product.</span></span></label></>}
-          {<div style={{borderTop:`1px solid ${C.line}`,paddingTop:8}}>
+          {<div style={{order:-1,marginBottom:4}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <span style={{fontSize:11,fontWeight:800,color:C.ink}}>Products in the scene{products.length>1?" · "+products.length:""}</span>
+              <span style={{fontSize:11,fontWeight:800,color:C.ink}}>① Product — the hero{products.length>1?" · "+products.length:""}</span>
               {products.length<3&&<button onClick={addProduct}style={{border:"none",background:"none",color:C.coral,fontSize:11,fontWeight:700,cursor:"pointer",padding:0}}>+ Add</button>}
             </div>
-            <div style={{fontSize:10.5,color:C.sub,margin:"2px 0 8px"}}>Pick the product first — the scene is generated around its surface, finish, colours and size. Up to 3; auto-picks your brief product. With ‘Keep my product exact’ on, your real packshot composites on top with a natural shadow — the label stays 100% accurate.</div>
+            <div style={{fontSize:10.5,color:C.sub,margin:"2px 0 8px"}}>Pick your product first — the scene is generated around its surface, finish, colours and size, and your real packshot composites on top (label stays 100% accurate). Up to 3.</div>
             {products.map((p,idx)=>{
               const sel=productItems.find(i=>i.id===p.id);
               const openPick=prodPickFor===p.pid;
