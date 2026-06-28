@@ -136,7 +136,7 @@ const enforceCopyHardRules = (text, limits) => {
   }
   return stripForbidden(text); // plain-text response → still strip forbidden tokens
 };
-const SERVER_BUILD = "v29.70s - Prompt caching enabled on the Claude copy call: the large, stable system prompt (brand context + rules + voice + rulebook) is cached, so repeat copy generations pay ~10% of input price on the cached prefix. Copy already routes to Claude (Opus when CLAUDE_MODEL=claude-opus-4-8); vision/cataloguing/briefs stay on Gemini as long as LLM_PROVIDER is left unset. Plus v29.69s seed rulebook fun image-copy rule.";
+const SERVER_BUILD = "v29.71s - Adds a [claude] proof log line on every copy generation: prints model + input/output + cache_write/cache_read tokens, so you can confirm Opus is live and caching is hitting straight from Vercel logs. Plus v29.70s prompt caching on the Claude copy call.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -274,6 +274,9 @@ async function generate(system, prompt, providerOverride) {
     });
     const data = await r.json();
     if (!r.ok) throw new Error(data.error?.message || "Claude error");
+    // Proof line: shows which model ran + caching activity. cache_read>0 means the cached system prompt was reused.
+    const u = data.usage || {};
+    console.log(`[claude] model=${CLAUDE_MODEL} in=${u.input_tokens||0} out=${u.output_tokens||0} cache_write=${u.cache_creation_input_tokens||0} cache_read=${u.cache_read_input_tokens||0}`);
     return (data.content || []).filter(b => b.type === "text").map(b => b.text).join("\n").trim();
   }
   // Mock
