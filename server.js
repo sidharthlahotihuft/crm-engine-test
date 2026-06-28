@@ -46,7 +46,94 @@ const db = async (sql, params = []) => {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const uid = () => Math.random().toString(36).slice(2, 11);
 const safeJson = (s) => { try { return JSON.parse(s); } catch (e) { return null; } };
-const SERVER_BUILD = "v29.59s - Product-aware image_library: new columns finish, light_direction, height_cm, width_cm, content_bbox, dominant_colors (stored on upload, returned by list, editable, and auto-inferred for finish/light by the cataloguer). Feeds the scene-spec generation + composite realism.";
+
+// ── HARDEST RULES (server-enforced, cannot be skipped) ───────────────────────
+// 1) Forbidden tokens (M-hash + unfilled merge/template placeholders) must NEVER
+//    appear in any generated copy. 2) Hard length caps per field.
+// Applied to every /api/generate copy response, regardless of client path.
+const stripForbidden = (s) => {
+  if (typeof s !== "string") return s;
+  let out = s;
+  const SEP = "[\\s\\-_.\\u2010\\u2011\\u2012\\u2013\\u2014\\u2212]?"; // space, hyphen, underscore, dot, unicode dashes
+  out = out.replace(new RegExp("\\bm" + SEP + "hash\\b", "gi"), "");  // M-hash / m hash / mhash / M–hash
+  out = out.replace(new RegExp("\\bm" + SEP + "#", "gi"), "");         // M# / M-#
+  out = out.replace(/#\s*m\b/gi, "");                                  // #M
+  out = out.replace(/\{\{[^}]*\}\}/g, "");                             // {{1}}, {{name}}
+  out = out.replace(/\{[A-Za-z0-9_ .#-]{1,30}\}/g, "");               // {name}, {M-hash}
+  out = out.replace(/#[A-Z0-9_]{2,30}#/gi, "");                        // #VAR#, #MOBILE#
+  out = out.replace(/\[[A-Za-z][A-Za-z0-9_ .#-]{1,30}\]/g, "");       // [VARIABLE]
+  out = out.replace(/[<\u2039][A-Za-z][A-Za-z0-9_ .#-]{1,30}[>\u203A]/g, ""); // <VAR>
+  out = out.replace(/[(\[\{][\s,.;:\u2013\u2014-]*[)\]\}]/g, "");     // empty () [] {} left behind
+  out = out.replace(/[ \t]{2,}/g, " ").replace(/ +([,.!?])/g, "$1").replace(/\s+([,.])/g, "$1").replace(/^[\s,;:]+/gm, "").replace(/\n{3,}/g, "\n\n").trim();
+  return out;
+};
+const deepStrip = (v) => {
+  if (typeof v === "string") return stripForbidden(applyBrandRules(v));
+  if (Array.isArray(v)) return v.map(deepStrip);
+  if (v && typeof v === "object") { const o = {}; for (const k in v) o[k] = deepStrip(v[k]); return o; }
+  return v;
+};
+// British English + banned-term substitutions — mechanical, high-confidence, applied to every copy string.
+const BRIT_MAP = { color:"colour",colors:"colours",colored:"coloured",coloring:"colouring",colorful:"colourful",
+  flavor:"flavour",flavors:"flavours",flavored:"flavoured",flavorful:"flavourful",
+  favorite:"favourite",favorites:"favourites",favor:"favour",favors:"favours",favorable:"favourable",
+  realize:"realise",realized:"realised",realizes:"realises",realizing:"realising",
+  organize:"organise",organized:"organised",organizing:"organising",
+  personalize:"personalise",personalized:"personalised",personalizing:"personalising",
+  recognize:"recognise",recognized:"recognised",prioritize:"prioritise",prioritized:"prioritised",
+  center:"centre",centers:"centres",centered:"centred",
+  traveling:"travelling",traveled:"travelled",traveler:"traveller",
+  catalog:"catalogue",catalogs:"catalogues",fiber:"fibre",fibers:"fibres",
+  odor:"odour",odors:"odours",behavior:"behaviour",neighbor:"neighbour",fulfill:"fulfil",
+  apologize:"apologise",apologized:"apologised",customize:"customise",customized:"customised" };
+const applyBrandRules = (s) => {
+  if (typeof s !== "string") return s;
+  let out = s.replace(/[A-Za-z]+/g, (w) => {
+    const rep = BRIT_MAP[w.toLowerCase()];
+    if (!rep) return w;
+    if (w === w.toUpperCase()) return rep.toUpperCase();
+    if (w[0] === w[0].toUpperCase()) return rep[0].toUpperCase() + rep.slice(1);
+    return rep;
+  });
+  // Brand-banned terms → approved language (HUFT voice)
+  out = out.replace(/\bfur[\s-]?bab(?:y|ies)\b/gi, "furry family");
+  out = out.replace(/\bfurry friends?\b/gi, "furry family");
+  out = out.replace(/\bconsumers\b/gi, "pet parents").replace(/\bconsumer\b/gi, "pet parent");
+  return out;
+};
+// Truncate to a hard char cap on a word boundary, no mid-word cut, no dangling punctuation.
+const clampLen = (s, max) => {
+  if (typeof s !== "string" || !max || s.length <= max) return s;
+  let t = s.slice(0, max);
+  const sp = t.lastIndexOf(" ");
+  if (sp > max * 0.55) t = t.slice(0, sp);
+  return t.replace(/[\s,;:.\u2013\u2014-]+$/, "").trim();
+};
+// Universal safe maxima always applied; `limits` (from the client, channel-aware) tightens them.
+const HARD_MAX = { subject: 60, cta: 30, headerLine: 64 };
+const enforceCopyLimits = (opt, L) => {
+  if (!opt || typeof opt !== "object") return opt;
+  const o = { ...opt };
+  if (typeof o.subject === "string") o.subject = clampLen(o.subject, Math.min(L.subject || 1e9, HARD_MAX.subject));
+  if (typeof o.cta === "string") o.cta = clampLen(o.cta, Math.min(L.cta || 1e9, HARD_MAX.cta));
+  if (typeof o.header === "string") o.header = o.header.split(/\r?\n/).map(ln => clampLen(ln, Math.min(L.header || 1e9, HARD_MAX.headerLine))).join("\n");
+  if (L.body && typeof o.body === "string") o.body = clampLen(o.body, L.body); // body cap only when the client knows the channel (e.g. push 90)
+  return o;
+};
+// The single chokepoint: strip forbidden tokens everywhere + clamp lengths.
+const enforceCopyHardRules = (text, limits) => {
+  let parsed = null;
+  try { parsed = JSON.parse(text); }
+  catch (e) { const m = text && text.match(/[\[{][\s\S]*[\]}]/); if (m) { try { parsed = JSON.parse(m[0]); } catch (_) {} } }
+  if (parsed !== null && typeof parsed === "object") {
+    let p = deepStrip(parsed);
+    const L = limits || {};
+    p = Array.isArray(p) ? p.map(o => enforceCopyLimits(o, L)) : enforceCopyLimits(p, L);
+    return JSON.stringify(p);
+  }
+  return stripForbidden(text); // plain-text response → still strip forbidden tokens
+};
+const SERVER_BUILD = "v29.61s - Server-enforced HARDEST RULES on all copy generation (kind=copy), cannot be skipped by any client path: strips forbidden tokens (M-hash + unfilled merge/template placeholders) from every string field, normalises to British English, swaps banned terms (consumers→pet parents, furry friend/fur baby→furry family), and clamps hard length caps per channel (push title/body, subject, cta, header). Also injects these rules into the system prompt. Plus v29.60s: image-library list returns up to 2000 rows with column fallback.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -1306,24 +1393,23 @@ app.post("/api/generate-image", authMiddleware, roles("admin", "brand", "design"
 // Metadata only by default (no base64) for speed; ?withData=1 to include image data.
 app.get("/api/image-library", authMiddleware, async (req, res) => {
   const q = (req.query.q || "").trim().toLowerCase();
-  const cols = req.query.withData === "1"
-    ? "id, file_name, file_data, file_type, product, category, tags, description, notes, dimensions_cm, kind, uploaded_at, last_used_at, finish, light_direction, height_cm, width_cm, content_bbox, dominant_colors"
-    : "id, file_name, file_type, product, category, tags, description, notes, dimensions_cm, kind, uploaded_at, last_used_at, finish, light_direction, height_cm, width_cm, content_bbox, dominant_colors";
+  const withData = req.query.withData === "1";
+  const base = withData
+    ? "id, file_name, file_data, file_type, product, category, tags, description, notes, dimensions_cm, kind, uploaded_at, last_used_at"
+    : "id, file_name, file_type, product, category, tags, description, notes, dimensions_cm, kind, uploaded_at, last_used_at";
+  const ext = base + ", finish, light_direction, height_cm, width_cm, content_bbox, dominant_colors";
+  const run = (cols) => q
+    ? db(`SELECT ${cols} FROM image_library
+           WHERE lower(coalesce(product,'')) LIKE $1
+              OR lower(coalesce(category,'')) LIKE $1
+              OR lower(coalesce(description,'')) LIKE $1
+              OR lower(tags::text) LIKE $1
+           ORDER BY uploaded_at DESC LIMIT 2000`, [`%${q}%`])
+    : db(`SELECT ${cols} FROM image_library ORDER BY uploaded_at DESC LIMIT 2000`);
   try {
     let rows;
-    if (q) {
-      rows = await db(
-        `SELECT ${cols} FROM image_library
-         WHERE lower(coalesce(product,'')) LIKE $1
-            OR lower(coalesce(category,'')) LIKE $1
-            OR lower(coalesce(description,'')) LIKE $1
-            OR lower(tags::text) LIKE $1
-         ORDER BY uploaded_at DESC LIMIT 200`,
-        [`%${q}%`]
-      );
-    } else {
-      rows = await db(`SELECT ${cols} FROM image_library ORDER BY uploaded_at DESC LIMIT 200`);
-    }
+    try { rows = await run(ext); }
+    catch (e) { rows = await run(base); } // product-aware columns not migrated yet → still serve the library
     res.json(rows.map(r => ({ ...r, tags: typeof r.tags === "string" ? (() => { try { return JSON.parse(r.tags); } catch { return []; } })() : (r.tags || []) })));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1538,11 +1624,21 @@ app.delete("/api/reports/:id", authMiddleware, roles("admin","business"), async 
 // ── GENERATE ──────────────────────────────────────────────────────────────────
 
 app.post("/api/generate", authMiddleware, async (req, res) => {
-  const { system = "", prompt = "", kind = "" } = req.body;
+  const { system = "", prompt = "", kind = "", limits = null } = req.body;
   // Per-content-type routing: copy → Anthropic (Claude), brief → Gemini, everything else → env default.
   const want = kind === "copy" ? "claude" : kind === "brief" ? "gemini" : undefined;
+  // HARDEST RULES injected into the system prompt (belt) — and enforced on the way out (suspenders).
+  const HARD_RULES = " NON-NEGOTIABLE HARD RULES (never break): "
+    + "(1) Never output \"M-hash\" in any form (M-hash, M hash, mhash, M#, #M) or any unfilled merge/template placeholder ({{1}}, {name}, #VAR#, [VARIABLE], <NAME>) — these are system artifacts, not words; if you have no real value, write natural words with no placeholder. "
+    + "(2) British English only — colour not color, favourite not favorite, personalise not personalize, centre not center. "
+    + "(3) Say \"pet parents\", never \"consumers\". Use \"furry family\", never \"furry friend\" or \"fur baby\". "
+    + "(4) Never use: premium, luxury, cutting-edge, state-of-the-art, revolutionary, game-changing. "
+    + "(5) No fear-based messaging, no medical/cure claims, never shame pet parents. "
+    + "(6) Respect the length limits for the channel exactly (push title and body are hard character caps).";
+  const sys = kind === "copy" ? (system + HARD_RULES) : system;
   try {
-    const text = await generate(system, prompt, want);
+    let text = await generate(sys, prompt, want);
+    if (kind === "copy") text = enforceCopyHardRules(text, limits); // strip forbidden tokens + clamp lengths — cannot be skipped
     res.json({ text });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
