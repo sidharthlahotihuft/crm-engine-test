@@ -108,7 +108,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.97 - Used-image cooldown extended to 3 months: once a scene/mockup is downloaded, saved or finalised it's tagged 'Used · resting' and hidden from the composer pickers, and locked (greyed, not selectable) with an 'Used already' badge in the design picker until the cooldown ends. Rulebook is now enforced server-side (no leaks) — new rules apply automatically.";
+const BUILD="v30.0 - Canva-style contextual toolbar above the canvas: select any layer (click it on the canvas or in the Layers tab) and a top bar shows what it is plus the relevant common controls — Align ↔ (L/C/R) and Align ↕ (T/M/B), bring Forward/Back, Duplicate, Edit (jumps to that layer's tab) and Delete. Clicking a product, the background or a copy line now selects it. Plus v29.99 drag-to-pan + placement-aware smart expand.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -1026,6 +1026,10 @@ const Check=p=><Svg{...p}><path d="M20 6L9 17l-5-5"/></Svg>;
 const RefreshCw=p=><Svg{...p}><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5M3 21v-5h5"/></Svg>;
 const BookMarked=p=><Svg{...p}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M10 3v8l3-2 3 2V3"/></Svg>;
 const ImageIcon=p=><Svg{...p}><rect x="3"y="3"width="18"height="18"rx="2"/><circle cx="9"cy="9"r="1.6"/><path d="M21 15l-5-5L5 21"/></Svg>;
+const LayersIcon=p=><Svg{...p}><path d="M12 2l9 5-9 5-9-5z"/><path d="M3 12l9 5 9-5"/><path d="M3 17l9 5 9-5"/></Svg>;
+const TypeIcon=p=><Svg{...p}><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></Svg>;
+const PackageIcon=p=><Svg{...p}><path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.3 7L12 12l8.7-5M12 22V12"/></Svg>;
+const TagIcon=p=><Svg{...p}><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 3 12V4a1 1 0 0 1 1-1h8a2 2 0 0 1 1.4.6l6.2 6.2a2 2 0 0 1 0 2.6z"/><circle cx="7.5"cy="7.5"r="1.3"fill="currentColor"/></Svg>;
 const Wand2=p=><Svg{...p}><path d="M15 4V2M15 10V8M11 6H9M21 6h-2"/><path d="M3 21l12-12 2 2L5 23z"transform="translate(0,-2)"/></Svg>;
 const ArrowRight=p=><Svg{...p}><path d="M5 12h14M13 6l6 6-6 6"/></Svg>;
 const Trash2=p=><Svg{...p}><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></Svg>;
@@ -3548,6 +3552,7 @@ function ImageLibraryTab({me,toast}){
   const[uploadW,setUploadW]=useState("");              // width_cm
   const[uploadLight,setUploadLight]=useState("left");  // key-light direction in the packshot
   const[retagging,setRetagging]=useState(false);       // one-time library re-tag in progress
+  const[reclassMsg,setReclassMsg]=useState("");        // vision re-classify progress text
   const fileRef=useRef(null);
   const folderRef=useRef(null);
 
@@ -3610,7 +3615,19 @@ function ImageLibraryTab({me,toast}){
           </div>
           <Btn onClick={()=>fileRef.current&&fileRef.current.click()}><UploadIcon size={16}/>Upload images</Btn>
           <Btn variant="ghost"onClick={()=>folderRef.current&&folderRef.current.click()}><UploadIcon size={16}/>Upload folder</Btn>
-          {_r(me)==="super_admin"&&<Btn variant="ghost"disabled={retagging}title="Re-derive product / lifestyle / logo tags for the whole library from file type + AI category"onClick={async()=>{setRetagging(true);try{const r=await api.post("/api/image-library/retag",{});const c=Object.entries(r.counts||{}).map(([k,v])=>v+" "+k).join(" · ");if(toast)toast("Re-tagged "+(r.total||0)+" images"+(c?" — "+c:""),"success");await load(q);}catch(e){if(toast)toast("Re-tag failed — deploy the latest server.js first","error");}setRetagging(false);}}><Wand2 size={16}/>{retagging?"Re-tagging…":"Re-tag library"}</Btn>}
+          {_r(me)==="super_admin"&&<Btn variant="ghost"disabled={retagging||!!reclassMsg}title="Re-derive product / lifestyle / logo tags for the whole library from file type + AI category"onClick={async()=>{setRetagging(true);try{const r=await api.post("/api/image-library/retag",{});const c=Object.entries(r.counts||{}).map(([k,v])=>v+" "+k).join(" · ");if(toast)toast("Re-tagged "+(r.total||0)+" images"+(c?" — "+c:""),"success");await load(q);}catch(e){if(toast)toast("Re-tag failed — deploy the latest server.js first","error");}setRetagging(false);}}><Wand2 size={16}/>{retagging?"Re-tagging…":"Re-tag (fast)"}</Btn>}
+          {_r(me)==="super_admin"&&<Btn variant="dark"disabled={retagging||!!reclassMsg}title="Looks at every image with AI and reliably classifies packshot vs lifestyle vs logo. Slower but accurate."onClick={async()=>{
+            setReclassMsg("Starting…");let offset=0,changed=0,total=0;
+            try{
+              for(let i=0;i<60;i++){
+                const r=await api.post("/api/image-library/reclassify",{offset,limit:6});
+                changed+=r.changed||0;total=r.total||total;offset=(r.offset||0)+(r.processed||0);
+                setReclassMsg("Classifying "+Math.min(offset,total)+" / "+total+"…");
+                if(r.done||!r.processed)break;
+              }
+              setReclassMsg("");if(toast)toast("Re-classified ✓ — "+changed+" of "+total+" updated by AI","success");await load(q);
+            }catch(e){setReclassMsg("");if(toast)toast("Re-classify failed — deploy the latest server.js first","error");}
+          }}><Wand2 size={16}/>{reclassMsg||"Re-classify with AI"}</Btn>}
           <input ref={fileRef}type="file"accept="image/*"multiple style={{display:"none"}}onChange={e=>{if(e.target.files&&e.target.files.length)handleFiles(e.target.files);e.target.value="";}}/>
           <input ref={folderRef}type="file"webkitdirectory="" directory=""multiple style={{display:"none"}}onChange={e=>{const imgs=[...(e.target.files||[])].filter(f=>f.type&&f.type.startsWith("image/"));if(imgs.length)handleFiles(imgs);else if(toast)toast("No images found in that folder","error");e.target.value="";}}/>
         </div>
@@ -4902,6 +4919,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   const[genUsedProduct,setGenUsedProduct]=useState(false); // true when the generated image already contains the product (don't composite again)
   const copyHitsRef=React.useRef({}); // {hl:[y0,y1], sh:[y0,y1], cta:[y0,y1]} in canvas (intrinsic) coords
   const prodHitsRef=React.useRef([]); // product hit-boxes (px,py,pw,ph) for drag
+  const elHitsRef=React.useRef([]);   // extra-element hit-boxes {id,x,y,w,h} for click/drag select
   const dragRef=React.useRef(null);
   const suppressClickRef=React.useRef(false);
   const[linkSizes,setLinkSizes]=useState(true); // sub-headline size scales with headline unless unlinked
@@ -4972,6 +4990,8 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   // ===== Layers (Canva-style): per-layer visibility + reorder =====
   const[hidden,setHidden]=useState({});               // layer key -> true = hidden from the canvas
   const[selLayer,setSelLayer]=useState(null);          // currently highlighted layer key (UI only)
+  const[panelTab,setPanelTab]=useState("text");        // right-panel tab: layers|bg|product|text|logo|elements
+  const[selBox,setSelBox]=useState(null);              // {x,y,w,h} in canvas-intrinsic coords for the selection outline overlay
   const isHidden=(k)=>!!hidden[k];
   const toggleHidden=(k)=>setHidden(h=>({...h,[k]:!h[k]}));
   const moveEl=(id,dir)=>setElements(list=>{const i=list.findIndex(e=>e.id===id);const j=i+dir;if(i<0||j<0||j>=list.length)return list;const a=[...list];[a[i],a[j]]=[a[j],a[i]];return a;});
@@ -4996,12 +5016,22 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   // A product packshot = a clean transparent PNG, or one the cataloguer explicitly called a "packshot".
   // Lifestyle/scene shots are JPEGs (cataloguer category "lifestyle") and must NOT appear here — this is
   // independent of the stored `kind`, since bulk uploads mis-tagged many scenes as products.
+  // A packshot is a clean product pack. Scenes (a pet/person in a setting) are NOT — even when they're PNGs
+  // and even when the cataloguer filed them under a food category. Detect scenes from the AI description/tags.
+  const looksLikeScene=(i)=>{
+    const t=((i.description||"")+" "+((i.tags||[]).join(" "))+" "+(i.category||"")).toLowerCase();
+    return /\b(lifestyle|scene|in[- ]?situ)\b/.test(t)
+      || /\b(person|people|man|woman|child|kid|owner|hand|hands|holding|feeding)\b/.test(t)
+      || /\b(eating|playing|sitting|lying|cuddl|sleeping|running|walking|licking|sniff|resting)\b/.test(t)
+      || /\b(couch|sofa|rug|carpet|kitchen|living room|bedroom|garden|park|outdoor|lawn|grass|floor|lap|bed|sofa)\b/.test(t);
+  };
   const isPackshot=(i)=>{
     const k=String(i.kind||"").toLowerCase();
-    if(k==="logo"||k==="mockup")return false;
-    const cat=String(i.category||"").toLowerCase();
-    if(cat==="lifestyle")return false;
-    if(cat==="packshot")return true;
+    if(k==="logo"||k==="mockup"||k==="asset"||k==="scene"||k==="lifestyle")return false; // reclassify sets these reliably
+    if(String(i.category||"").toLowerCase()==="lifestyle")return false;
+    if(looksLikeScene(i))return false;
+    if(k==="product")return true;                                  // vision-confirmed packshot that passed the scene checks
+    if(String(i.category||"").toLowerCase()==="packshot")return true;
     return String(i.file_type||"").toLowerCase().includes("png");
   };
   const productItems=items.filter(isPackshot);
@@ -5428,15 +5458,17 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
       }
     }
     // 6) extra user-added elements (additional text blocks / CTA pills) — top layer
+    elHitsRef.current=[];
     elements.forEach(el=>{
       if(isHidden(el.id))return;
       const ex=el.x*sz.w, ey=el.y*sz.h;
+      let bw=0,bh=0;
       ctx.save();
       if(el.opacity!=null)ctx.globalAlpha=el.opacity;
       if(el.rot){ctx.translate(ex,ey);ctx.rotate(el.rot*Math.PI/180);ctx.translate(-ex,-ey);}
       if(el.type==="image"){
         const im=elImgs[el.id];
-        if(im){const dw=sz.w*0.28*(el.size||1), dh=dw*(im.height/im.width||1);
+        if(im){const dw=sz.w*0.28*(el.size||1), dh=dw*(im.height/im.width||1);bw=dw;bh=dh;
           if(el.flipH){ctx.translate(ex,0);ctx.scale(-1,1);ctx.translate(-ex,0);}
           ctx.drawImage(im,ex-dw/2,ey-dh/2,dw,dh);}
       }else if(el.type==="cta"){
@@ -5444,12 +5476,12 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
         ctx.font=`${el.bold?"800":"600"} ${fpx}px '${el.font||"Rubik"}'`;
         ctx.textAlign="center";ctx.textBaseline="middle";
         const tw=ctx.measureText(el.text||"").width;
-        const padX=fpx*0.85, padY=fpx*0.55, bw=tw+padX*2, bh=fpx+padY*2, r=bh/2;
-        const bx=ex-bw/2, by=ey-bh/2;
+        const padX=fpx*0.85, padY=fpx*0.55, bwL=tw+padX*2, bhL=fpx+padY*2, r=bhL/2;bw=bwL;bh=bhL;
+        const bx=ex-bwL/2, by=ey-bhL/2;
         ctx.save();ctx.fillStyle=el.bg||C.coral;
         ctx.beginPath();ctx.moveTo(bx+r,by);
-        ctx.arcTo(bx+bw,by,bx+bw,by+bh,r);ctx.arcTo(bx+bw,by+bh,bx,by+bh,r);
-        ctx.arcTo(bx,by+bh,bx,by,r);ctx.arcTo(bx,by,bx+bw,by,r);ctx.closePath();ctx.fill();
+        ctx.arcTo(bx+bwL,by,bx+bwL,by+bhL,r);ctx.arcTo(bx+bwL,by+bhL,bx,by+bhL,r);
+        ctx.arcTo(bx,by+bhL,bx,by,r);ctx.arcTo(bx,by,bx+bwL,by,r);ctx.closePath();ctx.fill();
         ctx.fillStyle=el.color||"#FFFFFF";ctx.fillText(el.text||"",ex,ey+1);ctx.restore();
       }else{
         const fpx=sz.w*0.045*(el.size||1);
@@ -5457,19 +5489,31 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
         ctx.fillStyle=el.color||"#FFFFFF";ctx.textAlign=el.align||"center";ctx.textBaseline="middle";
         if(textShadow){ctx.shadowColor="rgba(0,0,0,.45)";ctx.shadowBlur=fpx*0.18;ctx.shadowOffsetY=fpx*0.05;}
         const lines=String(el.text||"").split("\n"), lh=fpx*1.18, total=lines.length*lh;
+        let maxw=0;lines.forEach(ln=>{const w=ctx.measureText(ln).width;if(w>maxw)maxw=w;});bw=maxw||fpx;bh=total;
         lines.forEach((ln,i)=>ctx.fillText(ln,ex,ey-total/2+lh/2+i*lh));
         ctx.restore();
       }
       ctx.restore();
+      if(bw&&bh)elHitsRef.current.push({id:el.id,x:ex-bw/2,y:ey-bh/2,w:bw,h:bh});
     });
     ctx.textAlign="left";ctx.textBaseline="top";
-  },[sz,bgMode,bgColor,bgImg,genImg,mockupPreset,products,prodImgs,procImgs,shadow,shadowDir,hl,sh,anchor,ct,ctaBg,logoImg,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,huftReady,divider,autoFit,textShadow,textAlign,oldPrice,copyScale,autoAvoid,genUsedProduct,editorOpen,elements,elImgs,customBg,textBackdrop,hidden,bgFit,bgScale,bgOffX,bgOffY]);
+    // selection outline (HTML overlay, NOT drawn on canvas so it never bakes into exports)
+    (()=>{
+      if(!selLayer||editorOpen){if(selBox!==null)setSelBox(null);return;}
+      let box=null;
+      const ph=(prodHitsRef.current||[]).find(b=>b.pid===selLayer);if(ph)box={x:ph.px,y:ph.py,w:ph.pw,h:ph.ph};
+      if(!box){const eb=(elHitsRef.current||[]).find(b=>b.id===selLayer);if(eb)box={x:eb.x,y:eb.y,w:eb.w,h:eb.h};}
+      if(!box&&["hl","sh","cta"].includes(selLayer)){const cb=copyHitsRef.current[selLayer];if(cb&&cb[1]>cb[0])box={x:sz.w*0.03,y:cb[0],w:sz.w*0.94,h:cb[1]-cb[0]};}
+      const same=box&&selBox&&Math.abs(box.x-selBox.x)<1&&Math.abs(box.y-selBox.y)<1&&Math.abs(box.w-selBox.w)<1&&Math.abs(box.h-selBox.h)<1;
+      if(!same)setSelBox(box);
+    })();
+  },[sz,bgMode,bgColor,bgImg,genImg,mockupPreset,products,prodImgs,procImgs,shadow,shadowDir,hl,sh,anchor,ct,ctaBg,logoImg,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,huftReady,divider,autoFit,textShadow,textAlign,oldPrice,copyScale,autoAvoid,genUsedProduct,editorOpen,elements,elImgs,customBg,textBackdrop,hidden,bgFit,bgScale,bgOffX,bgOffY,selLayer]);
 
   React.useEffect(()=>{if(!canGenerate&&bgMode==="generate")setBgMode("mockup");},[canGenerate,bgMode]);
   React.useEffect(()=>{draw();},[draw]);
   const canvasPos=(e)=>{const cv=ref.current;if(!cv)return null;const r=cv.getBoundingClientRect();return {x:(e.clientX-r.left)/r.width*sz.w,y:(e.clientY-r.top)/r.height*sz.h};};
-  const onCanvasDown=(e)=>{const pos=canvasPos(e);if(!pos)return;const hits=prodHitsRef.current||[];for(let k=hits.length-1;k>=0;k--){const b=hits[k];if(pos.x>=b.px&&pos.x<=b.px+b.pw&&pos.y>=b.py&&pos.y<=b.py+b.ph){const cx=b.px+b.pw/2,cy=b.py+b.ph/2;dragRef.current={pid:b.pid,gx:pos.x-cx,gy:pos.y-cy};if(autoFit){setAutoFit(false);updProduct(b.pid,{x:cx/sz.w,y:cy/sz.h,scale:b.pw/sz.w});}return;}}};
-  const onCanvasMove=(e)=>{if(!dragRef.current)return;const pos=canvasPos(e);if(!pos)return;suppressClickRef.current=true;const nx=Math.min(1,Math.max(0,(pos.x-dragRef.current.gx)/sz.w)),ny=Math.min(1,Math.max(0,(pos.y-dragRef.current.gy)/sz.h));updProduct(dragRef.current.pid,{x:nx,y:ny});};
+  const onCanvasDown=(e)=>{const pos=canvasPos(e);if(!pos)return;const eh=elHitsRef.current||[];for(let k=eh.length-1;k>=0;k--){const b=eh[k];if(pos.x>=b.x&&pos.x<=b.x+b.w&&pos.y>=b.y&&pos.y<=b.y+b.h){dragRef.current={eid:b.id,gx:pos.x-(b.x+b.w/2),gy:pos.y-(b.y+b.h/2)};setSelLayer(b.id);return;}}const hits=prodHitsRef.current||[];for(let k=hits.length-1;k>=0;k--){const b=hits[k];if(pos.x>=b.px&&pos.x<=b.px+b.pw&&pos.y>=b.py&&pos.y<=b.py+b.ph){const cx=b.px+b.pw/2,cy=b.py+b.ph/2;dragRef.current={pid:b.pid,gx:pos.x-cx,gy:pos.y-cy};setSelLayer(b.pid);if(autoFit){setAutoFit(false);updProduct(b.pid,{x:cx/sz.w,y:cy/sz.h,scale:b.pw/sz.w});}return;}}const bgPresent=(bgMode==="generate"?genImg:bgMode==="custom"?customBg:bgImg);if(bgPresent){dragRef.current={bg:true,sx:pos.x,sy:pos.y,ox:bgOffX||0,oy:bgOffY||0};setSelLayer("__bg__");}};
+  const onCanvasMove=(e)=>{if(!dragRef.current)return;const pos=canvasPos(e);if(!pos)return;suppressClickRef.current=true;if(dragRef.current.bg){const dx=(pos.x-dragRef.current.sx)/sz.w,dy=(pos.y-dragRef.current.sy)/sz.h;setBgOffX(Math.min(0.6,Math.max(-0.6,dragRef.current.ox+dx)));setBgOffY(Math.min(0.6,Math.max(-0.6,dragRef.current.oy+dy)));return;}if(dragRef.current.eid){const nx=Math.min(1,Math.max(0,(pos.x-dragRef.current.gx)/sz.w)),ny=Math.min(1,Math.max(0,(pos.y-dragRef.current.gy)/sz.h));updEl(dragRef.current.eid,{x:nx,y:ny});return;}const nx=Math.min(1,Math.max(0,(pos.x-dragRef.current.gx)/sz.w)),ny=Math.min(1,Math.max(0,(pos.y-dragRef.current.gy)/sz.h));updProduct(dragRef.current.pid,{x:nx,y:ny});};
   const onCanvasUp=()=>{dragRef.current=null;};
 
   const genScenePrompt=async()=>{setPromptBusy(true);try{
@@ -5498,12 +5542,24 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
     if(!img){if(toast)toast("Pick or generate a background first","error");return;}
     setExpandBusy(true);
     try{
-      const iw=img.naturalWidth||img.width, ih=img.naturalHeight||img.height, sc=Math.min(1,1024/Math.max(iw,ih));
-      const oc=document.createElement("canvas");oc.width=Math.round(iw*sc);oc.height=Math.round(ih*sc);
-      oc.getContext("2d").drawImage(img,0,0,oc.width,oc.height);
-      const src=oc.toDataURL("image/jpeg",0.92);
-      const r=await api.post("/api/expand-image",{image:src,aspectRatio:sz.ar,prompt:(genPrompt||"").trim()});
-      if(r&&r.image){const ni=await loadImage(r.image);setCustomBg(ni);setBgMode("custom");setBgFit("cover");setBgScale(1);setBgOffX(0);setBgOffY(0);if(toast)toast("Expanded to fill ✓","success");}
+      const iw=img.naturalWidth||img.width, ih=img.naturalHeight||img.height;
+      const maxD=1024, tw=sz.w>=sz.h?maxD:Math.round(maxD*sz.w/sz.h), th=sz.h>sz.w?maxD:Math.round(maxD*sz.h/sz.w);
+      const oc=document.createElement("canvas");oc.width=tw;oc.height=th;
+      const g=oc.getContext("2d"), kx=tw/sz.w, ky=th/sz.h;
+      // mirror drawBgImage placement so we expand from EXACTLY where the user left the image
+      const cover=Math.max(sz.w/iw,sz.h/ih), contain=Math.min(sz.w/iw,sz.h/ih);
+      const s=(bgFit==="contain"?contain:cover)*(bgScale||1), dw=iw*s, dh=ih*s;
+      const dx=(sz.w-dw)/2+(bgOffX||0)*sz.w, dy=(sz.h-dh)/2+(bgOffY||0)*sz.h;
+      // 1) soft seed: blurred cover fills the empty margins with plausible colour/continuation
+      g.save();try{g.filter="blur(16px)";}catch(_){}
+      const cs=Math.max(tw/iw,th/ih), cdw=iw*cs, cdh=ih*cs;
+      g.drawImage(img,(tw-cdw)/2,(th-cdh)/2,cdw,cdh);
+      g.restore();
+      // 2) crisp image exactly where it currently sits on the canvas
+      g.drawImage(img,dx*kx,dy*ky,dw*kx,dh*ky);
+      const src=oc.toDataURL("image/png");
+      const r=await api.post("/api/expand-image",{image:src,aspectRatio:sz.ar,prompt:(genPrompt||"").trim(),mode:"refine"});
+      if(r&&r.image){const ni=await loadImage(r.image);setCustomBg(ni);setBgMode("custom");setBgFit("cover");setBgScale(1);setBgOffX(0);setBgOffY(0);if(toast)toast("Filled to frame ✓","success");}
       else if(toast)toast("Couldn't expand — try again","error");
     }catch(e){if(toast)toast("Expand failed — deploy the latest server.js (expand-image route)","error");}
     setExpandBusy(false);
@@ -5798,10 +5854,46 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
 
         </div>
       </div>
-      <div style={{flex:1,minWidth:0,overflow:"auto",display:"flex",alignItems:"center",justifyContent:"center",padding:28}}>
+      <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+        {(()=>{
+          const SI=(()=>{
+            if(!selLayer)return null;
+            if(selLayer==="__bg__")return{type:"bg",name:"Background",tab:"bg"};
+            if(selLayer==="huft")return{type:"huft",name:"HUFT logo",tab:"logo"};
+            if(selLayer==="logo")return{type:"logo",name:"Sub-brand logo",tab:"logo"};
+            if(["hl","sh","cta"].includes(selLayer))return{type:"copy",key:selLayer,name:selLayer==="hl"?"Headline":selLayer==="sh"?"Sub-headline":"Button (CTA)",tab:"text"};
+            const el=elements.find(e=>e.id===selLayer);
+            if(el)return{type:"element",el,name:(el.type==="cta"?"Button":el.type==="image"?"Image":"Text")+((el.text||"").trim()?" — "+(el.text||"").trim().slice(0,16):""),tab:"elements"};
+            const pr=products.find(p=>p.pid===selLayer);
+            if(pr)return{type:"product",pr,name:"Product",tab:"product"};
+            return null;
+          })();
+          const canAlign=!!SI&&["element","product","copy","bg"].includes(SI.type);
+          const aH=(h)=>{if(!SI)return;const fx=h==="l"?0.14:h==="r"?0.86:0.5;if(SI.type==="element")updEl(SI.el.id,{x:fx});else if(SI.type==="product"){if(autoFit)setAutoFit(false);updProduct(SI.pr.pid,{x:fx});}else if(SI.type==="copy"){setAnchor(String(anchor||"mid-center").split("-")[0]+"-"+(h==="l"?"left":h==="r"?"right":"center"));setTextAlign(h==="l"?"left":h==="r"?"right":"center");}else if(SI.type==="bg")setBgOffX(h==="l"?-0.3:h==="r"?0.3:0);};
+          const aV=(v)=>{if(!SI)return;const fy=v==="t"?0.14:v==="b"?0.86:0.5;if(SI.type==="element")updEl(SI.el.id,{y:fy});else if(SI.type==="product"){if(autoFit)setAutoFit(false);updProduct(SI.pr.pid,{y:fy});}else if(SI.type==="copy")setAnchor((v==="t"?"top":v==="b"?"bottom":"mid")+"-"+(String(anchor||"mid-center").split("-")[1]||"center"));else if(SI.type==="bg")setBgOffY(v==="t"?-0.3:v==="b"?0.3:0);};
+          const del=()=>{if(!SI)return;if(SI.type==="element")rmEl(SI.el.id);else if(SI.type==="product")rmProduct(SI.pr.pid);else if(SI.type==="logo")setLogoId("");else if(SI.type==="huft")setHuftMode("none");else if(SI.type==="copy"){if(SI.key==="hl")setHl({...hl,text:""});else if(SI.key==="sh")setSh({...sh,text:""});else setCt({...ct,text:""});}setSelLayer(null);};
+          const mv=SI&&SI.type==="element"?(d=>moveEl(SI.el.id,d)):SI&&SI.type==="product"?(d=>moveProd(SI.pr.pid,d)):null;
+          const ab=(active)=>({minWidth:30,height:28,display:"inline-flex",alignItems:"center",justifyContent:"center",border:`1px solid ${active?C.coral:C.line}`,borderRadius:7,background:active?C.coral+"14":"#fff",cursor:canAlign?"pointer":"default",opacity:canAlign?1:.4,color:active?C.coral:C.ink,fontSize:12,fontWeight:700,padding:"0 6px"});
+          const act={height:28,display:"inline-flex",alignItems:"center",gap:5,border:`1px solid ${C.line}`,borderRadius:7,background:"#fff",cursor:"pointer",color:C.ink,fontSize:11.5,fontWeight:700,padding:"0 9px"};
+          const lbl={fontSize:9.5,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.4};
+          const div=()=><span style={{width:1,height:20,background:C.line,flexShrink:0}}/>;
+          return<div style={{display:"flex",alignItems:"center",gap:9,padding:"7px 14px",borderBottom:`1px solid ${C.line}`,background:"#fff",minHeight:44,flexWrap:"wrap"}}>
+            {SI?<>
+              <span style={{fontSize:11,fontWeight:800,color:C.coral,background:C.coral+"14",padding:"4px 10px",borderRadius:999,whiteSpace:"nowrap"}}>{SI.name}</span>
+              {canAlign&&<>{div()}<span style={lbl}>Align ↔</span><div style={{display:"flex",gap:3}}><button title="Left"onClick={()=>aH("l")}style={ab(false)}>L</button><button title="Centre"onClick={()=>aH("c")}style={ab(false)}>C</button><button title="Right"onClick={()=>aH("r")}style={ab(false)}>R</button></div>
+              {div()}<span style={lbl}>Align ↕</span><div style={{display:"flex",gap:3}}><button title="Top"onClick={()=>aV("t")}style={ab(false)}>T</button><button title="Middle"onClick={()=>aV("m")}style={ab(false)}>M</button><button title="Bottom"onClick={()=>aV("b")}style={ab(false)}>B</button></div></>}
+              {mv&&<>{div()}<button title="Bring forward"onClick={()=>mv(1)}style={act}>↑ Forward</button><button title="Send back"onClick={()=>mv(-1)}style={act}>↓ Back</button></>}
+              {SI.type==="element"&&<button title="Duplicate"onClick={()=>dupEl(SI.el.id)}style={act}>⧉ Duplicate</button>}
+              {div()}<button onClick={()=>{setPanelTab(SI.tab);if(SI.type==="copy")setEditCopy(SI.key);}}style={{...act,borderColor:C.coral,color:C.coral}}>Edit ▸</button>
+              <button title="Delete / clear"onClick={del}style={{...act,borderColor:"#FCA5A5",color:"#B91C1C"}}>× Delete</button>
+            </>:<span style={{fontSize:12.5,color:C.sub}}>Select a layer — click it on the canvas, or pick it in the <b style={{color:C.ink}}>Layers</b> tab — to align &amp; edit it here.</span>}
+          </div>;
+        })()}
+        <div style={{flex:1,minWidth:0,overflow:"auto",display:"flex",alignItems:"center",justifyContent:"center",padding:28}}>
         <div style={{transform:`scale(${zoom})`,transformOrigin:"center center",transition:"transform .08s",flexShrink:0}}>
           <div style={{position:"relative",display:"block"}}>
-          <canvas ref={ref}onMouseDown={onCanvasDown}onMouseMove={onCanvasMove}onMouseUp={onCanvasUp}onMouseLeave={onCanvasUp}onClick={(e)=>{if(suppressClickRef.current){suppressClickRef.current=false;return;}const cv=ref.current;if(!cv)return;const rect=cv.getBoundingClientRect();const cy=(e.clientY-rect.top)/rect.height*sz.h;const hits=copyHitsRef.current||{};let hit=null;for(const k of ["hl","sh","cta"]){const b=hits[k];if(b&&b[1]>b[0]&&cy>=b[0]-sz.h*0.012&&cy<=b[1]+sz.h*0.012){hit=k;break;}}setEditCopy(hit);}}title="Click the headline, sub-headline or button to edit it here"style={{display:"block",width:"min(72vh,760px)",height:"auto",maxWidth:"100%",borderRadius:10,boxShadow:"0 10px 44px rgba(0,0,0,.18)",background:"#fff",border:`1px solid ${C.line}`,cursor:"grab"}}/>
+          <canvas ref={ref}onMouseDown={onCanvasDown}onMouseMove={onCanvasMove}onMouseUp={onCanvasUp}onMouseLeave={onCanvasUp}onClick={(e)=>{if(suppressClickRef.current){suppressClickRef.current=false;return;}const cv=ref.current;if(!cv)return;const rect=cv.getBoundingClientRect();const cy=(e.clientY-rect.top)/rect.height*sz.h;const hits=copyHitsRef.current||{};let hit=null;for(const k of ["hl","sh","cta"]){const b=hits[k];if(b&&b[1]>b[0]&&cy>=b[0]-sz.h*0.012&&cy<=b[1]+sz.h*0.012){hit=k;break;}}setEditCopy(hit);if(hit)setSelLayer(hit);}}title="Click the headline, sub-headline or button to edit it here"style={{display:"block",width:"min(72vh,760px)",height:"auto",maxWidth:"100%",borderRadius:10,boxShadow:"0 10px 44px rgba(0,0,0,.18)",background:"#fff",border:`1px solid ${C.line}`,cursor:"grab"}}/>
+          {selBox&&!editCopy&&(()=>{const pad=Math.max(4,sz.w*0.006);const L=(selBox.x-pad)/sz.w*100,T=(selBox.y-pad)/sz.h*100,W=(selBox.w+pad*2)/sz.w*100,H=(selBox.h+pad*2)/sz.h*100;const dot={position:"absolute",width:9,height:9,borderRadius:"50%",background:"#fff",border:`2px solid ${C.coral}`};return<div style={{position:"absolute",left:L+"%",top:T+"%",width:W+"%",height:H+"%",border:`2px solid ${C.coral}`,borderRadius:6,pointerEvents:"none",zIndex:5,boxShadow:"0 0 0 1px rgba(255,255,255,.7) inset"}}><span style={{...dot,top:-5,left:-5}}/><span style={{...dot,top:-5,right:-5}}/><span style={{...dot,bottom:-5,left:-5}}/><span style={{...dot,bottom:-5,right:-5}}/></div>;})()}
           {guides&&<div style={{position:"absolute",inset:0,pointerEvents:"none",borderRadius:10,overflow:"hidden"}}>
             <div style={{position:"absolute",left:"33.333%",top:0,bottom:0,width:1,background:"rgba(255,61,141,.22)"}}/>
             <div style={{position:"absolute",left:"66.666%",top:0,bottom:0,width:1,background:"rgba(255,61,141,.22)"}}/>
@@ -5825,9 +5917,11 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
           })()}
           </div>
         </div>
+        </div>
       </div>
       <div style={{width:360,flexShrink:0,overflowY:"auto",borderLeft:`1px solid ${C.line}`,background:"#fff",padding:16}}>
-        {(()=>{
+        {(()=>{const TABS=[["layers","Layers",LayersIcon],["bg","Background",ImageIcon],["product","Product",PackageIcon],["text","Text",TypeIcon],["logo","Logo",TagIcon],["elements","Add",Sparkles]];return<div style={{display:"flex",gap:4,marginBottom:14,padding:4,background:C.paper,border:`1px solid ${C.line}`,borderRadius:12,position:"sticky",top:0,zIndex:5}}>{TABS.map(([k,lbl,Ico])=>{const on=panelTab===k;return<button key={k}onClick={()=>setPanelTab(k)}title={lbl}style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3,padding:"7px 2px",border:"none",borderRadius:9,cursor:"pointer",background:on?C.coral:"transparent",color:on?"#fff":C.sub,fontWeight:on?800:600,transition:"background .12s"}}><Ico size={16}/><span style={{fontSize:9.5,letterSpacing:.2}}>{lbl}</span></button>;})}</div>;})()}
+        {panelTab==="layers"&&(()=>{
           const rows=[];
           elements.forEach(el=>rows.push({key:el.id,name:(el.type==="cta"?"Button — ":el.type==="image"?"Image — ":"Text — ")+(((el.text||"").trim().slice(0,20))||(el.type==="image"?"uploaded":"empty")),move:d=>moveEl(el.id,d),del:()=>{rmEl(el.id);},sel:()=>{}}));
           if(logoId)rows.push({key:"logo",name:"Sub-brand logo",del:()=>setLogoId("")});
@@ -5854,7 +5948,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
             </div>
           </div>;
         })()}
-        {(bgImg||customBg||genImg)&&<div style={{marginBottom:14,border:`1px solid ${C.line}`,borderRadius:10,overflow:"hidden"}}>
+        {panelTab==="bg"&&(bgImg||customBg||genImg)&&<div style={{marginBottom:14,border:`1px solid ${C.line}`,borderRadius:10,overflow:"hidden"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:6,padding:"8px 11px",borderBottom:`1px solid ${C.line}`,background:C.paper}}>
             <span style={{fontSize:11,fontWeight:800,color:C.ink,textTransform:"uppercase",letterSpacing:.6}}>Background image</span>
             <button onClick={()=>{setBgFit("cover");setBgScale(1);setBgOffX(0);setBgOffY(0);}}style={{border:"none",background:"none",color:C.coral,fontSize:11,fontWeight:700,cursor:"pointer",padding:0}}>Reset</button>
@@ -5866,14 +5960,16 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
             {slider("Zoom",Math.round(bgScale*100),50,250,v=>setBgScale(v/100),v=>v+"%")}
             {slider("Move ←→",Math.round(bgOffX*100),-50,50,v=>setBgOffX(v/100),v=>v+"%")}
             {slider("Move ↑↓",Math.round(bgOffY*100),-50,50,v=>setBgOffY(v/100),v=>v+"%")}
+            <div style={{fontSize:10.5,color:C.sub,lineHeight:1.4,marginTop:-2}}>Tip: just <b>drag the image on the canvas</b> to move it.</div>
             <Btn small variant="dark"disabled={expandBusy}onClick={smartExpand}style={{width:"100%",justifyContent:"center"}}>{expandBusy?"Expanding…":"✨ Smart expand to fill"}</Btn>
             <div style={{fontSize:10.5,color:C.sub,lineHeight:1.4}}>Generatively paints the empty edges so the image fills the whole frame — like Canva/Adobe expand. Best for backgrounds, not packshots.</div>
             {bgFit==="contain"&&<div style={{fontSize:10.5,color:C.sub,lineHeight:1.4}}>“Fit” shows the whole image and may leave empty edges — use <b>Smart expand</b> to fill them.</div>}
           </div>
         </div>}
-        <div style={{fontSize:11,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.6,marginBottom:10}}>Content &amp; styling</div>
+        {panelTab==="bg"&&!(bgImg||customBg||genImg)&&<div style={{marginBottom:14,border:`1px dashed ${C.line}`,borderRadius:10,padding:"18px 14px",textAlign:"center",color:C.sub,fontSize:12,lineHeight:1.5}}><ImageIcon size={20}color={C.line}/><div style={{marginTop:6}}>No background yet. Generate an AI scene or pick/upload one on the left, then come back here to resize, fit and smart-expand it.</div></div>}
         <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:11,alignContent:"start"}}>
-        {bgMode!=="generate"&&<>
+        {panelTab==="product"&&bgMode==="generate"&&<div style={{gridColumn:"1 / -1",border:`1px dashed ${C.line}`,borderRadius:10,padding:"16px 14px",textAlign:"center",color:C.sub,fontSize:12,lineHeight:1.5}}><PackageIcon size={20}color={C.line}/><div style={{marginTop:6}}>In the generate flow your product is chosen on the left under “① Product — the hero”, so the scene is built around it. Switch the source to a library or uploaded image to composite extra packshots here.</div></div>}
+        {panelTab==="product"&&bgMode!=="generate"&&<>
         {/* products / mockups — multi, from library only */}
         <div style={{gridColumn:"1 / -1",borderTop:`1px solid ${C.line}`,paddingTop:11,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <span style={{fontSize:11.5,fontWeight:800,color:C.ink}}>Products / mockups{products.length>1?" · "+products.length:""}</span>
@@ -5890,7 +5986,30 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
             <span style={{fontSize:10.5,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.4}}>Product {idx+1}</span>
             <button onClick={()=>rmProduct(p.pid)}title="Remove this product"style={{border:"none",background:"none",color:"#B91C1C",fontSize:11,fontWeight:700,cursor:"pointer",padding:0}}>Remove</button>
           </div>
-          <div style={{gridColumn:"1 / -1"}}><select value={p.id}onChange={e=>updProduct(p.pid,{id:e.target.value})}style={ctrl}><option value="">— pick from library —</option>{productItems.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select></div>
+          <div style={{gridColumn:"1 / -1"}}>{(()=>{
+            const sel=productItems.find(i=>i.id===p.id);
+            const openPick=prodPickFor===p.pid;
+            const q=prodQ.trim().toLowerCase();
+            const list=q?productItems.filter(i=>(((i.product||"")+" "+(i.file_name||"")+" "+((i.tags||[]).join(" ")))).toLowerCase().includes(q)):productItems;
+            return<>
+              <button onClick={()=>{setProdPickFor(openPick?null:p.pid);setProdQ("");}}style={{width:"100%",display:"flex",alignItems:"center",gap:8,border:`1px solid ${openPick?C.coral:C.line}`,borderRadius:8,padding:"6px 9px",background:"#fff",cursor:"pointer",textAlign:"left"}}>
+                <span style={{width:34,height:34,flexShrink:0,borderRadius:6,overflow:"hidden",background:"#F3F4F6",display:"flex",alignItems:"center",justifyContent:"center"}}>{sel?<ImageThumb id={sel.id}alt={sel.product}/>:<ImageIcon size={15}color={C.line}/>}</span>
+                <span style={{flex:1,minWidth:0,fontSize:12.5,fontWeight:600,color:sel?C.ink:C.sub,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sel?(sel.product||sel.file_name):"Choose product — browse all"}</span>
+                <ChevronDown size={15}color={C.sub}/>
+              </button>
+              {openPick&&<div style={{marginTop:6,border:`1px solid ${C.line}`,borderRadius:8,padding:8,background:"#FCFCFD"}}>
+                <input autoFocus value={prodQ}onChange={e=>setProdQ(e.target.value)}placeholder={"Search "+productItems.length+" products…"}style={{...ctrl,marginBottom:8}}/>
+                {productItems.length===0?<div style={{fontSize:11.5,color:C.sub,padding:"4px 2px"}}>No product packshots found.</div>
+                :list.length===0?<div style={{fontSize:11.5,color:C.sub,padding:"4px 2px"}}>No products match “{prodQ}”.</div>
+                :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(72px,1fr))",gap:6,maxHeight:240,overflowY:"auto"}}>
+                  {list.map(i=><button key={i.id}onClick={()=>{updProduct(p.pid,{id:i.id});setProdPickFor(null);setProdQ("");}}title={i.product||i.file_name}style={{border:`2px solid ${p.id===i.id?C.coral:C.line}`,borderRadius:8,overflow:"hidden",background:"#fff",cursor:"pointer",padding:0}}>
+                    <span style={{display:"block",aspectRatio:"1/1",background:"#F3F4F6"}}><ImageThumb id={i.id}alt={i.product}/></span>
+                    <span style={{display:"block",fontSize:9,color:C.sub,padding:"2px 3px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{i.product||i.file_name}</span>
+                  </button>)}
+                </div>}
+              </div>}
+            </>;
+          })()}</div>
           {slider("Size",Math.round(p.scale*100),15,100,v=>{if(autoFit)setAutoFit(false);updProduct(p.pid,{scale:v/100});},v=>v+"%")}
           {slider("Horizontal",Math.round(p.x*100),0,100,v=>{if(autoFit)setAutoFit(false);updProduct(p.pid,{x:v/100});},v=>v+"%")}
           {slider("Vertical",Math.round(p.y*100),5,95,v=>{if(autoFit)setAutoFit(false);updProduct(p.pid,{y:v/100});},v=>v+"%")}
@@ -5907,6 +6026,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
         </div>
         </>}
 
+        {panelTab==="text"&&<>
         {/* image copy */}
         <div style={{gridColumn:"1 / -1",borderTop:`1px solid ${C.line}`,paddingTop:11,fontSize:11.5,fontWeight:800,color:C.ink}}>Image copy</div>
         <div style={{gridColumn:"1 / -1",display:"flex",alignItems:"center",gap:10}}>
@@ -5961,7 +6081,9 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
             <span style={{fontSize:11,color:C.sub}}>Height ↕</span><input type="range"min={5}max={95}value={Math.round(divider.y*100)}onChange={e=>setDivider({...divider,y:+e.target.value/100})}/>
             <span style={{fontSize:11,color:C.sub}}>Width ↔</span><input type="range"min={10}max={90}value={Math.round(divider.w*100)}onChange={e=>setDivider({...divider,w:+e.target.value/100})}/></>}
         </div>
+        </>}
 
+        {panelTab==="logo"&&<>
         {/* logo */}
         <div style={{gridColumn:"1 / -1",borderTop:`1px solid ${C.line}`,paddingTop:11,fontSize:11.5,fontWeight:800,color:C.ink}}>HUFT logo (built-in)</div>
         <div><label style={fieldL}>Show</label><select value={huftMode}onChange={e=>setHuftMode(e.target.value)}style={ctrl}><option value="auto">Auto (light/dark)</option><option value="dark">Dark</option><option value="white">White</option><option value="none">Off</option></select></div>
@@ -5973,8 +6095,9 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
         <div style={{gridColumn:"1 / -1"}}><label style={fieldL}>Logo image</label><select value={logoId}onChange={e=>setLogoId(e.target.value)}style={ctrl}><option value="">— none —</option>{logoItems.map(i=><option key={i.id}value={i.id}>{i.product||i.file_name}</option>)}</select>{logoItems.length===0&&<div style={{fontSize:11,color:C.sub,marginTop:4}}>No sub-brand lockups yet — upload them in Image library as “Logo / lockup”. (HUFT master logo is built-in above.)</div>}</div>
         {logoId&&slider("Logo size",Math.round(logoScale*100),8,45,v=>setLogoScale(v/100),v=>v+"%")}
         {logoId&&<div><label style={fieldL}>Logo corner</label><select value={logoCorner}onChange={e=>setLogoCorner(e.target.value)}style={ctrl}><option value="top-left">Top left</option><option value="top-right">Top right</option><option value="bottom-left">Bottom left</option><option value="bottom-right">Bottom right</option></select></div>}
+        </>}
 
-        <div style={{gridColumn:"1 / -1",borderTop:`1px solid ${C.line}`,paddingTop:11}}>
+        {panelTab==="elements"&&<div style={{gridColumn:"1 / -1",paddingTop:2}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
             <span style={{fontSize:11.5,fontWeight:800,color:C.ink}}>Extra elements</span>
             <div style={{display:"flex",gap:6}}>
@@ -6008,7 +6131,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
             {el.type==="image"&&<div style={{display:"flex",gap:8,marginTop:6,flexWrap:"wrap"}}><Btn small variant="ghost"onClick={()=>updEl(el.id,{flipH:!el.flipH})}>⇋ Flip</Btn><Btn small variant="ghost"onClick={()=>{const im=new Image();im.onload=()=>{setCustomBg(im);setBgMode("custom");rmEl(el.id);};im.src=el.src;}}><ImageIcon size={13}/>Set as background</Btn></div>}
             {el.type!=="image"&&<label style={{display:"flex",alignItems:"center",gap:7,fontSize:12.5,fontWeight:600,color:C.ink,cursor:"pointer",marginTop:6}}><input type="checkbox"checked={!!el.bold}onChange={e=>updEl(el.id,{bold:e.target.checked})}/>Bold</label>}
           </div>)}
-        </div>
+        </div>}
         </div>
       </div>
     </div>

@@ -133,7 +133,7 @@ const enforceCopyHardRules = (text, limits) => {
   }
   return stripForbidden(text); // plain-text response → still strip forbidden tokens
 };
-const SERVER_BUILD = "v29.64s - No-leak rulebook: /api/generate now fetches the active copy rules from the DB and injects them into the system prompt server-side, so the rulebook always applies (even if a client omits it) and any newly added rule takes effect immediately. Plus v29.63s smart-expand/outpaint, v29.62s image re-tag, v29.61s copy hard-rules, v29.60s 2000-row list.";
+const SERVER_BUILD = "v29.66s - expand-image gains a refine mode: when the client sends the current placement as a soft-seeded full frame, the model repaints only the blurry seed areas and keeps the crisp photo where it sits (fill-from-where-you-left-it). Plus v29.65s vision reclassify, v29.64s no-leak rulebook.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -1394,10 +1394,12 @@ app.post("/api/generate-image", authMiddleware, roles("admin", "brand", "design"
 
 // Generative expand / smart-fill (outpaint): extend an image to fill a target aspect ratio.
 app.post("/api/expand-image", authMiddleware, roles("admin", "brand", "design", "business"), async (req, res) => {
-  const { image, aspectRatio, prompt } = req.body || {};
+  const { image, aspectRatio, prompt, mode } = req.body || {};
   if (!image || !String(image).startsWith("data:")) return res.status(400).json({ error: "image (data URL) required" });
   const ar = aspectRatio || "1:1";
-  const full = `You are given ONE photograph as input. Extend it to completely fill a ${ar} frame using generative outpainting.
+  const full = mode === "refine"
+    ? `You are given ONE image that already fills a ${ar} frame. Part of it is a CRISP, in-focus photograph; the area around it is a BLURRY, stretched seed fill. Repaint ONLY the blurry/soft areas into a clean, photorealistic continuation of the crisp photo — extend the same background, surface, surroundings and textures outward so the entire frame reads as one seamless photograph. Keep every crisp, in-focus pixel EXACTLY as-is: do not move, crop, recolour, restyle or regenerate the sharp subject, and keep it in the SAME position. Seamlessly match lighting direction, colour temperature, grain, depth of field and perspective at the seams. Photorealistic. No added text, words, logos, badges, frames or watermarks.${prompt ? "\nScene note: " + String(prompt) : ""}`
+    : `You are given ONE photograph as input. Extend it to completely fill a ${ar} frame using generative outpainting.
 HARD RULES: keep the original photo's existing content EXACTLY as-is — do not move, crop, recolour, restyle, or regenerate any part that already exists; place it unchanged and centred. Paint MORE of the same scene outward into the new empty areas (continue the background, surface, surroundings, textures) so nothing looks cut off or bordered. Seamlessly match the lighting direction, colour temperature, grain, depth of field and perspective at the seams. Photorealistic. No added text, words, logos, badges, frames or watermarks.${prompt ? "\nScene note: " + String(prompt) : ""}`;
   try {
     const out = await generateImageFromPrompt(full, ar, [image]);
@@ -1510,6 +1512,31 @@ app.post("/api/image-library/retag", authMiddleware, roles("admin"), async (req,
     const counts = {};
     (rows || []).forEach(r => { const k = r.kind || "untagged"; counts[k] = (counts[k] || 0) + 1; });
     res.json({ ok: true, total: (rows || []).length, counts });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Reliable re-classify using vision — looks at each image and sets kind = product (clean packshot) /
+// asset (lifestyle/scene) / logo. Batched: client calls repeatedly with offset until done=true.
+app.post("/api/image-library/reclassify", authMiddleware, roles("admin"), async (req, res) => {
+  const limit = Math.min(8, Math.max(1, parseInt(req.body && req.body.limit) || 6));
+  const offset = Math.max(0, parseInt(req.body && req.body.offset) || 0);
+  try {
+    const total = (await db("SELECT count(*)::int AS n FROM image_library"))[0].n;
+    const rows = await db("SELECT id, file_data, file_type FROM image_library ORDER BY uploaded_at DESC LIMIT $1 OFFSET $2", [limit, offset]);
+    let changed = 0;
+    const sys = "You classify a marketing image into exactly one kind. A 'packshot' is a clean product/packaging shot — just the pack (pouch, box, tin, bottle) on a plain or empty studio background, with NO pet, NO person, and NO real-world scene. A 'lifestyle' image shows a pet, a person/hand, or any real setting/scene (home, floor, outdoors, a bowl being eaten from, etc.) even if a product is also visible. A 'logo' is a brand logo or wordmark. Return ONLY JSON: {\"kind\":\"packshot\"|\"lifestyle\"|\"logo\"}.";
+    for (const r of rows) {
+      try {
+        const m = /^data:([^;]+);base64,(.*)$/.exec(String(r.file_data) || "");
+        if (!m) continue;
+        const out = await generateVision(sys, "Classify this image.", m[2], m[1]);
+        let parsed = {}; try { parsed = JSON.parse(out.replace(/```json|```/g, "").trim().replace(/^[^{]*/, "")); } catch (_) {}
+        const w = String(parsed.kind || "").toLowerCase();
+        const kind = w.includes("logo") ? "logo" : (w.includes("life") || w.includes("scene")) ? "asset" : w.includes("pack") ? "product" : null;
+        if (kind) { await db("UPDATE image_library SET kind=$1 WHERE id=$2", [kind, r.id]); changed++; }
+      } catch (e) { /* skip a bad image, keep going */ }
+    }
+    res.json({ ok: true, processed: rows.length, changed, offset, total, done: offset + rows.length >= total });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
