@@ -108,7 +108,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v29.87 - Composer product picker is now visual: instead of a name-only dropdown it shows a searchable thumbnail grid of ALL your product packshots, so you can see the right image and pick from the whole library (search by product, file name or tag). Selected product shows as a thumbnail + name.";
+const BUILD="v29.90 - Canva-style Layers panel in the composer's right column: every layer (headline, sub-headline, button, each product, sub-brand & HUFT logos, extra text/CTA/image elements, background) is listed top=front. Each row has show/hide (eye), and products + extra elements also get bring-forward / send-back reorder and delete. Click a copy layer to edit it on the canvas. Layer typography & styling controls remain below.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -4956,6 +4956,13 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   const[copyScale,setCopyScale]=useState(1); // master scale for the whole image-copy block
   const[autoAvoid,setAutoAvoid]=useState(true); // keep copy out of the busy/subject part of the image
   const[elements,setElements]=useState([]); // extra free elements: additional text blocks & CTAs
+  // ===== Layers (Canva-style): per-layer visibility + reorder =====
+  const[hidden,setHidden]=useState({});               // layer key -> true = hidden from the canvas
+  const[selLayer,setSelLayer]=useState(null);          // currently highlighted layer key (UI only)
+  const isHidden=(k)=>!!hidden[k];
+  const toggleHidden=(k)=>setHidden(h=>({...h,[k]:!h[k]}));
+  const moveEl=(id,dir)=>setElements(list=>{const i=list.findIndex(e=>e.id===id);const j=i+dir;if(i<0||j<0||j>=list.length)return list;const a=[...list];[a[i],a[j]]=[a[j],a[i]];return a;});
+  const moveProd=(pid,dir)=>setProducts(list=>{const i=list.findIndex(p=>p.pid===pid);const j=i+dir;if(i<0||j<0||j>=list.length)return list;const a=[...list];[a[i],a[j]]=[a[j],a[i]];return a;});
   const nextEl=()=>"el"+Date.now()+Math.floor(Math.random()*1000);
   const addElement=(type)=>setElements(es=>[...es,type==="cta"
     ? {id:nextEl(),type:"cta",text:"Shop now",x:0.5,y:0.82,size:1,color:"#FFFFFF",bg:C.coral,font:"Rubik",bold:true}
@@ -4994,6 +5001,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
   const[finalSaving,setFinalSaving]=useState(false);
   const[prodPickFor,setProdPickFor]=useState(null); // product slot pid currently browsing the library
   const[prodQ,setProdQ]=useState("");               // product browser search
+  const[showAdv,setShowAdv]=useState(false);        // collapse avoid / style-reference / product-handling by default (keep the panel simple)
 
   // ===== Undo / redo history (snapshots editable state; excludes loaded image bitmaps) =====
   const snapshot=React.useCallback(()=>({sizeIdx,template,linkSizes,autoFit,bgMode,bgColor,bgId,genPrompt,genNeg,products,shadow,shadowDir,logoId,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,hl,sh,anchor,divider,ct,ctaBg,textShadow,textAlign,oldPrice,copyScale,elements}),[sizeIdx,template,linkSizes,autoFit,bgMode,bgColor,bgId,genPrompt,genNeg,products,shadow,shadowDir,logoId,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,hl,sh,anchor,divider,ct,ctaBg,textShadow,textAlign,oldPrice,copyScale,elements]);
@@ -5275,6 +5283,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
     const regH=Math.max(sz.h*0.12, regBot-regTop), nP=rendered.length;
     prodHitsRef.current=[];
     rendered.forEach((p,pi)=>{
+      if(isHidden(p.id))return;
       const img=prodImgs[p.id]; const proc=procImgs[p.id]; const drawImg=(proc&&proc.canvas)||img; const aspect=(proc&&proc.aspect)||(img.height/img.width);
       let pw,ph,cx,cy;
       if(autoFit){
@@ -5332,7 +5341,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
     let y=topY+Hdy*sz.h;const hx=anchorX+Hdx*sz.w;
     copyHitsRef.current={}; // rebuild each draw
     copyHitsRef.current.hl=[y, y+hBlock];
-    for(const ln of H.lines){drawCopyLine(ln,hx,y,hAlign,H.px,hl.color||"#FFFFFF",false);y+=hLineH;}
+    if(!isHidden("hl"))for(const ln of H.lines){drawCopyLine(ln,hx,y,hAlign,H.px,hl.color||"#FFFFFF",false);y+=hLineH;}
     if(priceOwnRow){
       ctx.fillStyle=oldPrice.color||sh.color||"#FFFFFF";
       ctx.font=(sh.bold?"700":"400")+" "+ppx+"px '"+sh.font+"'";try{ctx.letterSpacing=(sh.kern||0)+"px";}catch(e){}
@@ -5344,10 +5353,10 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
       ctx.font=(sh.bold?"700":"400")+" "+S.px+"px '"+sh.font+"'";try{ctx.letterSpacing=(sh.kern||0)+"px";}catch(e){}
       let sy=topY+hBlock+gap+priceBlockH+Sdy*sz.h;const sx=anchorX+Sdx*sz.w;
       copyHitsRef.current.sh=[sy, sy+S.lines.length*sLineH];
-      for(const ln of S.lines){drawCopyLine(ln,sx,sy,hAlign,S.px,sh.color||"#FFFFFF",false);sy+=sLineH;}
+      if(!isHidden("sh"))for(const ln of S.lines){drawCopyLine(ln,sx,sy,hAlign,S.px,sh.color||"#FFFFFF",false);sy+=sLineH;}
     }
     ctx.shadowColor="transparent";ctx.shadowBlur=0;ctx.shadowOffsetY=0;try{ctx.letterSpacing="0px";}catch(e){}
-    if(ct.text){
+    if(ct.text&&!isHidden("cta")){
       const cpx=Math.round(sz.w*0.04*(ct.size||1)*copyScale);ctx.font=(ct.bold?"700":"400")+" "+cpx+"px '"+ct.font+"'";
       try{ctx.letterSpacing=(ct.kern||0)+"px";}catch(e){}
       const tw=ctx.measureText(ct.text).width, bw=tw+cpx*1.7, bh=cpx*2.1;
@@ -5369,14 +5378,14 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
       ctx.beginPath();ctx.moveTo(dx,dy);ctx.lineTo(dx+dw,dy);ctx.stroke();ctx.restore();
     }
     // 4) logo (sub-brand, from library)
-    if(logoImg){
+    if(logoImg&&!isHidden("logo")){
       const lw=sz.w*logoScale, lh=lw*(logoImg.height/logoImg.width), m=sz.w*0.05;
       const [lv,lh2]=logoCorner.split("-");
       const lx=lh2==="left"?m:sz.w-lw-m, ly=lv==="top"?m:sz.h-lh-m;
       ctx.drawImage(logoImg,lx,ly,lw,lh);
     }
     // 5) built-in HUFT master logo (auto light/dark)
-    if(huftMode!=="none"&&huftReady){
+    if(huftMode!=="none"&&huftReady&&!isHidden("huft")){
       let dark;
       if(huftMode==="dark")dark=true; else if(huftMode==="white")dark=false;
       else{ // auto: dark logo on light bg, white logo on dark/photo bg
@@ -5395,6 +5404,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
     }
     // 6) extra user-added elements (additional text blocks / CTA pills) — top layer
     elements.forEach(el=>{
+      if(isHidden(el.id))return;
       const ex=el.x*sz.w, ey=el.y*sz.h;
       if(el.type==="image"){
         const im=elImgs[el.id];
@@ -5423,7 +5433,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
       }
     });
     ctx.textAlign="left";ctx.textBaseline="top";
-  },[sz,bgMode,bgColor,bgImg,genImg,mockupPreset,products,prodImgs,procImgs,shadow,shadowDir,hl,sh,anchor,ct,ctaBg,logoImg,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,huftReady,divider,autoFit,textShadow,textAlign,oldPrice,copyScale,autoAvoid,genUsedProduct,editorOpen,elements,elImgs,customBg,textBackdrop]);
+  },[sz,bgMode,bgColor,bgImg,genImg,mockupPreset,products,prodImgs,procImgs,shadow,shadowDir,hl,sh,anchor,ct,ctaBg,logoImg,logoScale,logoCorner,huftMode,huftLockup,huftCorner,huftScale,huftReady,divider,autoFit,textShadow,textAlign,oldPrice,copyScale,autoAvoid,genUsedProduct,editorOpen,elements,elImgs,customBg,textBackdrop,hidden]);
 
   React.useEffect(()=>{if(!canGenerate&&bgMode==="generate")setBgMode("mockup");},[canGenerate,bgMode]);
   React.useEffect(()=>{draw();},[draw]);
@@ -5677,8 +5687,9 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
         {bgMode==="generate"&&canGenerate&&<div style={{gridColumn:"1 / -1",display:"grid",gap:8,padding:"10px 12px",background:C.paper,border:`1px solid ${C.line}`,borderRadius:8}}>
           <div><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}><label style={fieldL}>Prompt (scene / background)</label><button onClick={genScenePrompt}disabled={promptBusy}style={{border:"none",background:"none",cursor:promptBusy?"wait":"pointer",color:C.coral,fontSize:11,fontWeight:700,padding:0,whiteSpace:"nowrap"}}>{promptBusy?"Writing…":"✨ From art direction"}</button></div><textarea value={genPrompt}onChange={e=>setGenPrompt(e.target.value)}rows={2}style={{...ctrl,resize:"vertical"}}placeholder="e.g. warm rustic kitchen counter, soft morning light"/></div>
           <div><label style={fieldL}>Avoid (optional)</label><input value={genNeg}onChange={e=>setGenNeg(e.target.value)}style={ctrl}placeholder="text, watermarks, other products"/></div>
-          <RefImagePicker d={d}setD={setDesign}campaignId={c.id}product={c.product}/>
-          <label style={{display:"flex",alignItems:"flex-start",gap:7,fontSize:12,color:C.ink,cursor:"pointer",marginBottom:8,lineHeight:1.4}}><input type="checkbox"checked={lockProduct}onChange={e=>setLockProduct(e.target.checked)}style={{marginTop:2}}/><span>Keep my product exact <span style={{fontSize:10.5,color:C.sub}}>— generates an empty scene, then your real packshot composites on top (the AI never redraws it). Uncheck only if you want the AI to blend/restyle the product.</span></span></label>
+          <button onClick={()=>setShowAdv(a=>!a)}style={{border:"none",background:"none",color:C.coral,fontSize:11.5,fontWeight:700,cursor:"pointer",padding:0,textAlign:"left",width:"fit-content"}}>{showAdv?"▾ Fewer options":"▸ More options — style reference & product handling"}</button>
+          {showAdv&&<><RefImagePicker d={d}setD={setDesign}campaignId={c.id}product={c.product}/>
+          <label style={{display:"flex",alignItems:"flex-start",gap:7,fontSize:12,color:C.ink,cursor:"pointer",marginBottom:8,lineHeight:1.4}}><input type="checkbox"checked={lockProduct}onChange={e=>setLockProduct(e.target.checked)}style={{marginTop:2}}/><span>Keep my product exact <span style={{fontSize:10.5,color:C.sub}}>— generates an empty scene, then your real packshot composites on top (the AI never redraws it). Uncheck only if you want the AI to blend/restyle the product.</span></span></label></>}
           {<div style={{borderTop:`1px solid ${C.line}`,paddingTop:8}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <span style={{fontSize:11,fontWeight:800,color:C.ink}}>Products in the scene{products.length>1?" · "+products.length:""}</span>
@@ -5701,7 +5712,9 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
                 </div>
                 {openPick&&<div style={{marginTop:6,border:`1px solid ${C.line}`,borderRadius:8,padding:8,background:"#FCFCFD"}}>
                   <input autoFocus value={prodQ}onChange={e=>setProdQ(e.target.value)}placeholder={"Search all "+productItems.length+" products…"}style={{...ctrl,marginBottom:8}}/>
-                  {list.length===0?<div style={{fontSize:11.5,color:C.sub,padding:"4px 2px"}}>No products match “{prodQ}”.</div>
+                  {loadingItems?<div style={{fontSize:11.5,color:C.sub,padding:"4px 2px"}}>Loading your products…</div>
+                  :productItems.length===0?<div style={{fontSize:11.5,color:C.sub,padding:"4px 2px",lineHeight:1.5}}>No product packshots in your library yet. Upload them in <b>Brand Assets → Product packshot</b>, then they’ll show here.</div>
+                  :list.length===0?<div style={{fontSize:11.5,color:C.sub,padding:"4px 2px"}}>No products match “{prodQ}”.</div>
                   :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(72px,1fr))",gap:6,maxHeight:250,overflowY:"auto"}}>
                     {list.map(i=><button key={i.id}onClick={()=>{updProduct(p.pid,{id:i.id});setProdPickFor(null);setProdQ("");}}title={i.product||i.file_name}style={{border:`2px solid ${p.id===i.id?C.coral:C.line}`,borderRadius:8,overflow:"hidden",background:"#fff",cursor:"pointer",padding:0}}>
                       <span style={{display:"block",aspectRatio:"1/1",background:"#F3F4F6"}}><ImageThumb id={i.id}alt={i.product}/></span>
@@ -5755,6 +5768,32 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
         </div>
       </div>
       <div style={{width:360,flexShrink:0,overflowY:"auto",borderLeft:`1px solid ${C.line}`,background:"#fff",padding:16}}>
+        {(()=>{
+          const rows=[];
+          elements.forEach(el=>rows.push({key:el.id,name:(el.type==="cta"?"Button — ":el.type==="image"?"Image — ":"Text — ")+(((el.text||"").trim().slice(0,20))||(el.type==="image"?"uploaded":"empty")),move:d=>moveEl(el.id,d),del:()=>{rmEl(el.id);},sel:()=>{}}));
+          if(logoId)rows.push({key:"logo",name:"Sub-brand logo",del:()=>setLogoId("")});
+          if(huftMode!=="none")rows.push({key:"huft",name:"HUFT logo"});
+          if(ct.text)rows.push({key:"cta",name:"Button (CTA)",sel:()=>setEditCopy("cta")});
+          if(sh.text)rows.push({key:"sh",name:"Sub-headline",sel:()=>setEditCopy("sh")});
+          if(hl.text)rows.push({key:"hl",name:"Headline",sel:()=>setEditCopy("hl")});
+          products.filter(p=>p.id).forEach(p=>{const it=productItems.find(x=>x.id===p.id);rows.push({key:p.id,name:"Product — "+(((it&&(it.product||it.file_name))||"item").slice(0,18)),move:d=>moveProd(p.pid,d),del:()=>rmProduct(p.pid)});});
+          rows.push({key:"__bg__",name:"Background",noHide:true});
+          const iconBtn={border:"none",background:"none",cursor:"pointer",padding:"2px 4px",fontSize:13,lineHeight:1,color:C.sub,borderRadius:5};
+          return<div style={{marginBottom:14,border:`1px solid ${C.line}`,borderRadius:10,overflow:"hidden"}}>
+            <div style={{display:"flex",alignItems:"center",gap:6,padding:"8px 11px",borderBottom:`1px solid ${C.line}`,background:C.paper}}>
+              <span style={{fontSize:11,fontWeight:800,color:C.ink,textTransform:"uppercase",letterSpacing:.6}}>Layers</span>
+              <span style={{fontSize:10.5,color:C.sub}}>· top = front</span>
+            </div>
+            <div style={{maxHeight:220,overflowY:"auto",padding:6}}>
+              {rows.map(r=>{const hid=isHidden(r.key);return<div key={r.key}onClick={()=>{setSelLayer(r.key);r.sel&&r.sel();}}style={{display:"flex",alignItems:"center",gap:3,padding:"4px 6px",borderRadius:7,border:`1px solid ${selLayer===r.key?C.coral:"transparent"}`,background:selLayer===r.key?C.coral+"0E":"transparent",cursor:"pointer",marginBottom:2}}>
+                <span style={{flex:1,minWidth:0,fontSize:11.5,fontWeight:600,color:hid?C.line:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textDecoration:hid?"line-through":"none"}}>{r.name}</span>
+                {r.move&&<><button title="Bring forward"onClick={e=>{e.stopPropagation();r.move(1);}}style={iconBtn}>↑</button><button title="Send back"onClick={e=>{e.stopPropagation();r.move(-1);}}style={iconBtn}>↓</button></>}
+                {!r.noHide&&<button title={hid?"Show":"Hide"}onClick={e=>{e.stopPropagation();toggleHidden(r.key);}}style={{...iconBtn,color:hid?C.line:C.coral,fontSize:12}}>{hid?"◯":"⬤"}</button>}
+                {r.del&&<button title="Delete"onClick={e=>{e.stopPropagation();r.del();}}style={{...iconBtn,color:"#B91C1C",fontWeight:700}}>×</button>}
+              </div>;})}
+            </div>
+          </div>;
+        })()}
         <div style={{fontSize:11,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.6,marginBottom:10}}>Content &amp; styling</div>
         <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:11,alignContent:"start"}}>
         {bgMode!=="generate"&&<>
@@ -5917,34 +5956,48 @@ class CompErrorBoundary extends React.Component{
   componentDidCatch(e,info){console.error("Composer crashed:",e,info);}
   render(){if(this.state.err)return React.createElement("div",{style:{padding:18,background:"#FEF2F2",border:"1px solid #FCA5A5",borderRadius:10,color:"#991B1B",fontSize:13}},React.createElement("b",null,"The composer hit an error - please screenshot this:"),React.createElement("div",{style:{marginTop:6,fontFamily:"monospace",fontSize:12,whiteSpace:"pre-wrap"}},String((this.state.err&&this.state.err.stack)||(this.state.err&&this.state.err.message)||this.state.err)));return this.props.children;}
 }
+// Stable blank context so the composer can create a brand-new asset with no brief attached.
+const BLANK_C={id:"",product:"",channel:"",data:{design:{}}};
+const BLANK_COPY={header:"",cta:"",direction:""};
 function ComposerTab({campaigns,me,patch,promptRules,toast}){
   const list=(campaigns||[]).filter(c=>!isArchived(c)&&(c.stage==="design"||c.stage==="content"||c.stage==="done"));
+  const[mode,setMode]=useState("new"); // "new" = blank asset (no brief), "brief" = compose an existing campaign
   const[selId,setSelId]=useState("");
-  const c=list.find(x=>x.id===selId)||list[0]||null;
-  const d=c?((c.data&&c.data.design)||{}):{};
-  const copyOpts=c?(c.data?.copyOptions||[]):[];
-  const selIdx=c?c.data?.selectedCopyIdx:null;
-  const copy=c?(selIdx!=null?copyOpts[selIdx]:(copyOpts[0]||null)):null;
-  const approvedPrompt=(c&&d.imagePrompts&&d.approvedPromptIdx!=null)?d.imagePrompts[d.approvedPromptIdx]:null;
+  const briefC=list.find(x=>x.id===selId)||list[0]||null;
+  const d=(mode==="brief"&&briefC)?((briefC.data&&briefC.data.design)||{}):{};
+  const copyOpts=(mode==="brief"&&briefC)?(briefC.data?.copyOptions||[]):[];
+  const selIdx=(mode==="brief"&&briefC)?briefC.data?.selectedCopyIdx:null;
+  const copy=(mode==="brief"&&briefC)?(selIdx!=null?copyOpts[selIdx]:(copyOpts[0]||null)):null;
+  const approvedPrompt=(mode==="brief"&&briefC&&d.imagePrompts&&d.approvedPromptIdx!=null)?d.imagePrompts[d.approvedPromptIdx]:null;
+  const seg=(k,lbl,sub)=><button onClick={()=>setMode(k)}style={{flex:"1 1 200px",textAlign:"left",border:`1.5px solid ${mode===k?C.coral:C.line}`,background:mode===k?C.coral+"0E":"#fff",borderRadius:10,padding:"10px 13px",cursor:"pointer"}}>
+    <div style={{fontSize:13,fontWeight:800,color:mode===k?C.coral:C.ink}}>{lbl}</div>
+    <div style={{fontSize:11,color:C.sub,marginTop:2,lineHeight:1.4}}>{sub}</div>
+  </button>;
   return<div>
-    <div style={{marginBottom:16}}>
+    <div style={{marginBottom:14}}>
       <Eyebrow>Super-admin</Eyebrow>
       <h1 style={{margin:"4px 0 0",fontSize:24,fontWeight:800}}>Composer</h1>
-      <div style={{fontSize:12.5,color:C.sub,marginTop:4}}>The full creative composer — available to you for any asset. Hidden from the business and design flows.</div>
+      <div style={{fontSize:12.5,color:C.sub,marginTop:4}}>The full creative composer — make any asset, with or without a brief.</div>
     </div>
-    {list.length===0
-      ?<Card><Empty icon={<Wand2 size={26}color={C.sub}/>}title="No assets to compose"sub="Assets appear here once they have copy or reach the design stage."/></Card>
-      :<div>
-        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,flexWrap:"wrap"}}>
-          <span style={{fontSize:12.5,fontWeight:700,color:C.ink}}>Asset:</span>
-          <select value={c?c.id:""}onChange={e=>setSelId(e.target.value)}style={{border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 10px",fontSize:13,minWidth:260,maxWidth:"100%"}}>
-            {list.map(x=><option key={x.id}value={x.id}>{(x.product||x.name||"Untitled")+(x.channel?(" · "+x.channel):"")+" · "+x.stage}</option>)}
-          </select>
-        </div>
-        {c&&copy
-          ?<CompErrorBoundary><CreativeComposer c={c}copy={copy}me={me}patch={patch}d={d}approvedPrompt={approvedPrompt}promptRules={promptRules}toast={toast}/></CompErrorBoundary>
-          :<Card><div style={{fontSize:13,color:C.sub,padding:"4px 2px"}}>This asset has no copy yet — pick another asset, or add copy in the Copy tab first.</div></Card>}
-      </div>}
+    <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:16}}>
+      {seg("new","New asset","Start from scratch — pick a product, generate a scene, add your own copy, then download or save to the library. No brief needed.")}
+      {seg("brief","From a brief","Compose an asset that's already in a campaign, using its approved copy.")}
+    </div>
+    {mode==="new"
+      ?<CompErrorBoundary><CreativeComposer key="__new__"c={BLANK_C}copy={BLANK_COPY}me={me}patch={null}d={{}}approvedPrompt={null}promptRules={promptRules}toast={toast}/></CompErrorBoundary>
+      :list.length===0
+        ?<Card><Empty icon={<Wand2 size={26}color={C.sub}/>}title="No briefs to compose"sub="Assets appear here once they have copy or reach the design stage — or switch to “New asset” to make one from scratch."/></Card>
+        :<div>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+            <span style={{fontSize:12.5,fontWeight:700,color:C.ink}}>Asset:</span>
+            <select value={briefC?briefC.id:""}onChange={e=>setSelId(e.target.value)}style={{border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 10px",fontSize:13,minWidth:260,maxWidth:"100%"}}>
+              {list.map(x=><option key={x.id}value={x.id}>{(x.product||x.name||"Untitled")+(x.channel?(" · "+x.channel):"")+" · "+x.stage}</option>)}
+            </select>
+          </div>
+          {briefC&&copy
+            ?<CompErrorBoundary><CreativeComposer key={briefC.id}c={briefC}copy={copy}me={me}patch={patch}d={d}approvedPrompt={approvedPrompt}promptRules={promptRules}toast={toast}/></CompErrorBoundary>
+            :<Card><div style={{fontSize:13,color:C.sub,padding:"4px 2px"}}>This asset has no copy yet — pick another asset, add copy in the Copy tab first, or switch to “New asset”.</div></Card>}
+        </div>}
   </div>;
 }
 function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedback,campaigns,onOpen,onDelete,onDuplicate,team}){
