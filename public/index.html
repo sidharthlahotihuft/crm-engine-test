@@ -108,7 +108,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v31.7 - Copy writers can now leave a Note for the design team on the selected copy (Copy tab); it shows as a prominent amber callout for the design team when they open the asset (Design tab). Stored on the asset, editable any time before/during design. Plus v31.6 short/crisp image copy + RTB-as-option.";
+const BUILD="v31.9 - Brief: product-based AUDIENCE picker. The write-it-myself form and the guided form now surface our real audience segments ranked for the chosen product (tap to use, then edit). TRIGGER and INSIGHT are now separate questions so each gets focus: picking an audience prefills the trigger (from its trigger event) and the insight (from its key insight); both flow into copy generation and the brief views. Business is nudged to fill audience/trigger/insight in their own words. Plus v31.8 copy-row info parity.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -887,27 +887,36 @@ const BRIEF_STEPS = [
     suggest:"Importance",
   },
   {
-    key:"audience", question:"Who's the audience and what's their trigger?",
-    hint:"The more specific the better — lapsed buyers, first-time cat parents, post-grooming no-show, etc.",
+    key:"audience", question:"Who's the audience?",
+    hint:"Be specific about who they are — e.g. value cat parents on Whiskas, lapsed dog buyers, first-time kitten parents.",
     options:[
       "Lapsed buyers (60–90d)","First-time buyers","High-value loyalists",
-      "Post-purchase (follow-up)","Post-spa / grooming","New store opening (NSO) segment",
       "Cat parents","Dog parents","Puppy / kitten parents","Senior pet parents",
     ],
     freeText:true,
-    placeholder:"Or describe your own segment + trigger…",
+    placeholder:"Or describe your own segment…",
     filterByProduct:(prod)=>{
       const p=(prod||"").toLowerCase();
-      const base=["Lapsed buyers (60–90d)","First-time buyers","High-value loyalists","Post-purchase (follow-up)"];
+      const base=["Lapsed buyers (60–90d)","First-time buyers","High-value loyalists"];
       const isGrooming=["spa","groom"].some(k=>p.includes(k));
       const isCat=["meowsi","nutrimeow","cat"].some(k=>p.includes(k));
       const isDog=["hearty","sara","yakies","dash","dog"].some(k=>p.includes(k));
-      // Grooming/spa is the only product where the post-spa trigger makes sense
-      if(isGrooming)return[...base,"Post-spa / grooming","Dog parents","Cat parents","Senior pet parents"];
+      if(isGrooming)return[...base,"Grooming customers","Dog parents","Cat parents","Senior pet parents"];
       if(isCat)return[...base,"Cat parents","Kitten parents","Senior pet parents"];
       if(isDog)return[...base,"Dog parents","Puppy / kitten parents","Senior pet parents"];
       return null; // null = show all
     },
+  },
+  {
+    key:"trigger", question:"What's the trigger — the moment that prompts this?",
+    hint:"The 'why now'. e.g. ran out 60+ days ago, vet flagged digestion, second cat just adopted, payday, post-grooming. Pick one or write your own.",
+    options:[
+      "Ran out / replenishment due","Lapsed 60–90 days","New pet just adopted",
+      "Vet flagged an issue","Price / value comparison","Seasonal / weather",
+      "Post-purchase follow-up","Post-spa / grooming",
+    ],
+    freeText:true,
+    placeholder:"Or describe the moment in your own words…",
   },
   {
     key:"objective", question:"What's the objective?",
@@ -1252,7 +1261,7 @@ function briefBlockFor(c){
   const b=c.data?.brief||{};
   const rtbsArr=(b.rtbs||c.rtbs||[]).filter(Boolean);
   const refsArr=(b.references||c.references||[]).filter(Boolean);
-  return "Brief\nProduct: "+c.product+"\nAudience: "+(c.audience_label||c.segment)+"\nObjective: "+c.objective+"\nOffer: "+(c.offer||"none")+"\nCRM: "+(c.crm_type||"D2C")+"\nInsight: "+b.strategicInsight+"\nIdea: "+b.idea+"\nPillar: "+(b.pillar||"—")+"\nCopy direction: "+(b.copyDirection||"—")+(rtbsArr.length?"\nRTBs to weave into the body (use these as the proof points): "+rtbsArr.join("; "):"")+(refsArr.length?"\nReference links (honour their tone & direction): "+refsArr.join(" , "):"");
+  return "Brief\nProduct: "+c.product+"\nAudience: "+(c.audience_label||c.segment)+"\nObjective: "+c.objective+"\nOffer: "+(c.offer||"none")+"\nCRM: "+(c.crm_type||"D2C")+(b.trigger?"\nTrigger: "+b.trigger:"")+"\nInsight: "+b.strategicInsight+"\nIdea: "+b.idea+"\nPillar: "+(b.pillar||"—")+"\nCopy direction: "+(b.copyDirection||"—")+(rtbsArr.length?"\nRTBs to weave into the body (use these as the proof points): "+rtbsArr.join("; "):"")+(refsArr.length?"\nReference links (honour their tone & direction): "+refsArr.join(" , "):"");
 }
 async function genCopyOptionsFor(c, ruleStr, fb){
   const isPush=isPushChannel(c.channel);
@@ -2043,7 +2052,7 @@ function ReviewModal({c,me,kind,action,tab,onApprove,onSendBackDone,onEdit,onClo
           <div style={{fontSize:10,fontWeight:800,color:C.coral,textTransform:"uppercase",letterSpacing:.5,marginBottom:6}}>The brief — at a glance</div>
           <Field label="Objective">{c.objective||brief.objective}</Field>
           <Field label="Single-minded idea">{brief.idea}</Field>
-          <Field label="Insight">{brief.strategicInsight}</Field>
+          {brief.trigger&&<Field label="Trigger">{brief.trigger}</Field>}<Field label="Insight">{brief.strategicInsight}</Field>
           <Field label="Audience">{c.audience_label||c.segment}</Field>
           <Field label="Offer">{c.offer}</Field>
           {Array.isArray(brief.proofPoints)&&brief.proofPoints.length>0&&<Field label="Proof points">{brief.proofPoints.slice(0,3).join(" · ")}</Field>}
@@ -2389,7 +2398,36 @@ function TypingBubble(){
   </div>;
 }
 
-function BriefFastForm({campaignId,patch,onBriefReady,me,recentFeedback,product}){
+// Infer pet type from a product/brand string, and rank our real audience segments for a product.
+function inferPetType(product){
+  const p=(product||"").toLowerCase();
+  if(/\b(cat|kitten|meow|meowsi|nutrimeow|sheba|whiskas|me-o|feline)\b/.test(p))return"cat";
+  if(/\b(dog|puppy|hearty|nutriwag|dashdog|dash|sara|saras|yakies|yum nums|yimt|royal canin|farmina|pedigree|drools|canine)\b/.test(p))return"dog";
+  return null;
+}
+function audiencesForProduct(product,audiences){
+  if(!Array.isArray(audiences)||!audiences.length)return[];
+  const p=(product||"").toLowerCase();
+  const pet=inferPetType(product);
+  const words=p.split(/[^a-z0-9]+/).filter(w=>w.length>2);
+  const score=(a)=>{
+    let s=0;const hay=((a.name||"")+" "+(a.notes||"")+" "+(a.description||"")).toLowerCase();
+    words.forEach(w=>{if(hay.includes(w))s+=3;});
+    if(pet&&a.pet_type===pet)s+=2;
+    if(a.pet_type==="both")s+=1;
+    if(/spa|groom/.test(p)&&/spa|groom/.test(hay))s+=5;
+    return s;
+  };
+  let ranked=audiences.map(a=>({a,s:score(a)})).sort((x,y)=>y.s-x.s);
+  if(pet)ranked=ranked.filter(({a})=>a.pet_type===pet||a.pet_type==="both");
+  return ranked.map(x=>x.a);
+}
+function findAudience(name,audiences){
+  if(!name||!Array.isArray(audiences))return null;
+  const n=name.trim().toLowerCase();
+  return audiences.find(a=>(a.name||"").trim().toLowerCase()===n)||null;
+}
+function BriefFastForm({campaignId,patch,onBriefReady,me,recentFeedback,product,audiences}){
   const[answers,setAnswers]=useState({product:product||""});
   const[refFiles,setRefFiles]=useState([]);
   const[generating,setGenerating]=useState(false);
@@ -2403,6 +2441,8 @@ function BriefFastForm({campaignId,patch,onBriefReady,me,recentFeedback,product}
   const toggleMulti=(k,v)=>setAnswers(a=>{const cur=Array.isArray(a[k])?a[k]:[];return{...a,[k]:cur.includes(v)?cur.filter(x=>x!==v):[...cur,v]};});
   const optsFor=(s)=>{
     if(s.optionsFromProduct)return rtbsForProduct(answers.product||product)||[];
+    if(s.key==="audience"&&Array.isArray(audiences)&&audiences.length){const m=audiencesForProduct(answers.product||product,audiences).map(a=>a.name);if(m.length)return m;}
+    if(s.key==="trigger"){const a=findAudience(answers.audience,audiences);if(a&&a.trigger_event)return[a.trigger_event,...(s.options||[])];}
     if(s.filterByProduct){const f=s.filterByProduct(answers.product);return f||s.options||[];}
     if(s.filterByAudience){const f=s.filterByAudience(answers.audience);return f||s.options||[];}
     return s.options||[];
@@ -2418,7 +2458,8 @@ function BriefFastForm({campaignId,patch,onBriefReady,me,recentFeedback,product}
       const sys=`You write tight WhatsApp CRM creative briefs for HUFT.\n${BRAND_CONTEXT}\n${fb?"Recent team feedback on Brief generations (incorporate):\n"+fb:""}\nReturn ONLY JSON:\n{"campaignName":"MonYY_Product_Hook_AudienceCode e.g. Jun26_Meowsi_Winback_LapsedCat","strategicInsight":"1-2 sharp lines: the consumer truth/trigger","idea":"single-minded message in one line","proofPoints":["3 short proof points"],"pillar":"Trust|Importance|Edutainment|Brand Values|Discovery","copyDirection":"1-2 lines specific copy direction for WhatsApp CRM","whatsappNote":"one line channel/format direction"}`;
       const rtbList=(answers.rtbs||[]).filter(Boolean);
       const refList=(answers.references||[]).filter(Boolean);
-      const usr=`CRM type: ${answers.crmType||"D2C"}\nChannel: ${answers.channel||"WhatsApp"}\nProduct/Brand: ${answers.product||product||""}\nPillar: ${answers.pillar||"Importance"}\nAudience/Trigger: ${answers.audience||""}\nObjective: ${answers.objective||""}\nOffer: ${answers.offer||"none"}\nHook/Angle: ${answers.hook||"derive"}\nRTBs to focus on (use these as proof points, weave into copy): ${rtbList.length?rtbList.join("; "):"derive from product"}\nReference links (context for copy & design — honour their tone/direction): ${refList.length?refList.join(" , "):"none"}\nGo-live date: ${answers.go_live_date||"not set"}`;
+      const _aud=findAudience(answers.audience,audiences);
+      const usr=`CRM type: ${answers.crmType||"D2C"}\nChannel: ${answers.channel||"WhatsApp"}\nProduct/Brand: ${answers.product||product||""}\nPillar: ${answers.pillar||"Importance"}\nAudience: ${answers.audience||""}\nTrigger / moment: ${answers.trigger||(_aud&&_aud.trigger_event)||"derive"}${_aud&&_aud.key_insight?"\nKnown insight for this audience (use as the strategic hook): "+_aud.key_insight:""}\nObjective: ${answers.objective||""}\nOffer: ${answers.offer||"none"}\nHook/Angle: ${answers.hook||"derive"}\nRTBs to focus on (use these as proof points, weave into copy): ${rtbList.length?rtbList.join("; "):"derive from product"}\nReference links (context for copy & design — honour their tone/direction): ${refList.length?refList.join(" , "):"none"}\nGo-live date: ${answers.go_live_date||"not set"}`;
       const j=await callClaude(sys,usr,true,"brief");
       if(rtbList.length)j.proofPoints=rtbList;
       const now=Date.now();
@@ -2438,7 +2479,7 @@ function BriefFastForm({campaignId,patch,onBriefReady,me,recentFeedback,product}
         tat_brief_due:briefDue,tat_content_due:contentDue,tat_design_due:designDue,
         brief_started_at:new Date(now).toISOString(),
         rtbs:rtbList,references:refList,
-        data:{brief:{...j,rtbs:rtbList,references:refList,referenceFiles:refFiles,source:"form"},selfMade:(isSuper(me)&&maker==="self")},
+        data:{brief:{...j,trigger:answers.trigger||"",rtbs:rtbList,references:refList,referenceFiles:refFiles,source:"form"},selfMade:(isSuper(me)&&maker==="self")},
         stage:"content",
       });
       onBriefReady();
@@ -2688,7 +2729,7 @@ function BriefChat({campaignId,patch,onBriefReady,me,recentFeedback,product}){
       const sys=`You write tight WhatsApp CRM creative briefs for HUFT.\n${BRAND_CONTEXT}\n${fb?"Recent team feedback on Brief generations (incorporate):\n"+fb:""}\nReturn ONLY JSON:\n{"campaignName":"MonYY_Product_Hook_AudienceCode e.g. Jun26_Meowsi_Winback_LapsedCat","strategicInsight":"1-2 sharp lines: the consumer truth/trigger","idea":"single-minded message in one line","proofPoints":["3 short proof points"],"pillar":"Trust|Importance|Edutainment|Brand Values|Discovery","copyDirection":"1-2 lines specific copy direction for WhatsApp CRM","whatsappNote":"one line channel/format direction"}`;
       const rtbList=(answers.rtbs||[]).filter(Boolean);
       const refList=(answers.references||[]).filter(Boolean);
-      const usr=`CRM type: ${answers.crmType||"D2C"}\nChannel: ${answers.channel||"WhatsApp"}\nProduct/Brand: ${answers.product||""}\nPillar: ${answers.pillar||"Importance"}\nAudience/Trigger: ${answers.audience||""}\nObjective: ${answers.objective||""}\nOffer: ${answers.offer||"none"}\nHook/Angle: ${answers.hook||"derive"}\nRTBs to focus on (use these as proof points, weave into copy): ${rtbList.length?rtbList.join("; "):"derive from product"}\nReference links (context for copy & design — honour their tone/direction): ${refList.length?refList.join(" , "):"none"}\nGo-live date: ${answers.go_live_date||"not set"}`;
+      const usr=`CRM type: ${answers.crmType||"D2C"}\nChannel: ${answers.channel||"WhatsApp"}\nProduct/Brand: ${answers.product||""}\nPillar: ${answers.pillar||"Importance"}\nAudience: ${answers.audience||""}\nTrigger / moment: ${answers.trigger||"derive"}\nObjective: ${answers.objective||""}\nOffer: ${answers.offer||"none"}\nHook/Angle: ${answers.hook||"derive"}\nRTBs to focus on (use these as proof points, weave into copy): ${rtbList.length?rtbList.join("; "):"derive from product"}\nReference links (context for copy & design — honour their tone/direction): ${refList.length?refList.join(" , "):"none"}\nGo-live date: ${answers.go_live_date||"not set"}`;
       const j=await callClaude(sys,usr,true,"brief");
       // If user picked RTBs, prefer them as the proof points
       if(rtbList.length)j.proofPoints=rtbList;
@@ -2925,7 +2966,7 @@ function BriefChat({campaignId,patch,onBriefReady,me,recentFeedback,product}){
 const AlertCircle=p=><Svg{...p}><circle cx="12"cy="12"r="10"/><path d="M12 8v4M12 16h.01"/></Svg>;
 
 /* ===== Brief Tab ======================================================== */
-function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,onOpen,onDelete,onNew,onBulkImport,onBulkGenerate,toast}){
+function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,onOpen,onDelete,onNew,onBulkImport,onBulkGenerate,toast,audiences}){
   const[view,setView]=useState("list");
   const canCreate=canCreateBrief(me);
   const[importing,setImporting]=useState(false); // false | "open" | "working" | "done"
@@ -3117,12 +3158,12 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
             <button onClick={()=>setM(c.id,null)}style={{background:"transparent",border:"none",cursor:"pointer",color:"rgba(255,255,255,.6)",fontSize:12}}>← Back</button>
           </div>
           <div style={{padding:"0 16px 16px"}}>
-            <BriefFastForm campaignId={c.id}patch={patch}onBriefReady={onBriefReady}me={me}recentFeedback={recentFeedback}product={c.product}/>
+            <BriefFastForm campaignId={c.id}patch={patch}onBriefReady={onBriefReady}me={me}recentFeedback={recentFeedback}product={c.product}audiences={audiences}/>
           </div>
         </div>}
 
         {m==="self"&&!brief&&<div style={{background:"#fff",borderRadius:12,padding:14,border:`1px solid ${C.line}`,marginBottom:14}}>
-          <SelfBriefForm active={c}patch={patch}onDone={()=>setM(c.id,"view")}onBack={()=>setM(c.id,null)}/>
+          <SelfBriefForm active={c}patch={patch}audiences={audiences}onDone={()=>setM(c.id,"view")}onBack={()=>setM(c.id,null)}/>
         </div>}
 
         {m==="edit"&&brief&&<div style={{background:"#fff",borderRadius:12,padding:14,border:`1px solid ${C.line}`,marginBottom:14}}>
@@ -3138,7 +3179,7 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
           </div>
           {/* Collapsible sections */}
           <div style={{background:"#fff",borderRadius:12,border:`1px solid ${C.line}`,overflow:"hidden",marginBottom:8}}>
-            <BriefSection label="Strategic insight" content={brief.strategicInsight}/>
+            {brief.trigger&&<BriefSection label="Trigger" content={brief.trigger}/>}<BriefSection label="Strategic insight" content={brief.strategicInsight}/>
             <BriefSection label="Copy direction" content={brief.copyDirection}/>
             <BriefSection label="Channel note" content={brief.whatsappNote}/>
             {brief.proofPoints&&brief.proofPoints.length>0&&
@@ -3292,6 +3333,7 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
 function EditBriefForm({brief,active,patch,onDone}){
   const[b,setB]=useState({
     strategicInsight:brief.strategicInsight||"",
+    trigger:brief.trigger||"",
     idea:brief.idea||"",
     copyDirection:brief.copyDirection||"",
     whatsappNote:brief.whatsappNote||"",
@@ -3302,6 +3344,7 @@ function EditBriefForm({brief,active,patch,onDone}){
     onDone();
   };
   return<div>
+    <Field label="Trigger (the moment / why now)"textarea value={b.trigger}onChange={v=>setB(x=>({...x,trigger:v}))}rows={2}/>
     <Field label="Strategic insight"textarea value={b.strategicInsight}onChange={v=>setB(x=>({...x,strategicInsight:v}))}rows={2}/>
     <Field label="The idea"textarea value={b.idea}onChange={v=>setB(x=>({...x,idea:v}))}rows={2}/>
     <Field label="Copy direction"textarea value={b.copyDirection}onChange={v=>setB(x=>({...x,copyDirection:v}))}rows={2}/>
@@ -3319,30 +3362,44 @@ function EditBriefForm({brief,active,patch,onDone}){
   </div>;
 }
 
-function SelfBriefForm({active,patch,onDone,onBack}){
+function SelfBriefForm({active,patch,audiences,onDone,onBack}){
   const[draft,setDraft]=useState({name:active.name||"",product:active.product||"",audience_label:active.audience_label||active.segment||"",objective:active.objective||""});
-  const[self,setSelf]=useState({insight:"",idea:""});
+  const[self,setSelf]=useState({trigger:"",insight:"",idea:""});
   const sync=(k,v)=>setDraft(d=>({...d,[k]:v}));
+  const sugg=audiencesForProduct(draft.product,audiences).slice(0,8);
+  const pickAud=(a)=>{sync("audience_label",a.name);setSelf(s=>({...s,trigger:(s.trigger&&s.trigger.trim())?s.trigger:(a.trigger_event||""),insight:(s.insight&&s.insight.trim())?s.insight:(a.key_insight||"")}));};
+  const ready=draft.name&&draft.audience_label&&self.trigger.trim()&&self.insight.trim()&&self.idea.trim();
   const save=()=>{
     patch(active.id,{
       ...draft,
       stage:"content",
-      data:{...(active.data||{}),brief:{strategicInsight:self.insight,idea:self.idea,proofPoints:[],pillar:"",whatsappNote:"Written by business team",source:"self"}}
+      data:{...(active.data||{}),brief:{strategicInsight:self.insight,trigger:self.trigger,idea:self.idea,proofPoints:[],pillar:"",whatsappNote:"Written by business team",source:"self"}}
     });
     onDone();
   };
   return<div>
+    <div style={{background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:10,padding:"9px 12px",marginBottom:12,fontSize:12.5,color:"#9A3412",lineHeight:1.45}}>
+      <b>Write the audience, trigger and insight in your own words.</b> Be specific about <i>who</i> they are, <i>the moment</i> that prompts the message, and <i>the truth</i> it hooks into — that's what makes the copy land. The suggestions below are a starting point; tweak them to fit.
+    </div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
       <Field label="Asset name"value={draft.name}onChange={v=>sync("name",v)}/>
       <Field label="Product / Brand"value={draft.product}onChange={v=>sync("product",v)}/>
-      <Field label="Audience / Trigger"value={draft.audience_label}onChange={v=>sync("audience_label",v)}/>
-      <Field label="Objective"value={draft.objective}onChange={v=>sync("objective",v)}/>
     </div>
-    <Field label="Strategic insight"textarea value={self.insight}onChange={v=>setSelf(s=>({...s,insight:v}))}placeholder="The consumer truth/trigger this should hook into."/>
+    <Field label="Audience (who exactly)"value={draft.audience_label}onChange={v=>sync("audience_label",v)}placeholder="e.g. Value cat parents currently on Whiskas / Me-O"/>
+    {sugg.length>0&&<div style={{marginTop:-2,marginBottom:10}}>
+      <div style={{fontSize:11,color:C.sub,marginBottom:5}}>Audiences for <b>{draft.product||"this product"}</b> — tap to use, then make it yours:</div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+        {sugg.map(a=><button key={a.name||a.id}onClick={()=>pickAud(a)}title={a.key_insight||a.description||""}style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,fontWeight:600,color:draft.audience_label===a.name?"#fff":C.ink,background:draft.audience_label===a.name?C.coral:"#fff",border:`1px solid ${draft.audience_label===a.name?C.coral:C.line}`,borderRadius:999,padding:"5px 11px",cursor:"pointer"}}>{a.name}{a.pet_type&&a.pet_type!=="both"&&<span style={{fontSize:9.5,opacity:.65}}>· {a.pet_type}</span>}</button>)}
+      </div>
+    </div>}
+    <Field label="Trigger (the moment / why now)"textarea value={self.trigger}onChange={v=>setSelf(s=>({...s,trigger:v}))}placeholder="The event that prompts this message — e.g. ran out 60+ days ago, vet flagged digestion, second cat just adopted."/>
+    <Field label="Strategic insight (the consumer truth)"textarea value={self.insight}onChange={v=>setSelf(s=>({...s,insight:v}))}placeholder="The truth this should hook into — in your own words. e.g. they lapsed out of convenience, not dissatisfaction."/>
+    <Field label="Objective"value={draft.objective}onChange={v=>sync("objective",v)}/>
     <Field label="The idea (single-minded message)"textarea value={self.idea}onChange={v=>setSelf(s=>({...s,idea:v}))}/>
-    <div style={{display:"flex",gap:10}}>
-      <Btn onClick={save}disabled={!draft.name||!self.idea}><Check size={16}/>Save brief</Btn>
+    <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+      <Btn onClick={save}disabled={!ready}><Check size={16}/>Save brief</Btn>
       <Btn variant="ghost"onClick={onBack}>Back</Btn>
+      {!ready&&<span style={{fontSize:11.5,color:C.sub}}>Fill name, audience, trigger, insight and the idea to save.</span>}
     </div>
   </div>;
 }
@@ -4164,13 +4221,22 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       {/* Row header */}
       <div onClick={()=>setOpenId(isOpen?null:c.id)}
         style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer",background:isOpen?"#FAF5FF":"#fff"}}>
+        <ChannelIcon channel={c.channel}/>
         <div style={{flex:1,minWidth:0}}>
-          <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3}}>
-            <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{humanizeToken(c.product)||"—"}</span>
-            <span style={{fontSize:11,fontWeight:700,color:C.coral}}>{normCrmType(c.crm_type)}</span>
+          {/* Line 1: Product · Channel · CRM type · Owner */}
+          <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3,flexWrap:"wrap"}}>
+            <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{humanizeToken(c.product)||parseName(c.name).product||"—"}</span>
             <span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel||"WhatsApp"}</span>
+            <span style={{fontSize:11,fontWeight:700,color:C.coral}}>· {normCrmType(c.crm_type)}</span>
+            {c.created_by_name&&<span style={{fontSize:11,fontWeight:600,color:C.sub}}>· {c.created_by_name}</span>}
           </div>
-          <div style={{fontSize:12,color:C.sub,display:"flex",gap:6,alignItems:"center"}}><span>{parseName(c.name).date&&<b style={{color:C.ink,marginRight:4}}>{parseName(c.name).date}</b>}{parseName(c.name).hook.replace(/_/g," ")}</span>{c.created_at&&<span style={{marginLeft:"auto",fontSize:11,color:C.sub,background:"#F3F4F6",padding:"2px 7px",borderRadius:5,flexShrink:0}}>{fmtDate(c.created_at)}</span>}</div>
+          {/* Line 2: Date (created) + audience */}
+          <div style={{fontSize:12,color:C.sub,display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+            {c.created_at&&<span>{fmtDate(c.created_at)}</span>}
+            {c.audience_label&&<span>· {c.audience_label}</span>}
+          </div>
+          {/* Line 3: Idea */}
+          {(c.data?.brief?.idea||parseName(c.name).hook)&&<div title={c.data?.brief?.idea||parseName(c.name).hook.replace(/_/g," ")} style={{fontSize:11.5,color:C.sub,marginTop:3,fontStyle:"italic",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.data?.brief?.idea||parseName(c.name).hook.replace(/_/g," ")}</div>}
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
           {sel!=null&&(c.data?.selfMade?<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#0F766E",background:"#CCFBF1",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>{c.stage==="design"?"Designs generated":c.stage==="done"?"Asset ready":"Copies generated"}</span>:<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#5B21B6",background:"#EDE9FE",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>Copy approved</span>)}
