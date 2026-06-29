@@ -183,7 +183,7 @@ async function reviewCopy(text, ruleStr) {
   } catch (e) { console.error("[review] skipped:", e.message); }
   return JSON.stringify(Array.isArray(parsed) ? arr : arr[0]);
 }
-const SERVER_BUILD = "v29.78s - Sanctioned personalisation token normalised to {{Name}} (preserved through strip, any case in). Plus v29.76s preserve token + v29.75s rulebook reviewer flags.";
+const SERVER_BUILD = "v29.79s - Sanctioned personalisation token normalised to {{Name}} (preserved through strip, any case in). Plus v29.76s preserve token + v29.75s rulebook reviewer flags.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -986,11 +986,13 @@ function getMailer() {
   } catch (e) { console.error("nodemailer not available:", e.message); _mailer = null; }
   return _mailer;
 }
-async function sendEmail(to, subject, text) {
+async function sendEmail(to, subject, text, attachments) {
   const m = getMailer();
   if (!m || !to) return false;
   try {
-    await m.sendMail({ from: process.env.SMTP_FROM || process.env.SMTP_USER, to, subject, text });
+    const msg = { from: process.env.SMTP_FROM || process.env.SMTP_USER, to, subject, text };
+    if (Array.isArray(attachments) && attachments.length) msg.attachments = attachments;
+    await m.sendMail(msg);
     return true;
   } catch (e) { console.error("email send failed:", e.message); return false; }
 }
@@ -1064,6 +1066,37 @@ app.post("/api/notify", authMiddleware, async (req, res) => {
     const { toRole, toUserIds, campaignId, kind, body, url } = req.body || {};
     const made = await notify({ toRole, toUserIds, campaignId, kind, body, url });
     res.json({ ok: true, created: made.length, emailConfigured: !!getMailer() });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── User-reported issues → emailed to the admin with an optional screenshot ──
+app.post("/api/report-issue", authMiddleware, async (req, res) => {
+  try {
+    const { message, url, userAgent, error, componentStack, screenshot } = req.body || {};
+    const to = process.env.ADMIN_REPORT_EMAIL || "sidharth.lahoti@headsupfortails.com";
+    const u = req.user || {};
+    const lines = [
+      "A user reported an issue in the HUFT CRM Creative Engine.",
+      "",
+      "From: " + (u.name || "?") + " <" + (u.email || "?") + ">  (role: " + (u.role || "?") + ")",
+      "When: " + new Date().toISOString(),
+      "Page: " + (url || "?"),
+      "Browser: " + (userAgent || "?"),
+      "",
+      "What they said:",
+      (message && String(message).trim()) || "(no description provided)",
+    ];
+    if (error) lines.push("", "Error:", String(error).slice(0, 4000));
+    if (componentStack) lines.push("", "Component stack:", String(componentStack).slice(0, 2000));
+    const attachments = [];
+    if (typeof screenshot === "string" && screenshot.startsWith("data:image")) {
+      const b64 = screenshot.split(",")[1] || "";
+      if (b64) attachments.push({ filename: "screenshot.png", content: b64, encoding: "base64" });
+    }
+    // Always log server-side so reports survive even if SMTP isn't configured.
+    console.log("[issue-report]", JSON.stringify({ from: u.email, role: u.role, url, message, hasShot: attachments.length > 0 }));
+    const sent = await sendEmail(to, "[HUFT CRM] Issue report from " + (u.name || u.email || "a user"), lines.join("\n"), attachments);
+    res.json({ ok: true, emailed: sent, emailConfigured: !!getMailer() });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
