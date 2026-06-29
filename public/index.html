@@ -108,7 +108,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v31.6 - Image copy is now SHORT, CRISP, DIRECT (matching HUFT's crisp creative copy): offer/hook big line -> plain clarifier -> optional code/min-order -> OPTIONAL action CTA (no longer forced). The RTB/USP proof strip is NO LONGER baked into the header - proof points are generated ONLY in the separate rtbs field as options the team can add; rule labels like 'Named proteins'/'Novel proteins' are explicitly forbidden as copy. Plus v31.5 {{Name}} personalisation.";
+const BUILD="v31.7 - Copy writers can now leave a Note for the design team on the selected copy (Copy tab); it shows as a prominent amber callout for the design team when they open the asset (Design tab). Stored on the asset, editable any time before/during design. Plus v31.6 short/crisp image copy + RTB-as-option.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -4238,6 +4238,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
             <div style={{fontSize:11,fontWeight:700,color:"#5B21B6",textTransform:"uppercase",letterSpacing:.5,marginBottom:6,display:"flex",alignItems:"center",gap:4}}><CheckCircle2 size={11}/>Approved copy</div>
             <ContentCard o={opts[sel]}idx={sel}sel={true}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}onFixFeedback={fixPerFeedback}onEditSave={editDirectly}onResolveWarn={resolveWarnAt}onRtbToggle={toggleRtb}channel={c.channel}anySelected={sel!=null}sentBack={c.data?.sentBack}isResend={!!c.data?.lastRejectReason}image={mockImage}/>
           </div>}
+          {sel!=null&&<DesignNote c={c}patch={patch}me={me}/>}
           {sel!=null&&<button onClick={()=>setShowAll(v=>!v)}style={{display:"flex",alignItems:"center",gap:5,background:"none",border:"none",cursor:"pointer",color:C.sub,fontSize:12.5,fontWeight:600,marginBottom:8}}>{showAll?<><ChevronDown size={13}/>Hide other options</>:<><Eye size={13}/>See other {opts.length-1} options</>}</button>}
           {sel==null&&opts&&opts.length>1&&<div style={{marginBottom:10,fontSize:12.5,color:C.sub,background:C.paper,border:`1px solid ${C.line}`,borderRadius:10,padding:"9px 13px"}}>Pick <b>one</b> option below — it goes straight to Ilena for approval.</div>}
           {(sel==null||showAll)&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
@@ -4587,6 +4588,45 @@ function ShareFinalModal({c,copy,image,onClose}){
       </div>
       {showPushPrev&&<PushMockup o={copy}image={image}product={c.product}onClose={()=>setShowPushPrev(false)}/>}
     </div>
+  </div>;
+}
+// A note the copy writer leaves for the design team. Editable in the Copy panel; read-only callout in the Design panel.
+function DesignNote({c,patch,me,readOnly}){
+  const note=(c.data&&c.data.designNote)||null;
+  const[txt,setTxt]=React.useState(note?note.text:"");
+  const[open,setOpen]=React.useState(false);
+  const[saved,setSaved]=React.useState(false);
+  if(readOnly){
+    if(!note||!note.text)return null;
+    return<div style={{background:"#FFFBEB",border:"1px solid #FDE68A",borderLeft:"4px solid #D97706",borderRadius:10,padding:"11px 13px",marginBottom:12}}>
+      <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:4}}>
+        <MessageSquare size={14}color="#B45309"/>
+        <div style={{fontSize:11,fontWeight:800,color:"#92400E",textTransform:"uppercase",letterSpacing:.4}}>Note from copy{note.by?" · "+note.by:""}</div>
+      </div>
+      <div style={{fontSize:13.5,color:"#78350F",fontWeight:600,lineHeight:1.45,whiteSpace:"pre-line"}}>{note.text}</div>
+    </div>;
+  }
+  if(isBusiness(me))return null;
+  const save=()=>{
+    const t=(txt||"").trim();
+    patch(c.id,{data:{...(c.data||{}),designNote:t?{text:t,by:(me&&me.name)||"Copy",at:new Date().toISOString()}:null}});
+    setOpen(false);setSaved(true);setTimeout(()=>setSaved(false),1600);
+  };
+  return<div style={{marginBottom:10}}>
+    {!open
+      ?<div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        <Btn small variant="ghost"onClick={()=>setOpen(true)}><MessageSquare size={12}/>{note&&note.text?"Edit note for design":"Add a note for the design team"}</Btn>
+        {note&&note.text&&<span style={{fontSize:12,color:C.sub,fontStyle:"italic",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:380}}>“{note.text}”</span>}
+        {saved&&<span style={{fontSize:11.5,fontWeight:700,color:C.teal}}>Saved ✓</span>}
+      </div>
+      :<div style={{background:C.paper,border:`1px solid ${C.line}`,borderRadius:10,padding:"11px 13px"}}>
+        <div style={{fontSize:11,fontWeight:800,color:"#92400E",textTransform:"uppercase",letterSpacing:.4,marginBottom:6,display:"flex",alignItems:"center",gap:5}}><MessageSquare size={12}/>Note for the design team</div>
+        <textarea value={txt}onChange={e=>setTxt(e.target.value)}placeholder="e.g. Use the hero packshot; keep the offer badge bold; cat imagery, not dog; logo top-left."rows={3}style={{width:"100%",boxSizing:"border-box",border:`1px solid ${C.line}`,borderRadius:8,padding:"9px 11px",fontSize:13,fontFamily:"inherit",resize:"vertical"}}/>
+        <div style={{display:"flex",gap:8,marginTop:8}}>
+          <Btn small onClick={save}><CheckCircle2 size={13}/>Save note</Btn>
+          <Btn small variant="ghost"onClick={()=>{setTxt(note?note.text:"");setOpen(false);}}>Cancel</Btn>
+        </div>
+      </div>}
   </div>;
 }
 function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,busy,onSelect,onRefine,onEditSave,onResolveWarn,onRtbToggle,channel,sentBack,isResend,image,onFixFeedback,anySelected}){
@@ -6595,6 +6635,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
           :null)}
         {/* Brief in short — context for the design team */}
         <BriefInShort c={c}/>
+        <DesignNote c={c}readOnly/>
         {/* Selected copy context */}
         <ApprovedCopyCard copy={copy}channel={c.channel}product={c.product}image={d.generatedImage||(d.finalFile&&d.finalFile.dataUrl)||null}/>
         {c.data?.selfMade&&(()=>{
