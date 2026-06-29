@@ -108,7 +108,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v30.7 - Brief tiles restructured for scannability: line 1 = Product · Channel · Format(D2C/Retail) · Owner; line 2 = campaign month + created date (+ audience); line 3 = the idea (italic, truncated). Makes near-identical briefs easy to tell apart and shows who owns each. Plus v30.6 chooser warnings.";
+const BUILD="v30.9 - Copy rule: CTA now maps to the brief's objective/audience (win-back→come back, acquisition→try, service→book, etc.) and the body's closing line must agree with the CTA — applies to generate, refine and send-back. Plus v30.8 brief-tab stage segmentation.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -152,7 +152,7 @@ const COPY_BEST_PRACTICES=`HIGH-ENGAGEMENT COPY RULES — these are HARD RULES, 
 - SURFACE THE OFFER: when the brief gives a real offer/discount/deal, work it naturally into the image copy/overlay so it is visible at a glance (e.g. "₹500 off your first box"), and echo it in the body. If there is no offer in the brief, never invent one.
 - CRYSTAL CLARITY: every line must be instantly understandable on first read — no ambiguous phrasing, no confusing constructions, no maths the reader has to do. State plainly WHO gets WHAT and WHEN. (Ambiguous: "For the next 3 days, your first visit is Rs.500 off." Clear: "Get ₹500 off your first visit — offer ends in 3 days.") Spell out exactly what the discount applies to and any deadline in plain words.
 - VARY OPENINGS across the set — no two options should open the same way, and a name-greeting is NEVER the default (at most one option may use it, only if earned).
-- CLEAR NEXT STEP: the CTA is a pictureable action tied to the store/app ("Switch to fresh", "Book a spa day", "Shop the litter") — not "click here".
+- CTA MATCHES THE GOAL: read THIS brief's objective and audience, then pick the CTA verb that fits THAT goal — never a generic default. Win-back / lapsed → invite them back ("Come back", "Reorder", "Restock the bowl"); cart-abandon / repeat-intent → finish the order ("Complete your order", "Grab it before it's gone"); first-time / acquisition → low-pressure trial ("Try it", "Shop your first box"); cross-sell / upsell / bundle → add-on ("Add it on", "Pair it", "Complete the set"); replenishment / reorder / running-low → restock ("Reorder now", "Stock up"); a service (spa, grooming, vet, training, boarding) → book ("Book a slot", "Book now"); awareness / education / new launch → discover ("See how", "Meet the range", "Discover it"). The CTA is always a pictureable action tied to the store/app, never "Click here". CRUCIALLY, the body's CLOSING line must point at the SAME action as the CTA — never end flat, on a feature, or on a different ask. CTA, the body's ending, and the brief's goal must all agree on EVERY asset.
 - CLEAN FORMATTING: no ALL-CAPS words, no exclamation spam (no "!!!"), no "free!!!/buy now". EMOJIS: use 1-2 tasteful, purposeful emojis where they add warmth or meaning (a relevant 🐾 🐶 🐱 🎉 ✨, or a ✓ for proof points) — they lift engagement; never force them, never use more than 2, and never let an emoji replace a word.
 - FOR EDIBLES: always state the FORMAT explicitly (Chews / Fresh / Kibble / Wet / Gravy / Treats).
 - FUNNEL-STAGE URGENCY: match the urgency to where the reader sits in the funnel — the LOWER the funnel, the HIGHER the urgency to buy. Top of funnel (cold / new / awareness) = a warm invitation and intrigue, low pressure. Mid funnel (engaged, considering) = a clear nudge with a reason to act now. Bottom of funnel (cart left behind, repeat-intent, lapsed / win-back) = the strongest push to act now, backed by a real reason (offer, deadline, restock). Read the brief's audience/objective to place the reader, then dial urgency to match. Frame the ASK correctly for the stage: a LAPSED buyer is RE-conversion — welcome them back and acknowledge they've shopped with us before ("come back to…", "your pet's favourite is waiting"), never a cold first-time pitch; a cart-abandoner is a reminder to finish what they started, not a fresh sell; a brand-new audience is first-time conversion, so invite rather than pressure.
@@ -2942,7 +2942,13 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
     };
     const _tone=!brief?ROW_TONE.attention:(c.stage==="done"?ROW_TONE.done:ROW_TONE.approved);
     const isSel=selected.has(c.id);
-    return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`4px solid ${isSel?C.coral:_tone.bar}`}}>
+    const stageMeta=!brief?{label:"No brief yet",color:"#B91C1C",bg:"#FEF2F2"}
+      :c.stage==="content"?{label:"In copy",color:C.purple,bg:C.purple+"14"}
+      :c.stage==="brand_review"?{label:"Brand review",color:"#9333EA",bg:"#F3E8FF"}
+      :c.stage==="design"?{label:"In design",color:C.teal,bg:C.teal+"14"}
+      :c.stage==="done"?{label:"Ready",color:C.green,bg:"#DCFCE7"}
+      :{label:STAGE_LABEL[c.stage]||c.stage,color:C.sub,bg:"#F3F4F6"};
+    return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`4px solid ${isSel?C.coral:stageMeta.color}`}}>
       {/* Row header — always visible */}
       <div onClick={()=>setOpenId(isOpen?null:c.id)}
         style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer",background:isSel?"#FFF4ED":(isOpen?"#FFFBF7":(brief?_tone.bg:"#fff"))}}>
@@ -2956,9 +2962,8 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
             <span style={{fontSize:11,fontWeight:700,color:C.coral}}>· {normCrmType(c.crm_type)}</span>
             {c.created_by_name&&<span style={{fontSize:11,fontWeight:600,color:C.sub}}>· {c.created_by_name}</span>}
           </div>
-          {/* Line 2: Date — campaign month + created date */}
+          {/* Line 2: Date (created) + audience */}
           <div style={{fontSize:12,color:C.sub,display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
-            {parseName(c.name).date&&<span style={{fontWeight:700,color:C.ink}}>{parseName(c.name).date}</span>}
             {c.created_at&&<span>{fmtDate(c.created_at)}</span>}
             {c.audience_label&&<span>· {c.audience_label}</span>}
           </div>
@@ -2966,9 +2971,7 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
           {brief?.idea&&<div title={brief.idea} style={{fontSize:11.5,color:C.sub,marginTop:3,fontStyle:"italic",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{brief.idea}</div>}
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-          {brief&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#0F766E",background:"#CCFBF1",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>Brief done</span>}
-          {brief&&c.stage!=="brief"&&<StageBadge stage={c.stage}/>}
-          {!brief&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#B91C1C",background:"#FEF2F2",padding:"3px 9px",borderRadius:999}}>No brief yet</span>}
+          <span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,fontWeight:800,color:stageMeta.color,background:stageMeta.bg,padding:"4px 11px",borderRadius:999,border:`1px solid ${stageMeta.color}33`}}>{brief&&c.stage==="done"&&<CheckCircle2 size={12}/>}{stageMeta.label}</span>
           <div onClick={e=>e.stopPropagation()}><RowActions c={c}patch={patch}me={me}onEdit={brief?()=>setM(c.id,"edit"):undefined}onDelete={onDelete}/></div>
           {isOpen?<ChevronDown size={16}color={C.sub}/>:<ChevronRight size={16}color={C.sub}/>}
         </div>
@@ -3095,9 +3098,17 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
             <Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><React.Fragment key={c.id}>{AssetRow({c})}</React.Fragment>)}</Card>
           </div>)}
         </CollapsibleSection>}
-        {briefedElsewhere.length>0&&<CollapsibleSection title="Asset in progress" count={briefedElsewhere.length} color={C.purple} icon={<CheckCircle2 size={15}/>}>
-          {groupByDate(briefedElsewhere).map(([date,items])=><div key={date}style={{marginBottom:8}}><DateGroupHeader date={date}count={items.length}color={C.purple}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><React.Fragment key={c.id}>{AssetRow({c})}</React.Fragment>)}</Card></div>)}
-        </CollapsibleSection>}
+        {briefedElsewhere.length>0&&(()=>{
+          const inCopy=briefedElsewhere.filter(c=>c.stage==="content"||c.stage==="brand_review");
+          const inDesign=briefedElsewhere.filter(c=>c.stage==="design");
+          const ready=briefedElsewhere.filter(c=>c.stage==="done");
+          const grp=(items,color)=>groupByDate(items).map(([date,its])=><div key={date}style={{marginBottom:8}}><DateGroupHeader date={date}count={its.length}color={color}/><Card style={{padding:0,overflow:"hidden"}}>{its.map(c=><React.Fragment key={c.id}>{AssetRow({c})}</React.Fragment>)}</Card></div>);
+          return<>
+            {inCopy.length>0&&<CollapsibleSection title="In Copy" count={inCopy.length} color={C.purple} icon={<MessageSquare size={15}/>}>{grp(inCopy,C.purple)}</CollapsibleSection>}
+            {inDesign.length>0&&<CollapsibleSection title="In Design" count={inDesign.length} color={C.teal} icon={<Palette size={15}/>}>{grp(inDesign,C.teal)}</CollapsibleSection>}
+            {ready.length>0&&<CollapsibleSection title="Ready" count={ready.length} color={C.green} icon={<CheckCircle2 size={15}/>}>{grp(ready,C.green)}</CollapsibleSection>}
+          </>;
+        })()}
         {briefArchived.length>0&&<CollapsibleSection title="Archived" count={briefArchived.length} color={C.sub} icon={<ArchiveIcon size={15}/>} defaultOpen={false}>
           <div style={{opacity:.5}}>{groupByDate(briefArchived).map(([date,items])=><div key={date}style={{marginBottom:8}}><DateGroupHeader date={date}count={items.length}color={C.sub}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><React.Fragment key={c.id}>{AssetRow({c})}</React.Fragment>)}</Card></div>)}</div>
         </CollapsibleSection>}
