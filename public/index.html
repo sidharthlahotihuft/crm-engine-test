@@ -108,7 +108,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v31.5 - Personalisation token set to {{Name}} (capital, case-insensitive on the way in) for the one personalised WhatsApp option. Plus v31.4 action-led image copy + one-emoji + WA personalised option.";
+const BUILD="v31.6 - Image copy is now SHORT, CRISP, DIRECT (matching HUFT's crisp creative copy): offer/hook big line -> plain clarifier -> optional code/min-order -> OPTIONAL action CTA (no longer forced). The RTB/USP proof strip is NO LONGER baked into the header - proof points are generated ONLY in the separate rtbs field as options the team can add; rule labels like 'Named proteins'/'Novel proteins' are explicitly forbidden as copy. Plus v31.5 {{Name}} personalisation.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -175,26 +175,25 @@ WhatsApp (image-copy overlay → message body):
 • Overlay: "Payday Sale · Ends Sunday" → Body: "Stop thinking, start adding your pet's favourites to the cart 🛒 The Payday Sale ends Sunday ⏰ — up to 10% off HUFT food and more."
 THE PATTERN: a short, playful hook that sparks curiosity or delight, then a warm payoff that lands it and points to the action. Bring exactly this wit and warmth to the brief in front of you — make it the best copy a HUFT writer could write.`;
 // Real winning IMAGE COPY (on-creative overlays) + the stacked overlay format HUFT actually ships. Injected into every copy generation (image channels).
-const HUFT_IMAGE_COPY=`HUFT IMAGE COPY (the "creative copy" that goes ON the design — WhatsApp / Email / Meta image only; a PUSH has NO image, skip this). It is ACTION-LED and written as a SHORT STACK of lines the designer lays out top-to-bottom. EVERY image creative drives an action and ENDS on a clear action CTA line, so the designer knows the button. Write it the way HUFT's marketing calendar "Creative Copy" column is written.
-STACK (top to bottom):
-- BIG LINE: the action-led hook OR the offer — lead with a verb or a real pull ("Switch to the cleaner gravy!", "Playtime upgraded with new toys!", "Let them scratch & you'll see the difference!", "Up to 30% off").
-- CLARIFIER: what it's on / what it is ("on Hearty dog food", "on cats ki asli diet").
-- OPTIONAL USP strip with a | divider ("Real meat | Zero preservatives", "Walk gear | Beds & Mats | Apparel", "100% grain-free | Best cuts of meat").
-- OPTIONAL code line ("Use code: TRT10").
-- ACTION CTA — the LAST line, MANDATORY: the button the designer places. Pick the verb that fits the brief's goal: "Shop now", "Explore now", "Order now", "Book now", "Reorder now", "Come back". This closing action is what makes the copy "action-led" — never end an image creative on a flat feature line.
-Put each line on its OWN line (real line breaks in the "header" value). Keep every line tight (≤6 words), sentence case (the designer handles any visual emphasis/caps). The action CTA closing line must match the brief's objective and the CTA field.
+const HUFT_IMAGE_COPY=`HUFT IMAGE COPY (the "creative copy" that goes ON the design — WhatsApp / Email / Meta image only; a PUSH has NO image, skip this). Keep it SHORT, CRISP and DIRECT — a few stacked lines read at a glance, the way HUFT's marketing calendar "Creative Copy" column is written. It is action-led in spirit (it pushes the reader to buy / explore), but it is NOT a paragraph and NOT a strip of proof points.
+STACK (top to bottom), each line short (2–6 words):
+- BIG LINE: the offer OR the hook — crisp and direct ("Up to 20% off", "New toys, more excitement", "More than just a cool tee", "Last day").
+- CLARIFIER: what it's on / what it is ("on Royal Canin", "on Food & Treats", "on toys too!").
+- OPTIONAL code / min-order line ("Get 10% off with code TOY10", "*Min. order ₹799").
+- OPTIONAL action CTA ("Shop now", "Explore now", "Order now", "Book now") — add it when it sharpens the push, but a crisp offer line can stand on its own; never force a CTA onto every creative.
+DO NOT bake the RTB / USP proof strip into the image copy. Proof points (e.g. "Added taurine", "Real meat", "Zero preservatives", a specific protein like "Real chicken") are generated SEPARATELY in the rtbs field as OPTIONS the copy team chooses to add — NEVER stamp a "| proof | proof" strip into the header, and NEVER output rule labels like "Named proteins" or "Novel proteins" as copy (write the real specific words instead).
+Each line on its OWN line (real line breaks in the "header" value), sentence case (the designer handles any visual emphasis/caps).
 
-REAL HUFT CREATIVE COPY THAT SHIPPED (from the marketing calendar's Creative Copy column) — match this action-led shape and rhythm; NEVER copy verbatim or reuse a product/offer unless the brief is about it ( / marks a line break — output a real line break, not a slash):
-• "A season of adventure awaits / Walk gear | Beds & Mats | Apparel / Explore now"
-• "Playtime upgraded with new toys! / More ways to chase, scratch & pounce / Explore now"
-• "Let them scratch & you'll see the difference! / Cat trees & scratchers from ₹299 / Explore now"
-• "Extra 10% off / on Hearty dog food / Use code: HEARTY10 / Shop now"
-• "Switch to the cleaner gravy! / Up to 15% off / Real meat | Zero preservatives / Order now"
-• "Summer hydration, solved in one pour! / Moisture-rich & protein-rich / Order now"
-• "Your cat is a carnivore, not a carb-ivore! / Switch to Meowsi — no grains, no carbs / Shop now"
-• "An offer you can't refuse / ₹300 off on orders above ₹2,499 / Use code: 300HUFT / Shop now"
+REAL HUFT IMAGE COPY — short, crisp, direct. Match this shape; NEVER copy verbatim or reuse a product/offer unless the brief is about it ( / = a line break — output a real line break, not a slash):
+• "New toys, more excitement / Get 10% off with code TOY10 / *Min. order ₹799"
+• "More than just a cool tee"
+• "Last day / Up to 30% off / on Food & Treats"
+• "Up to 20% off / on toys too!"
+• "Up to 20% off / on Royal Canin"
+• "A season of adventure awaits / Walk gear, beds & apparel / Explore now"
+• "Switch to the cleaner gravy! / Up to 15% off / Order now"
 • "Up to 30% off / on Sara's Wholesome Food / Shop now"
-THE PATTERN: an action-led hook (often a verb — switch, explore, save, upgrade, reorder) → a plain clarifier → optional proof strip → optional code → a clear action CTA as the closing line. Bring this exact action-led shape to the brief in front of you.`;
+THE PATTERN: a crisp offer or hook big line → a plain clarifier → optional code/min-order → optional action CTA. Short and direct beats long every time. Proof points live in the rtbs field, never in the header.`;
 // Distilled HUFT Master Copy & Creative Rulebook (copy-relevant rules, built from 12+ months of real review feedback). Injected into every copy generation.
 const HUFT_RULEBOOK=`HUFT MASTER RULEBOOK — copy rules from 12+ months of real review feedback. HARD: a creative that breaks any of these goes straight back. Apply to EVERY line, EVERY channel.
 
@@ -347,9 +346,9 @@ const copyLimits=(isPush,isEmail)=>isPush?{header:50,body:90,cta:25}:isEmail?{su
 const COPY_SHAPE=(isPush,isEmail)=>(isPush
   ?"each: {direction,header,body,cta}. header=push TITLE (the FIRST line), max 40 chars (hard 50), one crisp flowing line that DRIVES AN ACTION — every push, even awareness, makes the reader want to act (tap, see, switch, save). body=the second line, max 70 chars — THIS IS A HARD LIMIT, never exceed 70 chars; at most TWO short complete sentences (one is better), natural flow not fragments, reinforcing the action. cta=2-3 words. Push has NO image — do not write image/overlay copy or rtbs. If the brief has an offer, put it in the title or body in plain words."
   :isEmail
-  ?"each: {direction,subject,header,body,cta,rtbs}. subject=email subject line under 50 chars. header=IMAGE COPY / hero overlay — a STACKED overlay, NOT one sentence: line 1 = the bold big line (hook or offer), line 2 = a plain clarifier, then an OPTIONAL short USP strip with a | divider, then an OPTIONAL code line LAST (never first). Put each line on its OWN line (real line breaks in the header value). Every line tight (max ~6 words), sentence case, action-led — and the LAST line is a MANDATORY action CTA ('Shop now' / 'Explore now' / 'Order now' / 'Book now', matching the brief's goal). Surface the offer on the big line when the brief has one. body=short scannable email (~50-80 words): warm 1-line opener, core value/offer in 1-2 lines, 2-3 proof points, friendly sign-off. cta=action phrase."
-  :"each: {direction,header,body,cta,rtbs}. header=IMAGE COPY / on-image overlay — a STACKED overlay, NOT one sentence: line 1 = the bold big line (the hook or the offer), line 2 = a plain clarifier (what it's on / what it is), then an OPTIONAL short USP strip with a | divider, then an OPTIONAL code line LAST (never first). Put each line on its OWN line (real line breaks in the header value). Every line tight (max ~6 words), sentence case, action-led — and the LAST line is a MANDATORY action CTA ('Shop now' / 'Explore now' / 'Order now' / 'Book now', matching the brief's goal). Surface the offer on the big line when the brief has one. body=tight WhatsApp message (~40-55 words): a STRONG hook line that earns the 'read more' tap (NEVER a generic opener), payoff, 2-3 proof bullets, the switch/offer line. Do NOT put the store/app/website link or an opt-out line in the body. cta=the action phrase that goes in the CTA field (e.g. 'Shop now at huft.com' or 'Order on the HUFT app').")
-  +(isPush?"":" rtbs=array of 2-3 SHORT reasons-to-believe / proof points (each ≤6 words, e.g. 'Real chicken first', '48-hour odour lock', '₹500 off first box') drawn ONLY from the brief's proof points/offer — never invented. These are optional add-ons the copy team may append to the image copy.");
+  ?"each: {direction,subject,header,body,cta,rtbs}. subject=email subject line under 50 chars. header=IMAGE COPY / hero overlay — a STACKED overlay, NOT one sentence: line 1 = the bold big line (hook or offer), line 2 = a plain clarifier, then an OPTIONAL code/min-order line, then an OPTIONAL action CTA. Put each line on its OWN line (real line breaks in the header value). Keep every line SHORT (2–6 words), crisp and direct, sentence case. The action CTA ('Shop now'/'Explore now'/'Order now') is OPTIONAL — add it when it sharpens the push, never force it onto every creative. Do NOT bake any RTB/USP proof strip into the header; proof points go in the rtbs field as separate options. Surface the offer on the big line when the brief has one. body=short scannable email (~50-80 words): warm 1-line opener, core value/offer in 1-2 lines, 2-3 proof points, friendly sign-off. cta=action phrase."
+  :"each: {direction,header,body,cta,rtbs}. header=IMAGE COPY / on-image overlay — a STACKED overlay, NOT one sentence: line 1 = the bold big line (the hook or the offer), line 2 = a plain clarifier (what it's on / what it is), then an OPTIONAL code/min-order line, then an OPTIONAL action CTA. Put each line on its OWN line (real line breaks in the header value). Keep every line SHORT (2–6 words), crisp and direct, sentence case. The action CTA ('Shop now'/'Explore now'/'Order now') is OPTIONAL — add it when it sharpens the push, never force it onto every creative. Do NOT bake any RTB/USP proof strip into the header; proof points go in the rtbs field as separate options. Surface the offer on the big line when the brief has one. body=tight WhatsApp message (~40-55 words): a STRONG hook line that earns the 'read more' tap (NEVER a generic opener), payoff, 2-3 proof bullets, the switch/offer line. Do NOT put the store/app/website link or an opt-out line in the body. cta=the action phrase that goes in the CTA field (e.g. 'Shop now at huft.com' or 'Order on the HUFT app').")
+  +(isPush?"":" rtbs=array of 2-3 SHORT reasons-to-believe / proof points (each ≤6 words, e.g. 'Real chicken first', '48-hour odour lock', '₹500 off first box') drawn ONLY from the brief's proof points/offer — never invented. These are the ONLY place proof points live — optional add-ons the copy team chooses to append; the image-copy header itself must NEVER contain a proof strip.");
 // ── Shared task / approval computation (used by Dashboard + standalone pages + nav counts) ──
 // ── Shared task / approval computation (used by Dashboard + standalone pages + nav counts) ──
 const _today0=()=>{const d=new Date();d.setHours(0,0,0,0);return d;};
