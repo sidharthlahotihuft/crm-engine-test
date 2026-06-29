@@ -108,7 +108,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v30.2 - Copy rules are now HARD rules (framed non-negotiable, applied every time). Every push notification must DRIVE AN ACTION in the first line (even awareness ones). Push has no image, so the 'RTBs to place on the image' picker is hidden for push and no image copy/RTBs are generated for it. All copy is action-led. Plus v30.1 hook+CTA, local smart-expand, business handoff-only.";
+const BUILD="v30.6b - Brief tiles now show a small italic line of the brief idea (single-minded message) under the hook/audience, so near-identical briefs (same product/channel/audience) are easy to tell apart at a glance; truncates to one line with the full idea on hover. Plus v30.6 warnings in the multi-option chooser.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -148,7 +148,7 @@ const COPY_BEST_PRACTICES=`HIGH-ENGAGEMENT COPY RULES — these are HARD RULES, 
 - SCANNABLE: short sentences, one idea per line, generous whitespace. No walls of text, no repetition, no fluff.
 - LENGTH DISCIPLINE: shorter is stronger. Stay WELL within each channel's limits — treat them as ceilings to beat, not targets to fill. If a line can be cut without losing meaning, cut it. Every word must earn its place.
 - COMPLETE THOUGHTS, NOT FRAGMENTS: write in full, natural sentences with real flow — never clipped, broken-up word fragments, telegraphic stubs, or a pile of phrases jammed together. Even a single very short line must read like a person said it out loud, with a clear subject and verb. Read it back: if it sounds chopped or robotic, rewrite it so it flows.
-- IMAGE COPY MUST FLOW: the image/overlay copy (the "header" field) is the on-creative line(s) a pet parent reads at a glance. Keep it short and crisp, but it MUST be a clean, flowing line (or two) with natural rhythm — NOT individual words broken onto separate lines and NOT a fragment. Short does not mean choppy. One confident, readable line beats three stray words.
+- IMAGE COPY = THE FUN, SCROLL-STOPPING LINE: the overlay copy (the "header" field) is the big line read at a glance, so it must be SHORT, PUNCHY and FUN, with real personality — playful, witty, warm or emotionally charged. Think bold poster headline — a few punchy words OR a short, complete sentence, whichever reads best. It MUST make full sense and feel intentional: never random fragments, stray words, or a jumble — a short sentence is perfectly fine when it lands better, so never sacrifice meaning or coherence for brevity. Aim for ~3–7 words (two short lines max); shorter and snappier usually wins, but clarity comes first. Lead with delight, emotion, a wink, or a clever turn of phrase. The ACTION lives in the CTA, so the overlay's only job is to make a pet parent FEEL something and stop scrolling. Never dry, flat, generic, corporate, or a literal restatement of the product/benefit.
 - SURFACE THE OFFER: when the brief gives a real offer/discount/deal, work it naturally into the image copy/overlay so it is visible at a glance (e.g. "₹500 off your first box"), and echo it in the body. If there is no offer in the brief, never invent one.
 - CRYSTAL CLARITY: every line must be instantly understandable on first read — no ambiguous phrasing, no confusing constructions, no maths the reader has to do. State plainly WHO gets WHAT and WHEN. (Ambiguous: "For the next 3 days, your first visit is Rs.500 off." Clear: "Get ₹500 off your first visit — offer ends in 3 days.") Spell out exactly what the discount applies to and any deadline in plain words.
 - VARY OPENINGS across the set — no two options should open the same way, and a name-greeting is NEVER the default (at most one option may use it, only if earned).
@@ -158,6 +158,22 @@ const COPY_BEST_PRACTICES=`HIGH-ENGAGEMENT COPY RULES — these are HARD RULES, 
 - FUNNEL-STAGE URGENCY: match the urgency to where the reader sits in the funnel — the LOWER the funnel, the HIGHER the urgency to buy. Top of funnel (cold / new / awareness) = a warm invitation and intrigue, low pressure. Mid funnel (engaged, considering) = a clear nudge with a reason to act now. Bottom of funnel (cart left behind, repeat-intent, lapsed / win-back) = the strongest push to act now, backed by a real reason (offer, deadline, restock). Read the brief's audience/objective to place the reader, then dial urgency to match. Frame the ASK correctly for the stage: a LAPSED buyer is RE-conversion — welcome them back and acknowledge they've shopped with us before ("come back to…", "your pet's favourite is waiting"), never a cold first-time pitch; a cart-abandoner is a reminder to finish what they started, not a fresh sell; a brand-new audience is first-time conversion, so invite rather than pressure.
 - HONEST & INCLUSIVE: no health/medical overclaims, no fear-mongering; "family isn't defined by species". Stay true to the brief's objective and emotional pillar — cut anything off-objective.
 - NO SYSTEM BOILERPLATE OR IRRELEVANT COPY: never write opt-out / unsubscribe / "reply STOP" lines, legal footers, sender IDs, "T&Cs apply", placeholder/merge tags, or any channel/system text — those are added by the platform, not the creative. Every line must be relevant to THIS brief's message; if a line is generic filler or could appear on any campaign, cut it. The store/app/website action belongs in the CTA field, not the body.`;
+// HUFT personality + real winning-copy anchors (distilled from HUFT's own May/June marketing calendars). Injected into every copy generation.
+const HUFT_VOICE=`HUFT VOICE — this is the PERSONALITY that works; match its energy in EVERY line, and never let copy drift dry or corporate:
+Warm, witty and human — a clever, pet-loving friend talking to another, never an ad. Light, playful, full of delight; emotionally warm but always credible and honest. Second person ("your dog/cat"), present tense, active voice, British spelling. Use 1–2 PURPOSEFUL emojis that add warmth (🐶 🐱 🐾 ☀️ ⏰ ✔️ 🥺 🍗) — never as filler. A touch of Hinglish is welcome when it lands naturally (e.g. "Garmi"). Lean into wordplay, a curiosity gap, or a relatable pet-parent moment. Lead with delight or the hook; surface the offer in plain words; make the next step obvious. Premium and kind, never pushy, never clickbait, never salesy.
+
+REAL HUFT COPY THAT PERFORMED WELL — these are TONE ANCHORS only. Match this wit, warmth and rhythm; NEVER copy them verbatim, and never reuse their specific products/offers unless the current brief is about that. Always ground the copy in THE BRIEF in front of you.
+Push (headline → preview):
+• "You say 'Garmi!' ☀️🐶" → "We say 'Gravy!' Hearty Gravy — the tastiest way to keep your dog hydrated this season."
+• "No more puppy eyes 🥺" → "Because this ice cream is made specially for your dog! 🍨"
+• "You don't want to miss this 👀" → "Payday deals are live only till Sunday! ⏰"
+• "Hot days, cooler styles 😎" → "Summer-ready looks designed for your dog ☀️"
+• "Veggies for your dog 🥕🥬" → "Easy to chew, hard to resist — Yum Nums soft treats."
+• "Two favourites: 🥭 & 🍗" → "Sara's Mango dehydrated treats your dog will love."
+WhatsApp (image-copy overlay → message body):
+• Overlay: "A season of adventure awaits" → Body: "Ready to refresh your dog's summer style? 🏖️ Discover the Summer '26 edit — breezy tees, comfy beds and walk gear for every outing."
+• Overlay: "Payday Sale · Ends Sunday" → Body: "Stop thinking, start adding your pet's favourites to the cart 🛒 The Payday Sale ends Sunday ⏰ — up to 10% off HUFT food and more."
+THE PATTERN: a short, playful hook that sparks curiosity or delight, then a warm payoff that lands it and points to the action. Bring exactly this wit and warmth to the brief in front of you — make it the best copy a HUFT writer could write.`;
 // Channel-specific engagement rules (shared by every generator).
 const PUSH_RULES=`PUSH NOTIFICATION RULES — these are HARD RULES, follow every one EVERY time (non-negotiable):
 - ACTION-LED FIRST LINE (most important): EVERY push must drive an action, and that action must be in the FIRST line (the title). Even a purely awareness push must make the reader want to DO something — tap, see, check, discover, save, switch, book, try. Open with or strongly imply the action; never a flat statement with no pull. If the first line doesn't move the reader to act, rewrite it.
@@ -212,14 +228,14 @@ const stripForbidden=(s)=>{
 const sanitizeOption=(o)=>{if(!o||typeof o!=="object")return o;const f={...o};["subject","header","body","cta","direction"].forEach(k=>{if(typeof f[k]==="string")f[k]=stripForbidden(f[k]);});if(Array.isArray(f.rtbs))f.rtbs=f.rtbs.map(x=>typeof x==="string"?stripForbidden(x):x).filter(Boolean).slice(0,3);return f;};
 const sanitizeOptions=(arr)=>Array.isArray(arr)?arr.map(sanitizeOption):arr;
 // Hard length caps per channel — passed to the server, which clamps regardless of what the model returns.
-const copyLimits=(isPush,isEmail)=>isPush?{header:50,body:90,cta:25}:isEmail?{subject:50,cta:30}:{cta:30};
+const copyLimits=(isPush,isEmail)=>isPush?{header:50,body:90,cta:25}:isEmail?{subject:50,header:42,cta:30}:{header:42,cta:30};
 // Shared shape/format spec for copy generation — used by BOTH the bulk generator and the per-card generator so they never drift.
-// header = the IMAGE COPY / on-creative overlay: must be a short, crisp, FLOWING line (or two) — never broken-up word fragments. Surface the offer here when the brief has one.
+// header = the IMAGE COPY / on-creative overlay: a SHORT, FUN, punchy headline (3–6 words, two short lines max) with personality — never a flat sentence or broken-up fragments. Surface the offer here when the brief has one.
 const COPY_SHAPE=(isPush,isEmail)=>(isPush
   ?"each: {direction,header,body,cta}. header=push TITLE (the FIRST line), max 40 chars (hard 50), one crisp flowing line that DRIVES AN ACTION — every push, even awareness, makes the reader want to act (tap, see, switch, save). body=the second line, max 70 chars — THIS IS A HARD LIMIT, never exceed 70 chars; at most TWO short complete sentences (one is better), natural flow not fragments, reinforcing the action. cta=2-3 words. Push has NO image — do not write image/overlay copy or rtbs. If the brief has an offer, put it in the title or body in plain words."
   :isEmail
-  ?"each: {direction,subject,header,body,cta,rtbs}. subject=email subject line under 50 chars. header=IMAGE COPY / hero overlay: 1-2 short FLOWING lines (crisp, never broken-up word fragments); surface the offer here if the brief has one. body=short scannable email (~50-80 words): warm 1-line opener, core value/offer in 1-2 lines, 2-3 proof points, friendly sign-off. cta=action phrase."
-  :"each: {direction,header,body,cta,rtbs}. header=IMAGE COPY / on-image overlay: 1-2 short FLOWING lines (crisp and readable, never individual words broken onto separate lines, never a fragment); surface the offer here if the brief has one. body=tight WhatsApp message (~40-55 words): a STRONG hook line that earns the 'read more' tap (NEVER a generic opener), payoff, 2-3 proof bullets, the switch/offer line. Do NOT put the store/app/website link or an opt-out line in the body. cta=the action phrase that goes in the CTA field (e.g. 'Shop now at huft.com' or 'Order on the HUFT app').")
+  ?"each: {direction,subject,header,body,cta,rtbs}. subject=email subject line under 50 chars. header=IMAGE COPY / hero overlay: a SHORT, FUN, punchy headline (~3–7 words, 1-2 short lines) with real personality — playful/witty/warm. It must read as one coherent, intentional line (a short complete sentence is fine); never a long flat sentence and never broken-up fragments. Surface the offer here if the brief has one. body=short scannable email (~50-80 words): warm 1-line opener, core value/offer in 1-2 lines, 2-3 proof points, friendly sign-off. cta=action phrase."
+  :"each: {direction,header,body,cta,rtbs}. header=IMAGE COPY / on-image overlay: a SHORT, FUN, punchy headline (~3–7 words, 1-2 short lines) with real personality — playful/witty/warm. It must read as one coherent, intentional line (a short complete sentence is fine); never a long flat sentence and never broken-up fragments. Surface the offer here if the brief has one. body=tight WhatsApp message (~40-55 words): a STRONG hook line that earns the 'read more' tap (NEVER a generic opener), payoff, 2-3 proof bullets, the switch/offer line. Do NOT put the store/app/website link or an opt-out line in the body. cta=the action phrase that goes in the CTA field (e.g. 'Shop now at huft.com' or 'Order on the HUFT app').")
   +(isPush?"":" rtbs=array of 2-3 SHORT reasons-to-believe / proof points (each ≤6 words, e.g. 'Real chicken first', '48-hour odour lock', '₹500 off first box') drawn ONLY from the brief's proof points/offer — never invented. These are optional add-ons the copy team may append to the image copy.");
 // ── Shared task / approval computation (used by Dashboard + standalone pages + nav counts) ──
 // ── Shared task / approval computation (used by Dashboard + standalone pages + nav counts) ──
@@ -1124,7 +1140,7 @@ async function genCopyOptionsFor(c, ruleStr, fb){
   const channelRules=isPush?PUSH_RULES:isEmail?EMAIL_RULES:WHATSAPP_RULES;
   const nOpts=copyOptionCount(c.channel);
   const shape=COPY_SHAPE(isPush,isEmail);
-  const sys="You write "+(c.channel||"WhatsApp")+" CRM copy for HUFT.\n"+BRAND_CONTEXT+"\n"+channelRules+"\n"+COPY_BEST_PRACTICES+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nTeam feedback:\n"+fb:"")+"\nReturn ONLY JSON array of "+nOpts+" options, "+shape;
+  const sys="You write "+(c.channel||"WhatsApp")+" CRM copy for HUFT.\n"+BRAND_CONTEXT+"\n"+channelRules+"\n"+COPY_BEST_PRACTICES+"\n"+HUFT_VOICE+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nTeam feedback:\n"+fb:"")+"\nReturn ONLY JSON array of "+nOpts+" options, "+shape;
   const limits=copyLimits(isPush,isEmail);
   return sanitizeOptions(await callClaude(sys, briefBlockFor(c), true, "copy", limits));
 }
@@ -2944,6 +2960,7 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
             {c.audience_label&&<span>· {c.audience_label}</span>}
             {c.created_at&&<span style={{marginLeft:"auto",fontSize:11,color:C.sub,background:"#F3F4F6",padding:"2px 7px",borderRadius:5,flexShrink:0}}>{fmtDate(c.created_at)}</span>}
           </div>
+          {brief?.idea&&<div title={brief.idea} style={{fontSize:11.5,color:C.sub,marginTop:3,fontStyle:"italic",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{brief.idea}</div>}
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
           {brief&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#0F766E",background:"#CCFBF1",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>Brief done</span>}
@@ -3817,7 +3834,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         const channelRules=isPush?PUSH_RULES:isEmail?EMAIL_RULES:WHATSAPP_RULES;
         const nOpts=copyOptionCount(c.channel);
         const shape=COPY_SHAPE(isPush,isEmail);
-        const sys="You write "+(c.channel||"WhatsApp")+" CRM copy for HUFT.\n"+BRAND_CONTEXT+"\n"+channelRules+"\n"+COPY_BEST_PRACTICES+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nTeam feedback:\n"+fb:"")+`\nReturn ONLY JSON array of ${nOpts} options, `+shape;
+        const sys="You write "+(c.channel||"WhatsApp")+" CRM copy for HUFT.\n"+BRAND_CONTEXT+"\n"+channelRules+"\n"+COPY_BEST_PRACTICES+"\n"+HUFT_VOICE+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nTeam feedback:\n"+fb:"")+`\nReturn ONLY JSON array of ${nOpts} options, `+shape;
         const j=sanitizeOptions(await callClaude(sys,briefBlock,true,"copy",copyLimits(isPush,isEmail)));
         patch(c.id,{data:{...(c.data||{}),copyOptions:j,selectedCopyIdx:null,sentBack:false},copy_approver:null,stage:"content"});
         setShowAll(false);
@@ -3830,7 +3847,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         const isPush=isPushChannel(c.channel);
         const isEmail=c.channel==="Email"||c.channel==="WhatsApp + Email";
         const channelRules=isPush?PUSH_RULES:isEmail?EMAIL_RULES:WHATSAPP_RULES;
-        const sys="You refine ONE "+(c.channel||"WhatsApp")+" CRM copy for HUFT.\n"+BRAND_CONTEXT+"\n"+channelRules+"\n"+COPY_BEST_PRACTICES+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nFeedback:\n"+fb:"")+(isPush?"\nPUSH: title max 40 (hard 50); body max 70 chars (HARD LIMIT — second line never exceeds 70), at most two short flowing lines.":"")+"\nThe header is the IMAGE COPY / overlay — keep it a short, crisp, FLOWING line, never broken-up word fragments. Return ONLY JSON: {direction,header,body,cta}.";
+        const sys="You refine ONE "+(c.channel||"WhatsApp")+" CRM copy for HUFT.\n"+BRAND_CONTEXT+"\n"+channelRules+"\n"+COPY_BEST_PRACTICES+"\n"+HUFT_VOICE+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nFeedback:\n"+fb:"")+(isPush?"\nPUSH: title max 40 (hard 50); body max 70 chars (HARD LIMIT — second line never exceeds 70), at most two short flowing lines.":"")+"\nThe header is the IMAGE COPY / overlay — a short, FUN, punchy headline with personality (a coherent line or short complete sentence), never long, flat, or broken-up fragments; the action goes in the CTA. Return ONLY JSON: {direction,header,body,cta}.";
         const usr=briefBlock+"\n\nCurrent:\n"+JSON.stringify(opts[idx])+"\n\nSteer (one-time): "+refineText;
         const j=sanitizeOption(await callClaude(sys,usr,true,"copy",copyLimits(isPush,isEmail)));
         const wasSelected=sel===idx;
@@ -3848,7 +3865,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         const isPush=isPushChannel(c.channel);
         const isEmail=c.channel==="Email"||c.channel==="WhatsApp + Email";
         const channelRules=isPush?PUSH_RULES:isEmail?EMAIL_RULES:WHATSAPP_RULES;
-        const sys="You revise ONE "+(c.channel||"WhatsApp")+" CRM copy for HUFT to address a reviewer's send-back.\n"+BRAND_CONTEXT+"\n"+channelRules+"\n"+COPY_BEST_PRACTICES+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nFeedback:\n"+fb:"")+(isPush?"\nPUSH: title max 40 (hard 50); body max 70 chars (HARD LIMIT — second line never exceeds 70), at most two short flowing lines.":"")+"\nThe header is the IMAGE COPY / overlay — keep it a short, crisp, FLOWING line, never broken-up word fragments. Return ONLY JSON: {direction,header,body,cta}.";
+        const sys="You revise ONE "+(c.channel||"WhatsApp")+" CRM copy for HUFT to address a reviewer's send-back.\n"+BRAND_CONTEXT+"\n"+channelRules+"\n"+COPY_BEST_PRACTICES+"\n"+HUFT_VOICE+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nFeedback:\n"+fb:"")+(isPush?"\nPUSH: title max 40 (hard 50); body max 70 chars (HARD LIMIT — second line never exceeds 70), at most two short flowing lines.":"")+"\nThe header is the IMAGE COPY / overlay — a short, FUN, punchy headline with personality (a coherent line or short complete sentence), never long, flat, or broken-up fragments; the action goes in the CTA. Return ONLY JSON: {direction,header,body,cta}.";
         const usr=briefBlock+"\n\nCurrent copy:\n"+JSON.stringify(opts[idx])+"\n\nThe reviewer sent this back for changes. Revise the copy to fully address this feedback while staying true to the brief and rulebook:\n"+(reason||"Improve clarity, brand fit, and impact.");
         const j=sanitizeOption(await callClaude(sys,usr,true,"copy",copyLimits(isPush,isEmail)));
         const newData={...(c.data||{}),copyOptions:opts.map((o,i)=>i===idx?j:o),sentBack:false};
@@ -3903,6 +3920,20 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       patch(c.id,{data:{...(c.data||{}),copyOptions:newOpts,sentBack:false}});
       if(toast)toast("Copy updated ✓ — you can now resend for approval","success");
     };
+    // Resolve one language warning on option `idx`: useFix=true swaps in the suggestion; either way the warning clears.
+    const resolveWarnAt=(idx,wi,useFix)=>{
+      const base=opts||[];
+      const newOpts=base.map((o,i)=>{
+        if(i!==idx)return o;
+        const ws=Array.isArray(o._warn)?o._warn:[];
+        const w=ws[wi];const rest=ws.filter((_,k)=>k!==wi);
+        const upd={...o};
+        if(useFix&&w&&w.suggestion&&w.field)upd[w.field]=w.suggestion;
+        if(rest.length)upd._warn=rest;else delete upd._warn;
+        return upd;
+      });
+      patch(c.id,{data:{...(c.data||{}),copyOptions:newOpts}});
+    };
     // RTB toggle: stores the selection only. RTBs are shown SEPARATELY as "RTB on the image",
     // never merged into the image-copy header text.
     const toggleRtb=(idx,rtb)=>{
@@ -3953,6 +3984,20 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
             {o.cta&&<div style={{marginTop:7,display:"inline-block",background:C.navy,color:"#fff",fontSize:11.5,fontWeight:700,padding:"4px 11px",borderRadius:7}}>{o.cta}</div>}
             {isPush&&<div style={{marginTop:8,display:"flex",gap:10,fontSize:10,color:C.sub}}><span style={{color:(o.header||"").length>50?"#DC2626":C.sub}}>Title {(o.header||"").length}/50</span><span style={{color:(o.body||"").length>70?"#DC2626":C.sub}}>Body {(o.body||"").length}/70</span></div>}
           </div>}
+          {o&&Array.isArray(o._warn)&&o._warn.length>0&&(()=>{
+            const resolveWarn=(wi,useFix)=>resolveWarnAt(sel,wi,useFix);
+            return <div style={{marginBottom:10,border:"1.5px solid #FCD34D",background:"#FFFBEB",borderRadius:10,padding:"10px 12px"}}>
+              <div style={{fontSize:11,fontWeight:800,color:"#B45309",display:"flex",alignItems:"center",gap:6,marginBottom:8}}><AlertCircle size={13}/>Possible language issues — you decide whether to keep them</div>
+              {o._warn.map((w,wi)=><div key={wi} style={{paddingTop:wi?8:0,marginTop:wi?8:0,borderTop:wi?"1px solid #FDE68A":"none"}}>
+                <div style={{fontSize:12,color:"#92400E",marginBottom:w.suggestion?5:6}}><b style={{textTransform:"uppercase",fontSize:9.5,letterSpacing:.4,color:"#B45309",marginRight:5}}>{w.field}</b>{w.issue}</div>
+                {w.suggestion&&<div style={{fontSize:12,color:"#374151",background:"#fff",border:"1px solid #FDE68A",borderRadius:7,padding:"5px 8px",whiteSpace:"pre-line",marginBottom:6}}>Suggested: {w.suggestion}</div>}
+                <div style={{display:"flex",gap:7}}>
+                  {w.suggestion&&<button onClick={()=>resolveWarn(wi,true)} style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:7,border:"none",background:"#B45309",color:"#fff",cursor:"pointer"}}>Apply fix</button>}
+                  <button onClick={()=>resolveWarn(wi,false)} style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:7,border:"1px solid #FCD34D",background:"#fff",color:"#92400E",cursor:"pointer"}}>Allow as written</button>
+                </div>
+              </div>)}
+            </div>;
+          })()}
           <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
             <CopyBtn text={()=>copyTextFromOption(o)}/>
             <button onClick={()=>setManualMode(manualMode==="edit"?null:"edit")}style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,fontWeight:600,padding:"4px 10px",borderRadius:8,border:`1px solid ${C.line}`,background:"#fff",color:C.ink,cursor:"pointer"}}><PenLine size={12}/>Edit copy</button>
@@ -4057,12 +4102,12 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         {opts&&!isBusiness(me)&&!(busy&&!refineFor)&&<div>
           {sel!=null&&<div style={{marginBottom:10}}>
             <div style={{fontSize:11,fontWeight:700,color:"#5B21B6",textTransform:"uppercase",letterSpacing:.5,marginBottom:6,display:"flex",alignItems:"center",gap:4}}><CheckCircle2 size={11}/>Approved copy</div>
-            <ContentCard o={opts[sel]}idx={sel}sel={true}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}onFixFeedback={fixPerFeedback}onEditSave={editDirectly}onRtbToggle={toggleRtb}channel={c.channel}anySelected={sel!=null}sentBack={c.data?.sentBack}isResend={!!c.data?.lastRejectReason}image={mockImage}/>
+            <ContentCard o={opts[sel]}idx={sel}sel={true}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}onFixFeedback={fixPerFeedback}onEditSave={editDirectly}onResolveWarn={resolveWarnAt}onRtbToggle={toggleRtb}channel={c.channel}anySelected={sel!=null}sentBack={c.data?.sentBack}isResend={!!c.data?.lastRejectReason}image={mockImage}/>
           </div>}
           {sel!=null&&<button onClick={()=>setShowAll(v=>!v)}style={{display:"flex",alignItems:"center",gap:5,background:"none",border:"none",cursor:"pointer",color:C.sub,fontSize:12.5,fontWeight:600,marginBottom:8}}>{showAll?<><ChevronDown size={13}/>Hide other options</>:<><Eye size={13}/>See other {opts.length-1} options</>}</button>}
           {sel==null&&opts&&opts.length>1&&<div style={{marginBottom:10,fontSize:12.5,color:C.sub,background:C.paper,border:`1px solid ${C.line}`,borderRadius:10,padding:"9px 13px"}}>Pick <b>one</b> option below — it goes straight to Ilena for approval.</div>}
           {(sel==null||showAll)&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
-            {opts.map((o,i)=>{if(sel!=null&&i===sel)return null;return<ContentCard key={i}o={o}idx={i}sel={false}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}onFixFeedback={fixPerFeedback}onEditSave={editDirectly}onRtbToggle={toggleRtb}channel={c.channel}anySelected={sel!=null}sentBack={c.data?.sentBack}isResend={!!c.data?.lastRejectReason}image={mockImage}/>;})}</div>}
+            {opts.map((o,i)=>{if(sel!=null&&i===sel)return null;return<ContentCard key={i}o={o}idx={i}sel={false}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}onFixFeedback={fixPerFeedback}onEditSave={editDirectly}onResolveWarn={resolveWarnAt}onRtbToggle={toggleRtb}channel={c.channel}anySelected={sel!=null}sentBack={c.data?.sentBack}isResend={!!c.data?.lastRejectReason}image={mockImage}/>;})}</div>}
         </div>}
         {sel!=null&&<div style={{marginTop:12,background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:10,padding:"14px 16px"}}>
           <div style={{fontSize:12,fontWeight:700,color:"#15803D",textTransform:"uppercase",letterSpacing:.5,marginBottom:10,display:"flex",alignItems:"center",gap:6}}><CheckCircle2 size={13}/>Copy approved — next steps</div>
@@ -4410,7 +4455,7 @@ function ShareFinalModal({c,copy,image,onClose}){
     </div>
   </div>;
 }
-function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,busy,onSelect,onRefine,onEditSave,onRtbToggle,channel,sentBack,isResend,image,onFixFeedback,anySelected}){
+function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,busy,onSelect,onRefine,onEditSave,onResolveWarn,onRtbToggle,channel,sentBack,isResend,image,onFixFeedback,anySelected}){
   const[showWA,setShowWA]=useState(false);
   const[showPush,setShowPush]=useState(false);
   const isWAchan=/whatsapp/i.test(channel||"");
@@ -4425,6 +4470,8 @@ function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,
   const[editMode,setEditMode]=useState(null); // null | "menu" | "steer" | "text"
   const[open,setOpen]=useState(sel||!anySelected);
   React.useEffect(()=>{setOpen(sel||!anySelected);},[sel,anySelected]);
+  const warns=Array.isArray(o._warn)?o._warn:[];
+  const resolveWarn=(wi,useFix)=>{onResolveWarn&&onResolveWarn(idx,wi,useFix);};
 
   return<div style={{
     border:`2px solid ${sel?C.purple:C.line}`,borderRadius:14,overflow:"hidden",
@@ -4439,6 +4486,7 @@ function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,
     <div onClick={()=>setOpen(v=>!v)}style={{background:sel?C.purple:dc.bg,padding:"8px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",userSelect:"none"}}>
       <span style={{fontSize:11.5,fontWeight:700,color:sel?"#fff":dc.text,letterSpacing:.2,flex:1,minWidth:0,...(open?{}:{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"})}}>{o.direction}</span>
       <span style={{display:"flex",alignItems:"center",gap:8}}>
+        {warns.length>0&&<span title="Possible language issues" style={{display:"flex",alignItems:"center",gap:3,fontSize:10,fontWeight:800,color:"#B45309",background:"#FEF3C7",border:"1px solid #FCD34D",borderRadius:6,padding:"1px 6px"}}><AlertCircle size={10}/>{warns.length}</span>}
         {sel&&<span style={{color:"#fff",fontSize:11,fontWeight:700,display:"flex",alignItems:"center",gap:4}}><CheckCircle2 size={12}/>Selected</span>}
         {open?<ChevronDown size={15}color={sel?"#fff":dc.text}/>:<ChevronRight size={15}color={sel?"#fff":dc.text}/>}
       </span>
@@ -4456,6 +4504,17 @@ function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,
 
     {/* Copy preview */}
     {open&&<React.Fragment><div style={{padding:12}}>
+      {warns.length>0&&<div style={{marginBottom:10,border:"1.5px solid #FCD34D",background:"#FFFBEB",borderRadius:10,padding:"9px 11px"}}>
+        <div style={{fontSize:10.5,fontWeight:800,color:"#B45309",display:"flex",alignItems:"center",gap:5,marginBottom:7}}><AlertCircle size={12}/>Possible language issues — you decide</div>
+        {warns.map((w,wi)=><div key={wi} style={{paddingTop:wi?7:0,marginTop:wi?7:0,borderTop:wi?"1px solid #FDE68A":"none"}}>
+          <div style={{fontSize:11.5,color:"#92400E",marginBottom:w.suggestion?4:5}}><b style={{textTransform:"uppercase",fontSize:9,letterSpacing:.3,color:"#B45309",marginRight:4}}>{w.field}</b>{w.issue}</div>
+          {w.suggestion&&<div style={{fontSize:11.5,color:"#374151",background:"#fff",border:"1px solid #FDE68A",borderRadius:6,padding:"4px 7px",whiteSpace:"pre-line",marginBottom:5}}>Suggested: {w.suggestion}</div>}
+          <div style={{display:"flex",gap:6}}>
+            {w.suggestion&&<button onClick={()=>resolveWarn(wi,true)} style={{fontSize:10.5,fontWeight:700,padding:"3px 9px",borderRadius:6,border:"none",background:"#B45309",color:"#fff",cursor:"pointer"}}>Apply fix</button>}
+            <button onClick={()=>resolveWarn(wi,false)} style={{fontSize:10.5,fontWeight:700,padding:"3px 9px",borderRadius:6,border:"1px solid #FCD34D",background:"#fff",color:"#92400E",cursor:"pointer"}}>Allow as written</button>
+          </div>
+        </div>)}
+      </div>}
       {isPush
         /* Push notification preview */
         ?<div style={{background:C.navy,borderRadius:10,padding:12}}>
