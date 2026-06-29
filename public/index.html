@@ -108,7 +108,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v32.3 - FIX blank page: the email deep-link effect was declared after the login/loading early returns, so it ran only after login and broke React hook order (blank screen). Moved it above the early returns. All v32.2 features intact (tile colour + legend + date filter + dashboard + design tile + deep links).";
+const BUILD="v32.4 - Colour key is now compact and page-relevant: Copy shows Needs copy / Copy / Brand review; Design shows Design / Brand review; Brief shows Needs brief / Copy / Design / Ready (key entries match the actual tile-bar colours, including action states). List sections are now an accordion: only the top section (Needs attention / New assets) is open by default; the rest start collapsed.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -1024,6 +1024,17 @@ const STAGE_COLORS={
   done:{label:"Ready",color:"#16A34A"},
 };
 function stageColor(stage){return (STAGE_COLORS[stage]||{color:"#6B7280"}).color;}
+// Legend entries — includes the action-state accents tiles actually use (so the key matches the bars).
+const LEGEND_ITEMS={
+  needs_brief:{label:"Needs brief",color:"#B91C1C"},
+  draft:{label:"Imported draft",color:"#B45309"},
+  brief:{label:"Brief",color:"#E8632A"},
+  needs_copy:{label:"Needs copy",color:"#D97706"},
+  content:{label:"Copy",color:"#7C4DFF"},
+  brand_review:{label:"Brand review",color:"#9333EA"},
+  design:{label:"Design",color:"#0E9488"},
+  done:{label:"Ready",color:"#16A34A"},
+};
 // Accent colour for a tile: highlights "needs action" states, else the stage colour.
 function rowAccent(c){
   if(!c)return "#6B7280";
@@ -1032,10 +1043,10 @@ function rowAccent(c){
   return stageColor(c.stage);
 }
 function StageLegend({stages,extra}){
-  const list=(stages||["brief","content","brand_review","design","done"]).map(s=>STAGE_COLORS[s]).filter(Boolean);
-  return<div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",padding:"7px 12px",background:"#fff",border:"1px solid #EAE6E1",borderRadius:10,marginBottom:14}}>
-    <span style={{fontSize:10.5,fontWeight:700,color:"#6B7280",textTransform:"uppercase",letterSpacing:.5}}>Colour key</span>
-    {list.map(s=><span key={s.label}style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12,fontWeight:600,color:"#1F2734"}}><span style={{width:11,height:11,borderRadius:3,background:s.color,display:"inline-block"}}/>{s.label}</span>)}
+  const list=(stages||["brief","content","brand_review","design","done"]).map(s=>LEGEND_ITEMS[s]||STAGE_COLORS[s]).filter(Boolean);
+  return<div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"5px 10px",background:"#fff",border:"1px solid #EAE6E1",borderRadius:9,marginBottom:12}}>
+    <span style={{fontSize:9.5,fontWeight:700,color:"#9CA3AF",textTransform:"uppercase",letterSpacing:.4}}>Key</span>
+    {list.map(s=><span key={s.label}style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:10.5,fontWeight:600,color:"#6B7280"}}><span style={{width:8,height:8,borderRadius:2,background:s.color,display:"inline-block"}}/>{s.label}</span>)}
     {extra}
   </div>;
 }
@@ -1050,15 +1061,15 @@ function inPeriod(c,period){
 }
 // Combined colour key + date filter bar for the list pages.
 function ListBar({stages,period,setPeriod}){
-  const list=(stages||["brief","content","brand_review","design","done"]).map(s=>STAGE_COLORS[s]).filter(Boolean);
-  return<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",padding:"7px 12px",background:"#fff",border:"1px solid #EAE6E1",borderRadius:10,marginBottom:14}}>
-    <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
-      <span style={{fontSize:10.5,fontWeight:700,color:"#6B7280",textTransform:"uppercase",letterSpacing:.5}}>Colour key</span>
-      {list.map(s=><span key={s.label}style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12,fontWeight:600,color:"#1F2734"}}><span style={{width:11,height:11,borderRadius:3,background:s.color,display:"inline-block"}}/>{s.label}</span>)}
+  const list=(stages||["brief","content","brand_review","design","done"]).map(s=>LEGEND_ITEMS[s]||STAGE_COLORS[s]).filter(Boolean);
+  return<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",padding:"5px 10px",background:"#fff",border:"1px solid #EAE6E1",borderRadius:9,marginBottom:12}}>
+    <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+      <span style={{fontSize:9.5,fontWeight:700,color:"#9CA3AF",textTransform:"uppercase",letterSpacing:.4}}>Key</span>
+      {list.map(s=><span key={s.label}style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:10.5,fontWeight:600,color:"#6B7280"}}><span style={{width:8,height:8,borderRadius:2,background:s.color,display:"inline-block"}}/>{s.label}</span>)}
     </div>
-    {setPeriod&&<div style={{display:"flex",alignItems:"center",gap:6}}>
-      <CalendarIcon size={13}color="#6B7280"/>
-      <select value={period||"all"}onChange={e=>setPeriod(e.target.value)}style={{border:"1px solid #EAE6E1",borderRadius:7,padding:"4px 8px",fontSize:12,fontWeight:600,color:"#1F2734",background:"#fff",cursor:"pointer"}}>
+    {setPeriod&&<div style={{display:"flex",alignItems:"center",gap:5}}>
+      <CalendarIcon size={12}color="#9CA3AF"/>
+      <select value={period||"all"}onChange={e=>setPeriod(e.target.value)}style={{border:"1px solid #EAE6E1",borderRadius:6,padding:"3px 7px",fontSize:11.5,fontWeight:600,color:"#1F2734",background:"#fff",cursor:"pointer"}}>
         <option value="all">All time</option>
         <option value="7d">Last 7 days</option>
         <option value="30d">Last 30 days</option>
@@ -2469,7 +2480,7 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
           <Card style={{padding:0,overflow:"hidden"}}>{items.map((c,i)=><CRow key={c.id}c={c}i={i}/>)}</Card>
         </div>)}
       </CollapsibleSection>}
-      {done.length>0&&<CollapsibleSection title="Completed" count={done.length} color={C.green} icon={<CheckCircle2 size={15}/>}>
+      {done.length>0&&<CollapsibleSection title="Completed" count={done.length} color={C.green} icon={<CheckCircle2 size={15}/>} defaultOpen={false}>
         {groupByDate(done).map(([date,items])=><div key={date}style={{marginBottom:10}}>
           <DateGroupHeader date={date}count={items.length}color={C.green}/>
           <Card style={{padding:0,overflow:"hidden",opacity:.88}}>{items.map((c,i)=><CRow key={c.id}c={c}i={i}/>)}</Card>
@@ -3336,7 +3347,7 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns:
         </div>
       </div>
     </div>
-    {view==="list"&&<ListBar period={period} setPeriod={setPeriod}/>}
+    {view==="list"&&<ListBar period={period} setPeriod={setPeriod} stages={["needs_brief","content","design","done"]}/>}
     {view==="calendar"
       ?<CalendarView campaigns={(campaigns||[]).filter(c=>!isArchived(c))}onOpen={onOpen}/>
       :(allBriefs.length===0&&briefedElsewhere.length===0&&briefArchived.length===0)
@@ -3375,9 +3386,9 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns:
           const ready=briefedElsewhere.filter(c=>c.stage==="done");
           const grp=(items,color)=>groupByDate(items).map(([date,its])=><div key={date}style={{marginBottom:8}}><DateGroupHeader date={date}count={its.length}color={color}/><Card style={{padding:0,overflow:"hidden"}}>{its.map(c=><React.Fragment key={c.id}>{AssetRow({c})}</React.Fragment>)}</Card></div>);
           return<>
-            {inCopy.length>0&&<CollapsibleSection title="In Copy" count={inCopy.length} color={C.purple} icon={<MessageSquare size={15}/>}>{grp(inCopy,C.purple)}</CollapsibleSection>}
-            {inDesign.length>0&&<CollapsibleSection title="In Design" count={inDesign.length} color={C.teal} icon={<Palette size={15}/>}>{grp(inDesign,C.teal)}</CollapsibleSection>}
-            {ready.length>0&&<CollapsibleSection title="Ready" count={ready.length} color={C.green} icon={<CheckCircle2 size={15}/>}>{grp(ready,C.green)}</CollapsibleSection>}
+            {inCopy.length>0&&<CollapsibleSection title="In Copy" count={inCopy.length} color={C.purple} icon={<MessageSquare size={15}/>} defaultOpen={false}>{grp(inCopy,C.purple)}</CollapsibleSection>}
+            {inDesign.length>0&&<CollapsibleSection title="In Design" count={inDesign.length} color={C.teal} icon={<Palette size={15}/>} defaultOpen={false}>{grp(inDesign,C.teal)}</CollapsibleSection>}
+            {ready.length>0&&<CollapsibleSection title="Ready" count={ready.length} color={C.green} icon={<CheckCircle2 size={15}/>} defaultOpen={false}>{grp(ready,C.green)}</CollapsibleSection>}
           </>;
         })()}
         {briefArchived.length>0&&<CollapsibleSection title="Archived" count={briefArchived.length} color={C.sub} icon={<ArchiveIcon size={15}/>} defaultOpen={false}>
@@ -4473,7 +4484,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         <button onClick={()=>setView("calendar")}style={{padding:"6px 14px",border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:view==="calendar"?C.navy:"#fff",color:view==="calendar"?"#fff":C.sub,display:"flex",alignItems:"center",gap:5}}><CalendarIcon size={13}/>Calendar</button>
       </div>
     </div>
-    {view==="list"&&<ListBar period={period} setPeriod={setPeriod}/>}
+    {view==="list"&&<ListBar period={period} setPeriod={setPeriod} stages={["needs_copy","content","brand_review"]}/>}
     {view==="calendar"
       ?<CalendarView campaigns={allCopy}onOpen={onOpen}/>
       :allCopy.length===0
@@ -4490,13 +4501,13 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
             {needsCopy.length>0&&<CollapsibleSection title="Needs attention" count={needsCopy.length} color="#92400E" icon={<ClockIcon size={15}/>}>
               {groupByDate(needsCopy).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.purple}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}ctx={rowCtx}/>)}</Card></div>)}
             </CollapsibleSection>}
-            {inReview.length>0&&<CollapsibleSection title={"Pending brand approval"+(canBrandApprove(me)?"":" (awaiting Ilena)")} count={inReview.length} color="#9333EA" icon={<Eye size={15}/>}>
+            {inReview.length>0&&<CollapsibleSection title={"Pending brand approval"+(canBrandApprove(me)?"":" (awaiting Ilena)")} count={inReview.length} color="#9333EA" icon={<Eye size={15}/>} defaultOpen={false}>
               {groupByDate(inReview).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={"#9333EA"}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}ctx={rowCtx}/>)}</Card></div>)}
             </CollapsibleSection>}
-            {!isBusiness(me)&&approved.length>0&&<CollapsibleSection title="Brand approved" count={approved.length} color="#5B21B6" icon={<CheckCircle2 size={15}/>}>
+            {!isBusiness(me)&&approved.length>0&&<CollapsibleSection title="Brand approved" count={approved.length} color="#5B21B6" icon={<CheckCircle2 size={15}/>} defaultOpen={false}>
               {groupByDate(approved).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.purple}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}ctx={rowCtx}/>)}</Card></div>)}
             </CollapsibleSection>}
-            {approvedSelf.length>0&&!isBrandTeam(me)&&!isDesignTeam(me)&&<CollapsibleSection title="Made by business team" count={approvedSelf.length} color="#0F766E" icon={<PenLine size={15}/>}>
+            {approvedSelf.length>0&&!isBrandTeam(me)&&!isDesignTeam(me)&&<CollapsibleSection title="Made by business team" count={approvedSelf.length} color="#0F766E" icon={<PenLine size={15}/>} defaultOpen={false}>
               {groupByDate(approvedSelf).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={"#0F766E"}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}ctx={rowCtx}/>)}</Card></div>)}
             </CollapsibleSection>}
           </>;
@@ -6992,7 +7003,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
         <button onClick={()=>setView("calendar")}style={{padding:"6px 14px",border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:view==="calendar"?C.navy:"#fff",color:view==="calendar"?"#fff":C.sub,display:"flex",alignItems:"center",gap:5}}><CalendarIcon size={13}/>Calendar</button>
       </div>
     </div>
-    {view==="list"&&<ListBar period={period} setPeriod={setPeriod}/>}
+    {view==="list"&&<ListBar period={period} setPeriod={setPeriod} stages={["design","brand_review"]}/>}
     {view==="calendar"
       ?<CalendarView campaigns={allDesign}onOpen={onOpen}/>
       :allDesign.length===0
@@ -7007,10 +7018,10 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
             {needsDesign.length>0&&<CollapsibleSection title="Needs attention" count={needsDesign.length} color={C.coral} icon={<ClockIcon size={15}/>}>
               {groupByDate(needsDesign).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.teal}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><DesignRow key={c.id}c={c}ctx={designRowCtx}/>)}</Card></div>)}
             </CollapsibleSection>}
-            {done.length>0&&<CollapsibleSection title="Image selected" count={done.length} color={C.teal} icon={<CheckCircle2 size={15}/>}>
+            {done.length>0&&<CollapsibleSection title="Image selected" count={done.length} color={C.teal} icon={<CheckCircle2 size={15}/>} defaultOpen={false}>
               <div style={{opacity:.75}}>{groupByDate(done).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.teal}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><DesignRow key={c.id}c={c}ctx={designRowCtx}/>)}</Card></div>)}</div>
             </CollapsibleSection>}
-            {selfDesign.length>0&&<CollapsibleSection title="Made by business team" count={selfDesign.length} color="#0F766E" icon={<PenLine size={15}/>}>
+            {selfDesign.length>0&&<CollapsibleSection title="Made by business team" count={selfDesign.length} color="#0F766E" icon={<PenLine size={15}/>} defaultOpen={false}>
               {groupByDate(selfDesign).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={"#0F766E"}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><DesignRow key={c.id}c={c}ctx={designRowCtx}/>)}</Card></div>)}
             </CollapsibleSection>}
           </>;
