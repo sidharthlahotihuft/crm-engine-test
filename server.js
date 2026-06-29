@@ -136,7 +136,45 @@ const enforceCopyHardRules = (text, limits) => {
   }
   return stripForbidden(text); // plain-text response → still strip forbidden tokens
 };
-const SERVER_BUILD = "v29.71s - Adds a [claude] proof log line on every copy generation: prints model + input/output + cache_write/cache_read tokens, so you can confirm Opus is live and caching is hitting straight from Vercel logs. Plus v29.70s prompt caching on the Claude copy call.";
+// ── Review pass (warn, don't auto-correct) ───────────────────────────────────
+// A cheap, cold second pass (Gemini Flash) that FLAGS possible language errors without
+// changing the copy. The rulebook is passed in so intentional brand choices (e.g. "furry
+// family", "pet parents", punchy headline fragments) are NOT flagged. Each flagged option
+// gets a `_warn` array [{field,issue,suggestion}] which the UI shows with an Allow / Apply choice.
+// Fails safe: any error leaves the copy untouched and unflagged.
+const REVIEW_SYS =
+  "You are a careful copy reviewer for HUFT, an Indian pet-care brand. You receive a JSON array of "
++ "marketing-copy options. DO NOT rewrite or change any copy. Only REVIEW it and report genuine language "
++ "errors so a human can decide. Flag: broken or incomplete sentences, sentence fragments, unfinished or "
++ "non-parallel bullets, subject-verb/agreement errors, wrong or awkward tense (in win-back/re-order copy, a "
++ "past tense that implies the pet is gone, e.g. 'the food they loved'), double possessives and awkward word "
++ "order, and clear typos. Be conservative — when unsure, do NOT flag. "
++ "NEVER flag: the 'header' field for being a short fragment (it is a deliberate poster headline); emojis; "
++ "British spelling (colour, favourite, centre); or anything the ALLOWED BRAND RULES below permit. "
++ "Return ONLY JSON: {\"warnings\":[{\"i\":<option index number>,\"field\":\"body|header|subject|cta\",\"issue\":\"<=10 word description\",\"suggestion\":\"the corrected version of just that field\"}]}. "
++ "If there are no real issues, return {\"warnings\":[]}.";
+async function reviewCopy(text, ruleStr) {
+  const parse = (s) => { try { return JSON.parse(s); } catch (_) { const m = s && s.match(/[\[{][\s\S]*[\]}]/); if (m) { try { return JSON.parse(m[0]); } catch (__) {} } return null; } };
+  const parsed = parse(text);
+  if (parsed === null || typeof parsed !== "object") return text;
+  const arr = Array.isArray(parsed) ? parsed : [parsed];
+  try {
+    const sys = REVIEW_SYS + (ruleStr ? "\n\nALLOWED BRAND RULES (never flag anything these permit):\n" + ruleStr : "");
+    const raw = await generate(sys, JSON.stringify(arr), "gemini", 0.2); // cheap Flash, cold — never Opus
+    const rev = parse(raw);
+    const warns = Array.isArray(rev && rev.warnings) ? rev.warnings : (Array.isArray(rev) ? rev : []);
+    arr.forEach((o, i) => {
+      if (!o || typeof o !== "object") return;
+      const w = warns
+        .filter(x => x && Number(x.i) === i && (x.issue || x.suggestion))
+        .map(x => ({ field: String(x.field || "body"), issue: String(x.issue || "").slice(0, 120), suggestion: typeof x.suggestion === "string" ? x.suggestion : "" }))
+        .slice(0, 4);
+      if (w.length) o._warn = w; else if (o._warn) delete o._warn;
+    });
+  } catch (e) { console.error("[review] skipped:", e.message); }
+  return JSON.stringify(Array.isArray(parsed) ? arr : arr[0]);
+}
+const SERVER_BUILD = "v29.74s - Copy review now WARNS, never auto-corrects: a cheap cold Gemini Flash reviewer flags genuine language errors (broken/fragment sentences, agreement/tense, double possessives, typos) as a _warn list on each option; it is given the active rulebook so intentional brand wording is never flagged; it leaves the copy untouched and fails safe. Mechanical strip+clamp still runs LAST. Plus v29.72s creative_requests self-heal + v29.71s claude log + v29.70s caching.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -231,7 +269,7 @@ function pickProvider(want){
   if (p === "gemini" && !GEMINI_KEY) p = CLAUDE_KEY ? "claude" : "mock";
   return p;
 }
-async function generate(system, prompt, providerOverride) {
+async function generate(system, prompt, providerOverride, temperature) {
   const PV = pickProvider(providerOverride);
   if (PV === "gemini") {
     // Support both AIza (v1beta) and AQ. (newer) key formats
@@ -245,7 +283,7 @@ async function generate(system, prompt, providerOverride) {
         generationConfig: {
           responseMimeType: "application/json",
           maxOutputTokens: 8192,
-          temperature: 0.9,
+          temperature: typeof temperature === "number" ? temperature : 0.9,
         },
       }),
     });
@@ -1718,15 +1756,19 @@ app.post("/api/generate", authMiddleware, async (req, res) => {
   // No-leak guarantee: the server fetches the active copy rulebook from the DB and injects it itself,
   // so the rules apply even if a client omits them, and any newly added rule takes effect immediately.
   let sys = sys0;
+  let ruleText = "";
   if (kind === "copy") {
     try {
       const rules = await db("SELECT text FROM rules WHERE type='copy' AND active=true ORDER BY id");
-      if (rules && rules.length) sys = sys0 + "\n\nACTIVE RULEBOOK (authoritative — always apply every rule, never ignore):\n" + rules.map(r => "- " + r.text).join("\n");
+      if (rules && rules.length) { ruleText = rules.map(r => "- " + r.text).join("\n"); sys = sys0 + "\n\nACTIVE RULEBOOK (authoritative — always apply every rule, never ignore):\n" + ruleText; }
     } catch (e) {}
   }
   try {
     let text = await generate(sys, prompt, want);
-    if (kind === "copy") text = enforceCopyHardRules(text, limits); // strip forbidden tokens + clamp lengths — cannot be skipped
+    if (kind === "copy") {
+      text = await reviewCopy(text, ruleText);   // FLAGS possible language errors as _warn (rulebook-aware) — never edits the copy
+      text = enforceCopyHardRules(text, limits); // mechanical strip + length clamp stays LAST (final guard)
+    }
     res.json({ text });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1845,6 +1887,14 @@ app.listen(PORT, async () => {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`);
+    // Migrate pre-existing creative_requests tables that predate these columns —
+    // CREATE TABLE IF NOT EXISTS never alters an existing table, so bring older ones up to schema.
+    for (const c of [
+      "campaign_id TEXT","title TEXT","details TEXT","comment TEXT","size TEXT","payload JSONB",
+      "requested_by TEXT","requester_name TEXT","requester_role TEXT","status TEXT NOT NULL DEFAULT 'open'",
+      "assignee_id TEXT","assignee_name TEXT",
+      "created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()","updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"
+    ]) { await pool.query(`ALTER TABLE creative_requests ADD COLUMN IF NOT EXISTS ${c}`); }
     await pool.query(`CREATE TABLE IF NOT EXISTS notifications (
       id TEXT PRIMARY KEY,
       to_user_id TEXT,
