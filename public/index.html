@@ -108,7 +108,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v31.9 - Brief: product-based AUDIENCE picker. The write-it-myself form and the guided form now surface our real audience segments ranked for the chosen product (tap to use, then edit). TRIGGER and INSIGHT are now separate questions so each gets focus: picking an audience prefills the trigger (from its trigger event) and the insight (from its key insight); both flow into copy generation and the brief views. Business is nudged to fill audience/trigger/insight in their own words. Plus v31.8 copy-row info parity.";
+const BUILD="v32.2 - Backlog: whole-tile colour-coding by stage across all tiles + a colour key on every list page; a date filter (All/7/30/90 days) on Brief/Copy/Design; Dashboard rebuilt to the monday.com stacked-section style (sections open by default); Design tile trimmed (collaborators moved into the expanded view, channel icon + owner added). Approval/review emails now include a direct link that deep-opens the asset (?asset=id). Plus v32.1 audience cap+more / excel drafts.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -1015,6 +1015,58 @@ const displayName=(name)=>{
   return[date,product,hook].filter(Boolean).join(" · ");
 };
 const STAGE_LABEL={brief:"Brief",content:"Copy",brand_review:"Brand review",design:"Design",done:"Ready"};
+// Stage colour system — single source of truth for tile tints + the colour legend on each page.
+const STAGE_COLORS={
+  brief:{label:"Brief",color:"#E8632A"},
+  content:{label:"Copy",color:"#7C4DFF"},
+  brand_review:{label:"Brand review",color:"#9333EA"},
+  design:{label:"Design",color:"#0E9488"},
+  done:{label:"Ready",color:"#16A34A"},
+};
+function stageColor(stage){return (STAGE_COLORS[stage]||{color:"#6B7280"}).color;}
+// Accent colour for a tile: highlights "needs action" states, else the stage colour.
+function rowAccent(c){
+  if(!c)return "#6B7280";
+  if(c.stage==="brief"&&!(c.data&&c.data.brief))return c.data&&c.data.importDraft?"#B45309":"#B91C1C";
+  if(c.stage==="content"&&!(c.data&&c.data.copyOptions))return "#D97706";
+  return stageColor(c.stage);
+}
+function StageLegend({stages,extra}){
+  const list=(stages||["brief","content","brand_review","design","done"]).map(s=>STAGE_COLORS[s]).filter(Boolean);
+  return<div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",padding:"7px 12px",background:"#fff",border:"1px solid #EAE6E1",borderRadius:10,marginBottom:14}}>
+    <span style={{fontSize:10.5,fontWeight:700,color:"#6B7280",textTransform:"uppercase",letterSpacing:.5}}>Colour key</span>
+    {list.map(s=><span key={s.label}style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12,fontWeight:600,color:"#1F2734"}}><span style={{width:11,height:11,borderRadius:3,background:s.color,display:"inline-block"}}/>{s.label}</span>)}
+    {extra}
+  </div>;
+}
+// Bound long lists by creation date.
+function inPeriod(c,period){
+  if(!period||period==="all")return true;
+  const days=period==="30d"?30:period==="90d"?90:period==="7d"?7:0;
+  if(!days)return true;
+  const d=c&&c.created_at?new Date(c.created_at):null; if(!d)return true;
+  const f=new Date(); f.setHours(0,0,0,0); f.setDate(f.getDate()-(days-1));
+  return d>=f;
+}
+// Combined colour key + date filter bar for the list pages.
+function ListBar({stages,period,setPeriod}){
+  const list=(stages||["brief","content","brand_review","design","done"]).map(s=>STAGE_COLORS[s]).filter(Boolean);
+  return<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",padding:"7px 12px",background:"#fff",border:"1px solid #EAE6E1",borderRadius:10,marginBottom:14}}>
+    <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+      <span style={{fontSize:10.5,fontWeight:700,color:"#6B7280",textTransform:"uppercase",letterSpacing:.5}}>Colour key</span>
+      {list.map(s=><span key={s.label}style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12,fontWeight:600,color:"#1F2734"}}><span style={{width:11,height:11,borderRadius:3,background:s.color,display:"inline-block"}}/>{s.label}</span>)}
+    </div>
+    {setPeriod&&<div style={{display:"flex",alignItems:"center",gap:6}}>
+      <CalendarIcon size={13}color="#6B7280"/>
+      <select value={period||"all"}onChange={e=>setPeriod(e.target.value)}style={{border:"1px solid #EAE6E1",borderRadius:7,padding:"4px 8px",fontSize:12,fontWeight:600,color:"#1F2734",background:"#fff",cursor:"pointer"}}>
+        <option value="all">All time</option>
+        <option value="7d">Last 7 days</option>
+        <option value="30d">Last 30 days</option>
+        <option value="90d">Last 90 days</option>
+      </select>
+    </div>}
+  </div>;
+}
 // An asset is "archived" via a data flag — kept distinct from "done" (completed/live)
 const isArchived=(c)=>!!(c&&c.data&&c.data.archived);
 // Map a campaign stage to the tab that should open for it
@@ -1433,6 +1485,18 @@ function Login({onAuth}){
 /* ===== App ============================================================== */
 // Self-heal legacy data: a Push notification with approved copy needs no design step,
 // so it should be "done". Fixes assets created before push-skips-design logic existed.
+// Auto-remove empty briefs left untouched for 2h+ (created but never filled or submitted).
+function sweepStaleBriefs(cs){
+  if(!Array.isArray(cs))return cs;
+  const TWO_H=2*60*60*1000, now=Date.now();
+  const stale=cs.filter(c=>c.stage==="brief"&&!(c.data&&c.data.brief)&&c.created_at&&(now-new Date(c.created_at).getTime())>TWO_H);
+  if(stale.length){
+    const ids=new Set(stale.map(c=>c.id));
+    stale.forEach(c=>{api.del("/api/campaigns/"+c.id).catch(()=>{});});
+    return cs.filter(c=>!ids.has(c.id));
+  }
+  return cs;
+}
 function normalizeCampaigns(cs){
   return (cs||[]).map(c=>{
     // Strip any forbidden placeholder tokens (e.g. "M-hash") from existing copy across the brand.
@@ -1493,7 +1557,7 @@ function App(){
             api.get("/api/feedback").catch(()=>[]),
             api.get("/api/audiences").catch(()=>[]),
           ]).then(([cs,rs,fb,auds])=>{
-            const fixed=normalizeCampaigns(cs);
+            const fixed=sweepStaleBriefs(normalizeCampaigns(cs));
             setCampaigns(fixed);setRules(rs);setFeedback(fb);setAudiences(auds);
             // Persist any auto-healed push assets so the fix sticks server-side
             fixed.forEach(c=>{const orig=cs.find(x=>x.id===c.id);if(orig&&orig.stage!==c.stage){api.put("/api/campaigns/"+c.id,{stage:c.stage,design_approver:c.design_approver,went_live_at:c.went_live_at}).catch(()=>{});}});
@@ -1509,7 +1573,7 @@ function App(){
       api.get("/api/campaigns"),api.get("/api/rules"),
       api.get("/api/feedback").catch(()=>[]),api.get("/api/audiences").catch(()=>[]),
     ]);
-    setCampaigns(normalizeCampaigns(cs));setRules(rs);setFeedback(fb);setAudiences(auds);
+    setCampaigns(sweepStaleBriefs(normalizeCampaigns(cs)));setRules(rs);setFeedback(fb);setAudiences(auds);
     api.get("/api/campaign-images").then(imgs=>{if(!Array.isArray(imgs)||!imgs.length)return;const m={};imgs.forEach(x=>{m[x.id]=x.design||{};});setCampaigns(cs=>cs.map(c=>{const im=m[c.id];if(!im)return c;const d=c.data||{};const dz=d.design||{};const mg={...dz};if(im.finalFile&&!(dz.finalFile&&dz.finalFile.dataUrl))mg.finalFile=im.finalFile;if(im.generatedImage&&!dz.generatedImage)mg.generatedImage=im.generatedImage;if(im.refImages&&!(dz.refImages&&dz.refImages.length))mg.refImages=im.refImages;return{...c,data:{...d,design:mg}};}));}).catch(()=>{});
   };
 
@@ -1562,7 +1626,7 @@ function App(){
     }catch(e){alert("Delete failed: "+e.message);}
   };
   const newCampaign=async()=>{
-    const c=await api.post("/api/campaigns",{channel:"WhatsApp",stage:"brief"});
+    const c=await api.post("/api/campaigns",{stage:"brief"});
     setCampaigns(cs=>[c,...cs]);setActiveId(c.id);setTab("brief");
   };
 
@@ -1629,19 +1693,44 @@ function App(){
   // Bulk import: takes normalised rows, runs each through the AI brief engine, creates campaigns.
   // Returns {created, failed, errors}. onProgress(done,total) for UI feedback.
   const bulkImportBriefs=async(rows,onProgress)=>{
-    let created=0,failed=0;const errors=[];
+    let created=0,drafts=0,failed=0;const errors=[];
     for(let i=0;i<rows.length;i++){
       const r=rows[i];
       try{
         const isRetail=(r.crmType||"").toLowerCase()==="retail";
-        const channel=isRetail?"WhatsApp":(r.channel||"WhatsApp");
-        const sys=`You write tight CRM creative briefs for HUFT.\n${BRAND_CONTEXT}\nReturn ONLY JSON:\n{"campaignName":"MonYY_Product_Hook_AudienceCode","strategicInsight":"1-2 sharp lines","idea":"single-minded message","proofPoints":["3 short proof points"],"pillar":"Trust|Importance|Edutainment|Brand Values|Discovery","copyDirection":"1-2 lines","whatsappNote":"one line"}`;
+        const channel=isRetail?"WhatsApp":(r.channel||"");
         const rtbs=(r.rtbs||[]).filter(Boolean),refs=(r.references||[]).filter(Boolean);
-        const usr=`CRM type: ${r.crmType||"D2C"}\nChannel: ${channel}\nProduct/Brand: ${r.product||""}\nPillar: ${r.pillar||"Importance"}\nAudience/Trigger: ${r.audience||""}\nObjective: ${r.objective||""}\nOffer: ${r.offer||"none"}\nHook/Angle: ${r.hook||"derive"}\nRTBs to focus on: ${rtbs.length?rtbs.join("; "):"derive"}\nReference links: ${refs.length?refs.join(" , "):"none"}\nGo-live date: ${r.goLive||"not set"}`;
-        const j=await callClaude(sys,usr,true,"brief");
-        if(rtbs.length)j.proofPoints=rtbs;
         const now=Date.now();
         const glDate=r.goLive||null;
+        // Completeness gate — if anything core is missing, land it as a DRAFT the business must
+        // complete (audience + insight + trigger) before the creative team can start.
+        const missing=[];
+        if(!r.product)missing.push("product");
+        if(!channel)missing.push("channel");
+        if(!r.audience)missing.push("audience");
+        if(!r.objective)missing.push("objective");
+        if(missing.length){
+          const c=await api.post("/api/campaigns",{
+            name:(r.product||"Imported asset")+(r.audience?" — "+r.audience:""),
+            channel:channel||null,product:r.product||"",
+            audience_label:r.audience||"",segment:r.audience||"",objective:r.objective||"",
+            offer:r.offer||"",crm_type:r.crmType||"D2C",
+            go_live_date:glDate,
+            campaign_week:glDate?weekOfMonth(glDate):null,campaign_month:glDate?monthLabel(glDate):null,
+            brief_started_at:new Date(now).toISOString(),
+            rtbs,references:refs,
+            data:{importDraft:true,importMissing:missing,importHook:r.hook||"",importPillar:r.pillar||""},
+            stage:"brief",
+          });
+          setCampaigns(cs=>[c,...cs]);
+          drafts++;
+          if(onProgress)onProgress(i+1,rows.length);
+          continue;
+        }
+        const sys=`You write tight CRM creative briefs for HUFT.\n${BRAND_CONTEXT}\nReturn ONLY JSON:\n{"campaignName":"MonYY_Product_Hook_AudienceCode","strategicInsight":"1-2 sharp lines","idea":"single-minded message","proofPoints":["3 short proof points"],"pillar":"Trust|Importance|Edutainment|Brand Values|Discovery","copyDirection":"1-2 lines","whatsappNote":"one line"}`;
+        const usr=`CRM type: ${r.crmType||"D2C"}\nChannel: ${channel}\nProduct/Brand: ${r.product||""}\nPillar: ${r.pillar||"Importance"}\nAudience: ${r.audience||""}\nObjective: ${r.objective||""}\nOffer: ${r.offer||"none"}\nHook/Angle: ${r.hook||"derive"}\nRTBs to focus on: ${rtbs.length?rtbs.join("; "):"derive"}\nReference links: ${refs.length?refs.join(" , "):"none"}\nGo-live date: ${r.goLive||"not set"}`;
+        const j=await callClaude(sys,usr,true,"brief");
+        if(rtbs.length)j.proofPoints=rtbs;
         const c=await api.post("/api/campaigns",{
           name:j.campaignName,channel,product:r.product||"",
           audience_label:r.audience||"",segment:r.audience||"",objective:r.objective||"",
@@ -1661,9 +1750,20 @@ function App(){
       }catch(e){failed++;errors.push(`Row ${i+1} (${r.product||"?"}): ${e.message||"failed"}`);}
       if(onProgress)onProgress(i+1,rows.length);
     }
-    return{created,failed,errors};
+    return{created,drafts,failed,errors};
   };
   const open=(id,jt)=>{const c=campaigns.find(x=>x.id===id);const stageTab=c?(c.stage==="done"?"done":(c.stage==="content"||c.stage==="brand_review")?"content":c.stage==="design"?"design":"brief"):"brief";setActiveId(id);setTab(jt||stageTab);};
+  // Deep link from notification emails: ?asset=<id> opens that asset once campaigns are loaded.
+  const _deepLinkDone=React.useRef(false);
+  React.useEffect(()=>{
+    if(_deepLinkDone.current||!me||!campaigns.length)return;
+    const aid=new URLSearchParams(window.location.search).get("asset");
+    if(aid&&campaigns.some(c=>c.id===aid)){
+      _deepLinkDone.current=true;
+      open(aid);
+      try{window.history.replaceState({},"",window.location.pathname);}catch(e){}
+    }
+  },[me,campaigns]);
 
   // Pending counts per stage (for nav badges)
   const scoped=scopeCampaigns(campaigns,me);
@@ -2309,6 +2409,7 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
       </div>
     </div>
     <div style={{fontSize:12,color:C.sub,marginBottom:10,marginTop:-8}}>Showing assets created in the <b style={{color:C.ink}}>{periodLabel}</b> · {campaigns.length} of {allCampaigns.length}</div>
+    {view==="list"&&<StageLegend/>}
     <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:18}}>
       {stat.map(s=><Card key={s.k}style={{padding:16}}><div style={{fontSize:30,fontWeight:800,color:s.color}}>{counts[s.k]||0}</div><div style={{fontSize:13,color:C.sub,fontWeight:600}}>{s.label}</div>{s.k==="brief"&&<div style={{fontSize:11,color:C.sub,marginTop:3}}>{allCampaigns.length} brief{allCampaigns.length===1?"":"s"} created total</div>}</Card>)}
     </div>
@@ -2358,20 +2459,18 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
       ?<CalendarView campaigns={campaigns}onOpen={onOpen}/>
       :campaigns.length===0?<Card><Empty icon={<LayoutDashboard size={26}color={C.sub}/>}title="No assets yet"sub="Start one and the engine walks it through Brief → Copy → Design."/></Card>
     :<div>
-      {pending.length>0&&<div style={{marginBottom:20}}>
-        <div style={{fontSize:11,fontWeight:700,color:C.coral,textTransform:"uppercase",letterSpacing:.5,marginBottom:10,display:"flex",alignItems:"center",gap:6}}><ClockIcon size={12}/>Needs attention · {pending.length}</div>
+      {pending.length>0&&<CollapsibleSection title="Needs attention" count={pending.length} color={C.coral} icon={<ClockIcon size={15}/>}>
         {groupByDate(pending).map(([date,items])=><div key={date}style={{marginBottom:10}}>
           <DateGroupHeader date={date}count={items.length}color={C.coral}/>
           <Card style={{padding:0,overflow:"hidden"}}>{items.map((c,i)=><CRow key={c.id}c={c}i={i}/>)}</Card>
         </div>)}
-      </div>}
-      {done.length>0&&<div>
-        <div style={{fontSize:11,fontWeight:700,color:C.green,textTransform:"uppercase",letterSpacing:.5,marginBottom:10,display:"flex",alignItems:"center",gap:6}}><CheckCircle2 size={12}/>Completed · {done.length}</div>
+      </CollapsibleSection>}
+      {done.length>0&&<CollapsibleSection title="Completed" count={done.length} color={C.green} icon={<CheckCircle2 size={15}/>}>
         {groupByDate(done).map(([date,items])=><div key={date}style={{marginBottom:10}}>
           <DateGroupHeader date={date}count={items.length}color={C.green}/>
           <Card style={{padding:0,overflow:"hidden",opacity:.88}}>{items.map((c,i)=><CRow key={c.id}c={c}i={i}/>)}</Card>
         </div>)}
-      </div>}
+      </CollapsibleSection>}
     </div>}
   </div>;
 }
@@ -2433,6 +2532,7 @@ function BriefFastForm({campaignId,patch,onBriefReady,me,recentFeedback,product,
   const[generating,setGenerating]=useState(false);
   const[err,setErr]=useState("");
   const[customRtb,setCustomRtb]=useState("");
+  const[moreFor,setMoreFor]=useState({});
   const[linkInput,setLinkInput]=useState("");
   const[maker,setMaker]=useState("team"); // "team" = creative team · "self" = make it myself (templatized)
   const[unusedImgs,setUnusedImgs]=useState(null);
@@ -2510,7 +2610,10 @@ function BriefFastForm({campaignId,patch,onBriefReady,me,recentFeedback,product,
             <input value={customRtb}onChange={e=>setCustomRtb(e.target.value)}onKeyDown={e=>{if(e.key==="Enter"&&customRtb.trim()){toggleMulti(s.key,customRtb.trim());setCustomRtb("");}}}placeholder={s.placeholder}style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 10px",fontSize:13,boxSizing:"border-box"}}/>
           </div>
           :<div>
-            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:s.freeText?8:0}}>{chipOpts.map(opt=><Chip key={opt}label={opt}active={val===opt}onClick={()=>set(s.key,opt)}/>)}</div>
+            {(()=>{const CAP=6;const showAll=moreFor[s.key];const many=chipOpts.length>CAP;const shown=many&&!showAll?chipOpts.slice(0,CAP):chipOpts;return<div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:s.freeText?8:0}}>
+              {shown.map(opt=><Chip key={opt}label={opt}active={val===opt}onClick={()=>set(s.key,opt)}/>)}
+              {many&&<button onClick={()=>setMoreFor(m=>({...m,[s.key]:!showAll}))}style={{fontSize:12,fontWeight:600,padding:"5px 11px",borderRadius:999,cursor:"pointer",border:`1px dashed ${C.line}`,background:"#fff",color:C.sub}}>{showAll?"Show fewer":"+ "+(chipOpts.length-CAP)+" more"}</button>}
+            </div>;})()}
             {s.freeText&&<input value={val&&!chipOpts.includes(val)?val:""}onChange={e=>set(s.key,e.target.value)}placeholder={s.placeholder||"Or type your own…"}style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 10px",fontSize:13,boxSizing:"border-box"}}/>}
           </div>}
       </div>;
@@ -2966,7 +3069,9 @@ function BriefChat({campaignId,patch,onBriefReady,me,recentFeedback,product}){
 const AlertCircle=p=><Svg{...p}><circle cx="12"cy="12"r="10"/><path d="M12 8v4M12 16h.01"/></Svg>;
 
 /* ===== Brief Tab ======================================================== */
-function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,onOpen,onDelete,onNew,onBulkImport,onBulkGenerate,toast,audiences}){
+function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns:_allCampaigns,onOpen,onDelete,onNew,onBulkImport,onBulkGenerate,toast,audiences}){
+  const[period,setPeriod]=useState("all");
+  const campaigns=(_allCampaigns||[]).filter(c=>inPeriod(c,period));
   const[view,setView]=useState("list");
   const canCreate=canCreateBrief(me);
   const[importing,setImporting]=useState(false); // false | "open" | "working" | "done"
@@ -3071,7 +3176,7 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
     setImporting("working");setImportProg({done:0,total:importRows.length});
     const res=await onBulkImport(importRows,(done,total)=>setImportProg({done,total}));
     setImportResult(res);setImporting("done");
-    if(res.created&&toast)toast(`${res.created} brief${res.created>1?"s":""} imported ✓`,"success");
+    if(toast){const parts=[];if(res.created)parts.push(`${res.created} imported`);if(res.drafts)parts.push(`${res.drafts} draft${res.drafts>1?"s":""} need details`);if(parts.length)toast(parts.join(" · ")+" ✓","success");}
   };
 
   const downloadTemplate=()=>{
@@ -3103,23 +3208,23 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
     };
     const _tone=!brief?ROW_TONE.attention:(c.stage==="done"?ROW_TONE.done:ROW_TONE.approved);
     const isSel=selected.has(c.id);
-    const stageMeta=!brief?{label:"No brief yet",color:"#B91C1C",bg:"#FEF2F2"}
+    const stageMeta=!brief?(c.data?.importDraft?{label:"Imported · add details",color:"#B45309",bg:"#FEF3C7"}:{label:"No brief yet",color:"#B91C1C",bg:"#FEF2F2"})
       :c.stage==="content"?{label:"In copy",color:C.purple,bg:C.purple+"14"}
       :c.stage==="brand_review"?{label:"Brand review",color:"#9333EA",bg:"#F3E8FF"}
       :c.stage==="design"?{label:"In design",color:C.teal,bg:C.teal+"14"}
       :c.stage==="done"?{label:"Ready",color:C.green,bg:"#DCFCE7"}
       :{label:STAGE_LABEL[c.stage]||c.stage,color:C.sub,bg:"#F3F4F6"};
-    return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`4px solid ${isSel?C.coral:stageMeta.color}`}}>
+    return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`5px solid ${isSel?C.coral:rowAccent(c)}`}}>
       {/* Row header — always visible */}
       <div onClick={()=>setOpenId(isOpen?null:c.id)}
-        style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer",background:isSel?"#FFF4ED":(isOpen?"#FFFBF7":(brief?_tone.bg:"#fff"))}}>
+        style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer",background:isSel?"#FFF4ED":(isOpen?rowAccent(c)+"18":rowAccent(c)+"12")}}>
         <input type="checkbox"checked={isSel}onClick={e=>e.stopPropagation()}onChange={()=>toggleSel(c.id)}title="Select"style={{width:16,height:16,flexShrink:0,cursor:"pointer",accentColor:C.coral}}/>
         <ChannelIcon channel={c.channel}/>
         <div style={{flex:1,minWidth:0}}>
           {/* Line 1: Product · Channel · Format · Owner */}
           <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3,flexWrap:"wrap"}}>
             <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{humanizeToken(c.product)||parseName(c.name).product||"—"}</span>
-            <span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel||"WhatsApp"}</span>
+            {c.channel?<span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel}</span>:<span style={{fontSize:11,fontWeight:700,color:C.coral}}>· set channel</span>}
             <span style={{fontSize:11,fontWeight:700,color:C.coral}}>· {normCrmType(c.crm_type)}</span>
             {c.created_by_name&&<span style={{fontSize:11,fontWeight:600,color:C.sub}}>· {c.created_by_name}</span>}
           </div>
@@ -3227,6 +3332,7 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
         </div>
       </div>
     </div>
+    {view==="list"&&<ListBar period={period} setPeriod={setPeriod}/>}
     {view==="calendar"
       ?<CalendarView campaigns={(campaigns||[]).filter(c=>!isArchived(c))}onOpen={onOpen}/>
       :(allBriefs.length===0&&briefedElsewhere.length===0&&briefArchived.length===0)
@@ -3287,13 +3393,13 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
             ?<div>
               <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
                 <div style={{width:42,height:42,borderRadius:999,background:"#DCFCE7",display:"flex",alignItems:"center",justifyContent:"center"}}><CheckCircle2 size={22}color="#16A34A"/></div>
-                <div><div style={{fontWeight:800,fontSize:16}}>{importResult.created} brief{importResult.created!==1?"s":""} created</div>{importResult.failed>0&&<div style={{fontSize:13,color:C.coral}}>{importResult.failed} failed</div>}</div>
+                <div><div style={{fontWeight:800,fontSize:16}}>{importResult.created} brief{importResult.created!==1?"s":""} created</div>{importResult.drafts>0&&<div style={{fontSize:13,fontWeight:600,color:"#B45309"}}>{importResult.drafts} draft{importResult.drafts!==1?"s":""} need details before copy can start</div>}{importResult.failed>0&&<div style={{fontSize:13,color:C.coral}}>{importResult.failed} failed</div>}</div>
               </div>
               {importResult.errors&&importResult.errors.length>0&&<div style={{background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:9,padding:"10px 12px",marginBottom:14,maxHeight:160,overflowY:"auto"}}>
                 {importResult.errors.map((er,i)=><div key={i}style={{fontSize:12,color:"#B91C1C",lineHeight:1.5}}>{er}</div>)}
               </div>}
-              <div style={{fontSize:13,color:C.sub,marginBottom:14}}>Imported briefs are ready in the Copy tab for copy generation.</div>
-              <div style={{display:"flex",gap:8}}><Btn onClick={()=>{setImporting(false);setTab("content");}}>Go to Copy</Btn><Btn variant="ghost"onClick={()=>setImporting(false)}>Close</Btn></div>
+              <div style={{fontSize:13,color:C.sub,marginBottom:14}}>{importResult.created>0?"Complete briefs are ready in the Copy tab. ":""}{importResult.drafts>0?"Rows missing info landed as drafts in the Brief tab — open each, add the audience, trigger and insight, then submit before the creative team can start.":""}</div>
+              <div style={{display:"flex",gap:8}}>{importResult.created>0&&<Btn onClick={()=>{setImporting(false);setTab("content");}}>Go to Copy</Btn>}{importResult.drafts>0&&<Btn variant={importResult.created>0?"ghost":undefined}onClick={()=>{setImporting(false);setTab("brief");}}>Go to drafts</Btn>}<Btn variant="ghost"onClick={()=>setImporting(false)}>Close</Btn></div>
             </div>
           :importing==="working"
             ?<div style={{textAlign:"center",padding:"20px 0"}}>
@@ -3363,12 +3469,14 @@ function EditBriefForm({brief,active,patch,onDone}){
 }
 
 function SelfBriefForm({active,patch,audiences,onDone,onBack}){
-  const[draft,setDraft]=useState({name:active.name||"",product:active.product||"",audience_label:active.audience_label||active.segment||"",objective:active.objective||""});
+  const[draft,setDraft]=useState({name:active.name||"",product:active.product||"",channel:active.channel||"",crm_type:active.crm_type||"D2C",audience_label:active.audience_label||active.segment||"",objective:active.objective||""});
   const[self,setSelf]=useState({trigger:"",insight:"",idea:""});
+  const[moreAud,setMoreAud]=useState(false);
   const sync=(k,v)=>setDraft(d=>({...d,[k]:v}));
-  const sugg=audiencesForProduct(draft.product,audiences).slice(0,8);
+  const allSugg=audiencesForProduct(draft.product,audiences);
+  const sugg=moreAud?allSugg:allSugg.slice(0,6);
   const pickAud=(a)=>{sync("audience_label",a.name);setSelf(s=>({...s,trigger:(s.trigger&&s.trigger.trim())?s.trigger:(a.trigger_event||""),insight:(s.insight&&s.insight.trim())?s.insight:(a.key_insight||"")}));};
-  const ready=draft.name&&draft.audience_label&&self.trigger.trim()&&self.insight.trim()&&self.idea.trim();
+  const ready=draft.name&&draft.channel&&draft.audience_label&&self.trigger.trim()&&self.insight.trim()&&self.idea.trim();
   const save=()=>{
     patch(active.id,{
       ...draft,
@@ -3385,11 +3493,30 @@ function SelfBriefForm({active,patch,audiences,onDone,onBack}){
       <Field label="Asset name"value={draft.name}onChange={v=>sync("name",v)}/>
       <Field label="Product / Brand"value={draft.product}onChange={v=>sync("product",v)}/>
     </div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
+      <label style={{display:"block"}}>
+        <div style={{fontSize:12.5,fontWeight:600,color:C.sub,marginBottom:5}}>Channel</div>
+        <select value={draft.channel}onChange={e=>sync("channel",e.target.value)}style={{border:`1px solid ${draft.channel?C.line:C.coral}`,borderRadius:10,padding:"9px 11px",fontSize:14,width:"100%",background:"#fff"}}>
+          <option value="">Select a channel…</option>
+          <option value="WhatsApp">WhatsApp</option>
+          <option value="Email">Email</option>
+          <option value="Push notification">Push notification</option>
+        </select>
+      </label>
+      <label style={{display:"block"}}>
+        <div style={{fontSize:12.5,fontWeight:600,color:C.sub,marginBottom:5}}>CRM type</div>
+        <select value={draft.crm_type}onChange={e=>sync("crm_type",e.target.value)}style={{border:`1px solid ${C.line}`,borderRadius:10,padding:"9px 11px",fontSize:14,width:"100%",background:"#fff"}}>
+          <option value="D2C">D2C</option>
+          <option value="Retail">Retail</option>
+        </select>
+      </label>
+    </div>
     <Field label="Audience (who exactly)"value={draft.audience_label}onChange={v=>sync("audience_label",v)}placeholder="e.g. Value cat parents currently on Whiskas / Me-O"/>
     {sugg.length>0&&<div style={{marginTop:-2,marginBottom:10}}>
       <div style={{fontSize:11,color:C.sub,marginBottom:5}}>Audiences for <b>{draft.product||"this product"}</b> — tap to use, then make it yours:</div>
       <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
         {sugg.map(a=><button key={a.name||a.id}onClick={()=>pickAud(a)}title={a.key_insight||a.description||""}style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,fontWeight:600,color:draft.audience_label===a.name?"#fff":C.ink,background:draft.audience_label===a.name?C.coral:"#fff",border:`1px solid ${draft.audience_label===a.name?C.coral:C.line}`,borderRadius:999,padding:"5px 11px",cursor:"pointer"}}>{a.name}{a.pet_type&&a.pet_type!=="both"&&<span style={{fontSize:9.5,opacity:.65}}>· {a.pet_type}</span>}</button>)}
+        {allSugg.length>6&&<button onClick={()=>setMoreAud(v=>!v)}style={{fontSize:11.5,fontWeight:600,padding:"5px 11px",borderRadius:999,cursor:"pointer",border:`1px dashed ${C.line}`,background:"#fff",color:C.sub}}>{moreAud?"Show fewer":"+ "+(allSugg.length-6)+" more"}</button>}
       </div>
     </div>}
     <Field label="Trigger (the moment / why now)"textarea value={self.trigger}onChange={v=>setSelf(s=>({...s,trigger:v}))}placeholder="The event that prompts this message — e.g. ran out 60+ days ago, vet flagged digestion, second cat just adopted."/>
@@ -3399,7 +3526,7 @@ function SelfBriefForm({active,patch,audiences,onDone,onBack}){
     <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
       <Btn onClick={save}disabled={!ready}><Check size={16}/>Save brief</Btn>
       <Btn variant="ghost"onClick={onBack}>Back</Btn>
-      {!ready&&<span style={{fontSize:11.5,color:C.sub}}>Fill name, audience, trigger, insight and the idea to save.</span>}
+      {!ready&&<span style={{fontSize:11.5,color:C.sub}}>Fill name, channel, audience, trigger, insight and the idea to save.</span>}
     </div>
   </div>;
 }
@@ -3944,7 +4071,9 @@ function ImageFull({id}){
   return<img src={src}alt=""style={{width:"100%",borderRadius:10}}/>;
 }
 
-function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,saveFeedback,campaigns,onOpen,toast,onDelete,onSplit,catRules,team,reload}){
+function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,saveFeedback,campaigns:_allCampaigns,onOpen,toast,onDelete,onSplit,catRules,team,reload}){
+  const[period,setPeriod]=useState("all");
+  const campaigns=(_allCampaigns||[]).filter(c=>inPeriod(c,period));
   // Copy page shows: assets still in copy stage, PLUS any non-archived asset whose copy
   // was already approved (those have moved on to Design/Done but should remain visible here).
   const _myCats=myCategories(me,catRules);
@@ -4140,14 +4269,14 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       const o=opts?.[sel];
       const tone=c.stage==="content"?{bar:"#92400E",bg:"#FFFBEB"}:c.stage==="brand_review"?{bar:"#9333EA",bg:"#FAF5FF"}:ROW_TONE[c.stage==="done"?"done":"approved"];
       const isPush=isPushChannel(c.channel);
-      return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`4px solid ${tone.bar}`,background:tone.bg}}>
+      return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`5px solid ${rowAccent(c)}`,background:rowAccent(c)+"12"}}>
         {/* Collapsed header — always visible, click to expand */}
         <div onClick={()=>setOpenId(isOpen?null:c.id)}style={{display:"flex",alignItems:"center",gap:12,padding:"12px 18px",cursor:"pointer",userSelect:"none"}}>
           <div style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
             <span style={{color:C.sub,display:"flex",alignItems:"center",flexShrink:0}}>{isOpen?<ChevronDown size={14}/>:<ChevronRight size={14}/>}</span>
             <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{humanizeToken(c.product)||"—"}</span>
             <span style={{fontSize:11,fontWeight:700,color:C.coral}}>{normCrmType(c.crm_type)}</span>
-            <span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel||"WhatsApp"}</span>
+            {c.channel?<span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel}</span>:<span style={{fontSize:11,fontWeight:700,color:C.coral}}>· set channel</span>}
             {(()=>{
               if(c.stage==="brand_review")return<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#9333EA",background:"#F3E8FF",padding:"3px 9px",borderRadius:999}}><Eye size={11}/>In brand review</span>;
               if(c.stage==="content"){
@@ -4217,16 +4346,16 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       </div>;
     }
 
-    return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`4px solid ${opts?ROW_TONE.amber.bar:ROW_TONE.attention.bar}`}}>
+    return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`5px solid ${rowAccent(c)}`}}>
       {/* Row header */}
       <div onClick={()=>setOpenId(isOpen?null:c.id)}
-        style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer",background:isOpen?"#FAF5FF":"#fff"}}>
+        style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer",background:isOpen?rowAccent(c)+"18":rowAccent(c)+"12"}}>
         <ChannelIcon channel={c.channel}/>
         <div style={{flex:1,minWidth:0}}>
           {/* Line 1: Product · Channel · CRM type · Owner */}
           <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3,flexWrap:"wrap"}}>
             <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{humanizeToken(c.product)||parseName(c.name).product||"—"}</span>
-            <span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel||"WhatsApp"}</span>
+            {c.channel?<span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel}</span>:<span style={{fontSize:11,fontWeight:700,color:C.coral}}>· set channel</span>}
             <span style={{fontSize:11,fontWeight:700,color:C.coral}}>· {normCrmType(c.crm_type)}</span>
             {c.created_by_name&&<span style={{fontSize:11,fontWeight:600,color:C.sub}}>· {c.created_by_name}</span>}
           </div>
@@ -4340,6 +4469,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         <button onClick={()=>setView("calendar")}style={{padding:"6px 14px",border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:view==="calendar"?C.navy:"#fff",color:view==="calendar"?"#fff":C.sub,display:"flex",alignItems:"center",gap:5}}><CalendarIcon size={13}/>Calendar</button>
       </div>
     </div>
+    {view==="list"&&<ListBar period={period} setPeriod={setPeriod}/>}
     {view==="calendar"
       ?<CalendarView campaigns={allCopy}onOpen={onOpen}/>
       :allCopy.length===0
@@ -6506,7 +6636,9 @@ function ComposerTab({campaigns,me,patch,promptRules,toast}){
         </div>}
   </div>;
 }
-function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedback,campaigns,onOpen,onDelete,onDuplicate,team}){
+function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedback,campaigns:_allCampaigns,onOpen,onDelete,onDuplicate,team}){
+  const[period,setPeriod]=useState("all");
+  const campaigns=(_allCampaigns||[]).filter(c=>inPeriod(c,period));
   const allDesignRaw=(campaigns||[]).filter(c=>c.stage==="design"&&(c.channel!=="Push notification"||c.data?.selfMade)&&!isArchived(c));
   const allDesign=isBusiness(me)?allDesignRaw.filter(c=>c.data?.selfMade):isDesignTeam(me)?allDesignRaw.filter(c=>!c.data?.selfMade):allDesignRaw;
   const[openId,setOpenId]=useState(null);
@@ -6658,15 +6790,17 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
       setEmailing(false);
     };
     const _dtone=(d.sentBack&&!d.pendingApproval)?ROW_TONE.attention:(_imgReady?ROW_TONE.design:ROW_TONE.attention);
-    return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`4px solid ${_dtone.bar}`}}>
+    return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`5px solid ${rowAccent(c)}`}}>
       {/* Row header */}
       <div onClick={()=>setOpenId(isOpen?null:c.id)}
-        style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer",background:isOpen?"#F8F9FA":(_imgReady?_dtone.bg:"#fff")}}>
+        style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer",background:isOpen?rowAccent(c)+"18":rowAccent(c)+"12"}}>
+        <ChannelIcon channel={c.channel}/>
         <div style={{flex:1,minWidth:0}}>
-          <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3}}>
-            <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{humanizeToken(c.product)||"—"}</span>
-            <span style={{fontSize:11,fontWeight:700,color:C.coral}}>{normCrmType(c.crm_type)}</span>
-            <span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel||"WhatsApp"}</span>
+          <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3,flexWrap:"wrap"}}>
+            <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{humanizeToken(c.product)||parseName(c.name).product||"—"}</span>
+            {c.channel?<span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel}</span>:<span style={{fontSize:11,fontWeight:700,color:C.coral}}>· set channel</span>}
+            <span style={{fontSize:11,fontWeight:700,color:C.coral}}>· {normCrmType(c.crm_type)}</span>
+            {c.created_by_name&&<span style={{fontSize:11,fontWeight:600,color:C.sub}}>· {c.created_by_name}</span>}
           </div>
           <div style={{fontSize:12,color:C.sub,display:"flex",gap:6,alignItems:"center"}}><span>{parseName(c.name).date&&<b style={{color:C.ink,marginRight:4}}>{parseName(c.name).date}</b>}{copy.direction}</span>{c.created_at&&<span style={{marginLeft:"auto",fontSize:11,color:C.sub,background:"#F3F4F6",padding:"2px 7px",borderRadius:5,flexShrink:0}}>{fmtDate(c.created_at)}</span>}</div>
         </div>
@@ -6682,10 +6816,10 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
           {isOpen?<ChevronDown size={16}color={C.sub}/>:<ChevronRight size={16}color={C.sub}/>}
         </div>
       </div>
-      <div style={{padding:"0 18px 8px 18px",marginTop:-6}}><WhoChips c={c}me={me}team={team}/></div>
 
       {/* Expanded */}
       {isOpen&&<div style={{padding:"0 18px 18px",background:"#F8F9FA"}}>
+        <div style={{padding:"2px 0 10px"}}><WhoChips c={c}me={me}team={team}/></div>
         {/* Submit for approval — pinned to the top of the tile */}
         {!c.data?.selfMade&&(d.sentBack
           ?<div style={{background:"#FFF7ED",border:"1px solid #FED7AA",borderLeft:"4px solid #C2410C",borderRadius:10,padding:"11px 13px",marginBottom:12}}>
@@ -6854,6 +6988,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
         <button onClick={()=>setView("calendar")}style={{padding:"6px 14px",border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:view==="calendar"?C.navy:"#fff",color:view==="calendar"?"#fff":C.sub,display:"flex",alignItems:"center",gap:5}}><CalendarIcon size={13}/>Calendar</button>
       </div>
     </div>
+    {view==="list"&&<ListBar period={period} setPeriod={setPeriod}/>}
     {view==="calendar"
       ?<CalendarView campaigns={allDesign}onOpen={onOpen}/>
       :allDesign.length===0
@@ -6929,14 +7064,14 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate}){
       }catch(e){if(typeof toast!=="undefined"&&toast)toast("Couldn't send the alert — try again","error");}
       setEmailing(false);
     };
-    return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`4px solid ${tone.bar}`,background:tone.bg}}>
+    return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`5px solid ${rowAccent(c)}`,background:rowAccent(c)+"12"}}>
       {/* Collapsed header — click to expand */}
       <div onClick={()=>setOpenId(isOpen?null:c.id)}style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer"}}>
         <div style={{flex:1,minWidth:0}}>
           <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3,flexWrap:"wrap"}}>
             <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{c.product||p.product||"—"}</span>
             <span style={{fontSize:11,fontWeight:700,color:C.coral}}>{normCrmType(c.crm_type)}</span>
-            <span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel||"WhatsApp"}</span>
+            {c.channel?<span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel}</span>:<span style={{fontSize:11,fontWeight:700,color:C.coral}}>· set channel</span>}
             <span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:C.green,background:C.green+"18",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>Done</span>
             {c.created_at&&<span style={{marginLeft:"auto",fontSize:11,color:C.sub,background:"#F3F4F6",padding:"2px 7px",borderRadius:5}}>{fmtDate(c.created_at)}</span>}
           </div>
@@ -7198,7 +7333,7 @@ function ArchiveTab({campaigns,patch,onOpen,me,onDelete}){
               <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3,flexWrap:"wrap"}}>
                 <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{c.product||p.product||"—"}</span>
                 <span style={{fontSize:11,fontWeight:700,color:C.coral}}>{normCrmType(c.crm_type)}</span>
-                <span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel||"WhatsApp"}</span>
+                {c.channel?<span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel}</span>:<span style={{fontSize:11,fontWeight:700,color:C.coral}}>· set channel</span>}
                 <StageBadge stage={c.stage}/>
                 {c.created_at&&<span style={{fontSize:11,color:C.sub,background:"#F3F4F6",padding:"2px 7px",borderRadius:5}}>{fmtDate(c.created_at)}</span>}
               </div>
