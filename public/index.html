@@ -108,7 +108,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v30.9 - Copy rule: CTA now maps to the brief's objective/audience (win-back→come back, acquisition→try, service→book, etc.) and the body's closing line must agree with the CTA — applies to generate, refine and send-back. Plus v30.8 brief-tab stage segmentation.";
+const BUILD="v31.2 - Rulebook now ENFORCED, not just suggested: the reviewer actively flags rulebook violations (sentence-case, code-before-hook, discount-without-RTB, disease claims, banned words, Yakies-milk) as Apply-fix/Allow chips on every option, and 'fur baby'/'furball' is auto-fixed to 'pet'. Plus v31.1 image-copy overlays + rulebook in generation + mechanical auto-fixes; v31.0 calendar fix.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -174,6 +174,68 @@ WhatsApp (image-copy overlay → message body):
 • Overlay: "A season of adventure awaits" → Body: "Ready to refresh your dog's summer style? 🏖️ Discover the Summer '26 edit — breezy tees, comfy beds and walk gear for every outing."
 • Overlay: "Payday Sale · Ends Sunday" → Body: "Stop thinking, start adding your pet's favourites to the cart 🛒 The Payday Sale ends Sunday ⏰ — up to 10% off HUFT food and more."
 THE PATTERN: a short, playful hook that sparks curiosity or delight, then a warm payoff that lands it and points to the action. Bring exactly this wit and warmth to the brief in front of you — make it the best copy a HUFT writer could write.`;
+// Real winning IMAGE COPY (on-creative overlays) + the stacked overlay format HUFT actually ships. Injected into every copy generation (image channels).
+const HUFT_IMAGE_COPY=`HUFT IMAGE COPY — the on-creative overlay format that works (WhatsApp / Email / Meta image only; a PUSH has NO image — skip this entirely for push). Image copy is NOT one sentence — it is a SHORT STACK of lines read at a glance:
+- LINE 1 (the big line): the hook OR the offer, bold and instant — "Up to 30% off", "More than just a cool tee", "Someone's waiting for dinner…", "Back in stock, just in time for summer".
+- LINE 2 (clarifier): what it's ON / what it IS, plain words — "on Hearty Baked Food & Gravy", "on cats ki asli diet", "100% waterproof raincoats".
+- OPTIONAL USP strip: one short proof line with a | divider — "100% grain-free | Best cuts of meat", "Zero preservatives | 100% Natural Ingredients", "Quality Chicken & Fish | No Corn or Soy".
+- OPTIONAL code line, ALWAYS LAST, never first — "Use code MT10 for 10% off".
+Put each line on its OWN line (use real line breaks in the "header" value). Keep every line tight (max ~6 words), sentence case (designers may visually emphasise the big line — that is a design choice, not your case), with real personality. The big line carries the feeling; the code never leads.
+
+REAL HUFT IMAGE COPY THAT PERFORMED — match the rhythm and shape, NEVER copy verbatim or reuse the product/offer unless the brief is about it. ( / marks a line break — output a real line break, not a slash):
+• "Up to 30% off / on Hearty Baked Food & Gravy"
+• "Up to 25% off / on cats ki asli diet / Best cuts of meat | 100% grain-free"
+• "Treats that love your cat, / at extra 10% off / 100% grain-free | Zero preservatives / Use code MT10 for 10% off"
+• "Someone's waiting for dinner… / Use code Meowsi15 for extra 15% off / 100% grain-free | Best cuts of meat"
+• "More than just a cool tee / A comfy layer that protects their coat on sunny walks"
+• "Your dog wants a new toy / & we've got it all! / Get 10% off with code TOY10"
+• "Back in stock, just in time for summer! / Summer's hydrating super-snack / Use code NM10 for extra 10% off"
+• "It's been a while. / Here's a good reason to come back. / Use code 300HUFT for ₹300 off"
+• "Food that fills & fuels your cat / at extra 10% off / Quality Chicken & Fish | No Corn or Soy"
+THE PATTERN: a bold feeling-first big line → a plain clarifier → optional proof strip → optional code last. Bring this exact shape to the brief in front of you.`;
+// Distilled HUFT Master Copy & Creative Rulebook (copy-relevant rules, built from 12+ months of real review feedback). Injected into every copy generation.
+const HUFT_RULEBOOK=`HUFT MASTER RULEBOOK — copy rules from 12+ months of real review feedback. HARD: a creative that breaks any of these goes straight back. Apply to EVERY line, EVERY channel.
+
+MECHANICS (most-flagged):
+- ₹ ALWAYS, never "Rs"/"Rs." — write "₹999", not "Rs 999".
+- Comma in every number above 999 — "₹1,299" not "₹1299"; "5,000+ products".
+- Write "Zero" not "0" in proof copy — "Zero preservatives", "Zero chemicals".
+- Max ONE "!" in a whole creative; never "!!" or "!!!".
+- No full stop before an emoji ("Best treats 🧡", not "Best treats. 🧡"); no full stop ending a headline.
+- "T&Cs Apply" (not "T&C's"/"TC Apply"); "Valid on…" not "Applicable on…"; Indian metric "Lac" not "Million"; drop the word "FLAT" ("10% off", not "FLAT 10% off"); no space before punctuation.
+
+CASE: sentence case for ALL headlines, body and WhatsApp copy — NOT Title Case. Keep as-is only: product category names (Dog Food), sub-brand names (Sara's Wholesome Food), event names (Mother's Day), and city names. Never capitalise mid-sentence common nouns ("book a spa session", not "Book a Spa Session").
+
+LENGTH: one message = one takeaway. Cut sub-copy under features — if the creative still makes sense without it, it was never needed. One sharp headline; never stack H1 + H2 + sub-bullets + CTA.
+
+OFFERS (discount-first underperforms — CTR-backed):
+- Open with the hook or the product truth, NEVER the code. The code confirms the decision, it doesn't make it — put it LAST.
+- Every discount creative carries an RTB / reason to choose the brand beyond price ("Extra 10% off on treats made with real chicken — no fillers").
+- Don't undersell — state the offer plainly, drop weak qualifiers ("a small surprise just for you").
+
+CLAIMS: verified only. No disease-prevention claims — "helps support oral hygiene", never "prevents gum disease". Ingredient counts/stats must be real and sourced; if unconfirmed, cut it. The headline claim and the proof points must tell the SAME story.
+
+BANNED / RESTRICTED:
+- "Pampering" (Spa) → "expert grooming", "gentle handling", "professional care".
+- "Fur baby"/"furball" → "your pet".
+- Meowsi named meat → "human-grade chicken and fish", "real muscle meat", "real organ meat", or the specific protein (chicken, tuna, salmon).
+- "Novel proteins" → "gut-first, gentle nutrition".
+- Yakies: NEVER mention cow or yak milk anywhere (standing brand-protection rule) → "100% Natural Ingredients / Zero Chemicals or Preservatives".
+- Bone broth is NOT a "super snack" → "hydration they'll actually love".
+- No standalone "Shop" heading (the CTA button covers it); don't repeat the brand name when the logo is already there.
+- City: always "Bengaluru", never "Bangalore".
+
+SUB-BRAND PLATFORM LINES (honour on every creative):
+- HUFT Spa: all copy leads to or says "In hands that understand"; show the spa, never a home bath (e.g. "Summer coat getting heavy? We've got the right trim.").
+- Sara's Wholesome Food: an EVERYDAY feeding choice, not a special fix; "juuust chicken" is brand-owned — own it; offer headlines sell WHY Sara's, not just the %.
+- Hearty: a reason to choose Hearty beyond the discount; truths = oven-baked, 60% fresh meat, no fillers; say "food", never "kibble".
+- Meowsi: "They are carnivores. Their bowl should know that."; cats are "them/their", never "she/her"; treats are playful/joyful, not a health claim; verify code MEOWSI10 / MEOWSI15.
+- Yakies: headline + visual first, proof in support; "Zero Chemicals or Preservatives / Healthier than Rawhide"; no milk.
+- Yum Nums (YIMT): "Maida-free" lands better than "gluten-free"; keep "biscuits" out of the headline.
+- NutriMeow: never lead with price — always an RTB; let the fuel-gauge visual lead; "Complete Wet Meals" and Kibble are distinct.
+- HUFT Express: "3,000+ Pet Essentials. Delivered Fast." — relief + confidence, "I can get it right now".
+
+WHATSAPP FIRST LINE = the chat preview (≤150 chars), seen BEFORE the image — write it as a standalone hook. Never open with the code, "Hi {name}", or the brand name.`;
 // Channel-specific engagement rules (shared by every generator).
 const PUSH_RULES=`PUSH NOTIFICATION RULES — these are HARD RULES, follow every one EVERY time (non-negotiable):
 - ACTION-LED FIRST LINE (most important): EVERY push must drive an action, and that action must be in the FIRST line (the title). Even a purely awareness push must make the reader want to DO something — tap, see, check, discover, save, switch, book, try. Open with or strongly imply the action; never a flat statement with no pull. If the first line doesn't move the reader to act, rewrite it.
@@ -225,7 +287,27 @@ const stripForbidden=(s)=>{
   out=out.replace(/[ \t]{2,}/g," ").replace(/ +([,.!?])/g,"$1").replace(/\s+([,.])/g,"$1").replace(/^[\s,;:]+/gm,"").replace(/\n{3,}/g,"\n\n").trim();
   return out;
 };
-const sanitizeOption=(o)=>{if(!o||typeof o!=="object")return o;const f={...o};["subject","header","body","cta","direction"].forEach(k=>{if(typeof f[k]==="string")f[k]=stripForbidden(f[k]);});if(Array.isArray(f.rtbs))f.rtbs=f.rtbs.map(x=>typeof x==="string"?stripForbidden(x):x).filter(Boolean).slice(0,3);return f;};
+// HUFT rulebook mechanical fixes — always-correct, deterministic normalisations of the most-flagged review mistakes.
+const applyRulebookFixes=(s)=>{
+  if(typeof s!=="string")return s;
+  let out=s;
+  out=out.replace(/\b(?:Rs\.?|INR)\s?(?=\d)/gi,"₹");                       // Rs / Rs. / INR → ₹
+  out=out.replace(/₹\s?(\d{4,})(?!\d)/g,(m,n)=>{                            // thousands commas (Indian grouping) for ₹ amounts > 999
+    const x=n.replace(/,/g,"");let last3=x.slice(-3),rest=x.slice(0,-3);
+    if(rest)rest=rest.replace(/\B(?=(\d{2})+(?!\d))/g,",");
+    return "₹"+(rest?rest+",":"")+last3;
+  });
+  out=out.replace(/!\s*!+/g,"!");                                          // !! / !!! → single !
+  out=out.replace(/\.\s*(?=[\u2600-\u27BF\u2B00-\u2BFF\u{1F000}-\u{1FAFF}])/gu," "); // no full stop before an emoji
+  out=out.replace(/\bT&C['’]?s?\s+Apply\b/gi,"T&Cs Apply").replace(/\bTC\s+Apply\b/gi,"T&Cs Apply"); // T&Cs Apply
+  out=out.replace(/\bApplicable on\b/gi,"Valid on");                       // "Applicable on" → "Valid on"
+  out=out.replace(/\bBangalore\b/g,"Bengaluru");                           // Bangalore → Bengaluru
+  out=out.replace(/\bfur[\s-]?babies\b/gi,"pets").replace(/\bfur[\s-]?baby\b/gi,"pet"); // banned: fur baby → pet
+  out=out.replace(/\bfur[\s-]?balls\b/gi,"pets").replace(/\bfur[\s-]?ball\b/gi,"pet");   // banned: furball → pet
+  out=out.replace(/\bFLAT\s+(?=\d{1,3}\s?%)/gi,"");                        // drop "FLAT " before a percentage
+  return out.replace(/[ \t]{2,}/g," ").trim();
+};
+const sanitizeOption=(o)=>{if(!o||typeof o!=="object")return o;const f={...o};["subject","header","body","cta","direction"].forEach(k=>{if(typeof f[k]==="string")f[k]=stripForbidden(f[k]);});["subject","header","body","cta"].forEach(k=>{if(typeof f[k]==="string")f[k]=applyRulebookFixes(f[k]);});if(Array.isArray(f.rtbs))f.rtbs=f.rtbs.map(x=>typeof x==="string"?applyRulebookFixes(stripForbidden(x)):x).filter(Boolean).slice(0,3);return f;};
 const sanitizeOptions=(arr)=>Array.isArray(arr)?arr.map(sanitizeOption):arr;
 // Hard length caps per channel — passed to the server, which clamps regardless of what the model returns.
 const copyLimits=(isPush,isEmail)=>isPush?{header:50,body:90,cta:25}:isEmail?{subject:50,header:42,cta:30}:{header:42,cta:30};
@@ -234,8 +316,8 @@ const copyLimits=(isPush,isEmail)=>isPush?{header:50,body:90,cta:25}:isEmail?{su
 const COPY_SHAPE=(isPush,isEmail)=>(isPush
   ?"each: {direction,header,body,cta}. header=push TITLE (the FIRST line), max 40 chars (hard 50), one crisp flowing line that DRIVES AN ACTION — every push, even awareness, makes the reader want to act (tap, see, switch, save). body=the second line, max 70 chars — THIS IS A HARD LIMIT, never exceed 70 chars; at most TWO short complete sentences (one is better), natural flow not fragments, reinforcing the action. cta=2-3 words. Push has NO image — do not write image/overlay copy or rtbs. If the brief has an offer, put it in the title or body in plain words."
   :isEmail
-  ?"each: {direction,subject,header,body,cta,rtbs}. subject=email subject line under 50 chars. header=IMAGE COPY / hero overlay: a SHORT, FUN, punchy headline (~3–7 words, 1-2 short lines) with real personality — playful/witty/warm. It must read as one coherent, intentional line (a short complete sentence is fine); never a long flat sentence and never broken-up fragments. Surface the offer here if the brief has one. body=short scannable email (~50-80 words): warm 1-line opener, core value/offer in 1-2 lines, 2-3 proof points, friendly sign-off. cta=action phrase."
-  :"each: {direction,header,body,cta,rtbs}. header=IMAGE COPY / on-image overlay: a SHORT, FUN, punchy headline (~3–7 words, 1-2 short lines) with real personality — playful/witty/warm. It must read as one coherent, intentional line (a short complete sentence is fine); never a long flat sentence and never broken-up fragments. Surface the offer here if the brief has one. body=tight WhatsApp message (~40-55 words): a STRONG hook line that earns the 'read more' tap (NEVER a generic opener), payoff, 2-3 proof bullets, the switch/offer line. Do NOT put the store/app/website link or an opt-out line in the body. cta=the action phrase that goes in the CTA field (e.g. 'Shop now at huft.com' or 'Order on the HUFT app').")
+  ?"each: {direction,subject,header,body,cta,rtbs}. subject=email subject line under 50 chars. header=IMAGE COPY / hero overlay — a STACKED overlay, NOT one sentence: line 1 = the bold big line (hook or offer), line 2 = a plain clarifier, then an OPTIONAL short USP strip with a | divider, then an OPTIONAL code line LAST (never first). Put each line on its OWN line (real line breaks in the header value). Every line tight (max ~6 words), sentence case, with personality. Surface the offer on the big line when the brief has one. body=short scannable email (~50-80 words): warm 1-line opener, core value/offer in 1-2 lines, 2-3 proof points, friendly sign-off. cta=action phrase."
+  :"each: {direction,header,body,cta,rtbs}. header=IMAGE COPY / on-image overlay — a STACKED overlay, NOT one sentence: line 1 = the bold big line (the hook or the offer), line 2 = a plain clarifier (what it's on / what it is), then an OPTIONAL short USP strip with a | divider, then an OPTIONAL code line LAST (never first). Put each line on its OWN line (real line breaks in the header value). Every line tight (max ~6 words), sentence case, with personality. Surface the offer on the big line when the brief has one. body=tight WhatsApp message (~40-55 words): a STRONG hook line that earns the 'read more' tap (NEVER a generic opener), payoff, 2-3 proof bullets, the switch/offer line. Do NOT put the store/app/website link or an opt-out line in the body. cta=the action phrase that goes in the CTA field (e.g. 'Shop now at huft.com' or 'Order on the HUFT app').")
   +(isPush?"":" rtbs=array of 2-3 SHORT reasons-to-believe / proof points (each ≤6 words, e.g. 'Real chicken first', '48-hour odour lock', '₹500 off first box') drawn ONLY from the brief's proof points/offer — never invented. These are optional add-ons the copy team may append to the image copy.");
 // ── Shared task / approval computation (used by Dashboard + standalone pages + nav counts) ──
 // ── Shared task / approval computation (used by Dashboard + standalone pages + nav counts) ──
@@ -1140,7 +1222,7 @@ async function genCopyOptionsFor(c, ruleStr, fb){
   const channelRules=isPush?PUSH_RULES:isEmail?EMAIL_RULES:WHATSAPP_RULES;
   const nOpts=copyOptionCount(c.channel);
   const shape=COPY_SHAPE(isPush,isEmail);
-  const sys="You write "+(c.channel||"WhatsApp")+" CRM copy for HUFT.\n"+BRAND_CONTEXT+"\n"+channelRules+"\n"+COPY_BEST_PRACTICES+"\n"+HUFT_VOICE+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nTeam feedback:\n"+fb:"")+"\nReturn ONLY JSON array of "+nOpts+" options, "+shape;
+  const sys="You write "+(c.channel||"WhatsApp")+" CRM copy for HUFT.\n"+BRAND_CONTEXT+"\n"+channelRules+"\n"+COPY_BEST_PRACTICES+"\n"+HUFT_VOICE+"\n"+HUFT_IMAGE_COPY+"\n"+HUFT_RULEBOOK+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nTeam feedback:\n"+fb:"")+"\nReturn ONLY JSON array of "+nOpts+" options, "+shape;
   const limits=copyLimits(isPush,isEmail);
   return sanitizeOptions(await callClaude(sys, briefBlockFor(c), true, "copy", limits));
 }
@@ -1794,7 +1876,7 @@ function CalendarView({campaigns,onOpen,filterStage}){
     }
   });
 
-  const stageCol={brief:C.coral,content:C.purple,design:C.teal,done:C.green};
+  const stageCol={brief:C.coral,content:C.purple,brand_review:C.purple,design:C.teal,done:C.green};
 
   const prev=()=>{setSelDay(null);if(month===0){setMonth(11);setYear(y=>y-1);}else setMonth(m=>m-1);};
   const next=()=>{setSelDay(null);if(month===11){setMonth(0);setYear(y=>y+1);}else setMonth(m=>m+1);};
@@ -3067,7 +3149,7 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
       </div>
     </div>
     {view==="calendar"
-      ?<CalendarView campaigns={allBriefs}onOpen={onOpen}filterStage="brief"/>
+      ?<CalendarView campaigns={(campaigns||[]).filter(c=>!isArchived(c))}onOpen={onOpen}/>
       :(allBriefs.length===0&&briefedElsewhere.length===0&&briefArchived.length===0)
       ?<Card><Empty icon={<FileText size={26}color={C.sub}/>}title="No briefs yet"sub="Start a new asset and the engine walks it through Brief → Copy → Design."action={canCreate?<Btn onClick={onNew}><Plus size={16}/>New asset</Btn>:null}/></Card>
       :<div>
@@ -3848,7 +3930,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         const channelRules=isPush?PUSH_RULES:isEmail?EMAIL_RULES:WHATSAPP_RULES;
         const nOpts=copyOptionCount(c.channel);
         const shape=COPY_SHAPE(isPush,isEmail);
-        const sys="You write "+(c.channel||"WhatsApp")+" CRM copy for HUFT.\n"+BRAND_CONTEXT+"\n"+channelRules+"\n"+COPY_BEST_PRACTICES+"\n"+HUFT_VOICE+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nTeam feedback:\n"+fb:"")+`\nReturn ONLY JSON array of ${nOpts} options, `+shape;
+        const sys="You write "+(c.channel||"WhatsApp")+" CRM copy for HUFT.\n"+BRAND_CONTEXT+"\n"+channelRules+"\n"+COPY_BEST_PRACTICES+"\n"+HUFT_VOICE+"\n"+HUFT_IMAGE_COPY+"\n"+HUFT_RULEBOOK+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nTeam feedback:\n"+fb:"")+`\nReturn ONLY JSON array of ${nOpts} options, `+shape;
         const j=sanitizeOptions(await callClaude(sys,briefBlock,true,"copy",copyLimits(isPush,isEmail)));
         patch(c.id,{data:{...(c.data||{}),copyOptions:j,selectedCopyIdx:null,sentBack:false},copy_approver:null,stage:"content"});
         setShowAll(false);
@@ -3861,7 +3943,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         const isPush=isPushChannel(c.channel);
         const isEmail=c.channel==="Email"||c.channel==="WhatsApp + Email";
         const channelRules=isPush?PUSH_RULES:isEmail?EMAIL_RULES:WHATSAPP_RULES;
-        const sys="You refine ONE "+(c.channel||"WhatsApp")+" CRM copy for HUFT.\n"+BRAND_CONTEXT+"\n"+channelRules+"\n"+COPY_BEST_PRACTICES+"\n"+HUFT_VOICE+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nFeedback:\n"+fb:"")+(isPush?"\nPUSH: title max 40 (hard 50); body max 70 chars (HARD LIMIT — second line never exceeds 70), at most two short flowing lines.":"")+"\nThe header is the IMAGE COPY / overlay — a short, FUN, punchy headline with personality (a coherent line or short complete sentence), never long, flat, or broken-up fragments; the action goes in the CTA. Return ONLY JSON: {direction,header,body,cta}.";
+        const sys="You refine ONE "+(c.channel||"WhatsApp")+" CRM copy for HUFT.\n"+BRAND_CONTEXT+"\n"+channelRules+"\n"+COPY_BEST_PRACTICES+"\n"+HUFT_VOICE+"\n"+HUFT_IMAGE_COPY+"\n"+HUFT_RULEBOOK+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nFeedback:\n"+fb:"")+(isPush?"\nPUSH: title max 40 (hard 50); body max 70 chars (HARD LIMIT — second line never exceeds 70), at most two short flowing lines.":"")+"\nThe header is the IMAGE COPY / overlay — a short, FUN, punchy headline with personality (a coherent line or short complete sentence), never long, flat, or broken-up fragments; the action goes in the CTA. Return ONLY JSON: {direction,header,body,cta}.";
         const usr=briefBlock+"\n\nCurrent:\n"+JSON.stringify(opts[idx])+"\n\nSteer (one-time): "+refineText;
         const j=sanitizeOption(await callClaude(sys,usr,true,"copy",copyLimits(isPush,isEmail)));
         const wasSelected=sel===idx;
@@ -3879,7 +3961,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         const isPush=isPushChannel(c.channel);
         const isEmail=c.channel==="Email"||c.channel==="WhatsApp + Email";
         const channelRules=isPush?PUSH_RULES:isEmail?EMAIL_RULES:WHATSAPP_RULES;
-        const sys="You revise ONE "+(c.channel||"WhatsApp")+" CRM copy for HUFT to address a reviewer's send-back.\n"+BRAND_CONTEXT+"\n"+channelRules+"\n"+COPY_BEST_PRACTICES+"\n"+HUFT_VOICE+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nFeedback:\n"+fb:"")+(isPush?"\nPUSH: title max 40 (hard 50); body max 70 chars (HARD LIMIT — second line never exceeds 70), at most two short flowing lines.":"")+"\nThe header is the IMAGE COPY / overlay — a short, FUN, punchy headline with personality (a coherent line or short complete sentence), never long, flat, or broken-up fragments; the action goes in the CTA. Return ONLY JSON: {direction,header,body,cta}.";
+        const sys="You revise ONE "+(c.channel||"WhatsApp")+" CRM copy for HUFT to address a reviewer's send-back.\n"+BRAND_CONTEXT+"\n"+channelRules+"\n"+COPY_BEST_PRACTICES+"\n"+HUFT_VOICE+"\n"+HUFT_IMAGE_COPY+"\n"+HUFT_RULEBOOK+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nFeedback:\n"+fb:"")+(isPush?"\nPUSH: title max 40 (hard 50); body max 70 chars (HARD LIMIT — second line never exceeds 70), at most two short flowing lines.":"")+"\nThe header is the IMAGE COPY / overlay — a short, FUN, punchy headline with personality (a coherent line or short complete sentence), never long, flat, or broken-up fragments; the action goes in the CTA. Return ONLY JSON: {direction,header,body,cta}.";
         const usr=briefBlock+"\n\nCurrent copy:\n"+JSON.stringify(opts[idx])+"\n\nThe reviewer sent this back for changes. Revise the copy to fully address this feedback while staying true to the brief and rulebook:\n"+(reason||"Improve clarity, brand fit, and impact.");
         const j=sanitizeOption(await callClaude(sys,usr,true,"copy",copyLimits(isPush,isEmail)));
         const newData={...(c.data||{}),copyOptions:opts.map((o,i)=>i===idx?j:o),sentBack:false};
@@ -4154,7 +4236,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       </div>
     </div>
     {view==="calendar"
-      ?<CalendarView campaigns={allCopy}onOpen={onOpen}filterStage="content"/>
+      ?<CalendarView campaigns={allCopy}onOpen={onOpen}/>
       :allCopy.length===0
       ?<Card><Empty icon={<MessageSquare size={26}color={C.sub}/>}title="No copy pending"sub="Assets move here after brief is done."/></Card>
       :<div>
@@ -6628,7 +6710,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
       </div>
     </div>
     {view==="calendar"
-      ?<CalendarView campaigns={allDesign}onOpen={onOpen}filterStage="design"/>
+      ?<CalendarView campaigns={allDesign}onOpen={onOpen}/>
       :allDesign.length===0
       ?<Card><Empty icon={<Palette size={26}color={C.sub}/>}title="No design pending"sub="Assets move here after copy is selected."/></Card>
       :<div>
