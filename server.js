@@ -144,13 +144,20 @@ const enforceCopyHardRules = (text, limits) => {
 // Fails safe: any error leaves the copy untouched and unflagged.
 const REVIEW_SYS =
   "You are a careful copy reviewer for HUFT, an Indian pet-care brand. You receive a JSON array of "
-+ "marketing-copy options. DO NOT rewrite or change any copy. Only REVIEW it and report genuine language "
-+ "errors so a human can decide. Flag: broken or incomplete sentences, sentence fragments, unfinished or "
-+ "non-parallel bullets, subject-verb/agreement errors, wrong or awkward tense (in win-back/re-order copy, a "
-+ "past tense that implies the pet is gone, e.g. 'the food they loved'), double possessives and awkward word "
-+ "order, and clear typos. Be conservative — when unsure, do NOT flag. "
-+ "NEVER flag: the 'header' field for being a short fragment (it is a deliberate poster headline); emojis; "
-+ "British spelling (colour, favourite, centre); or anything the ALLOWED BRAND RULES below permit. "
++ "marketing-copy options. DO NOT rewrite or change any copy. Only REVIEW it and report issues so a human can decide. "
++ "Flag TWO kinds of problem:\n"
++ "A) LANGUAGE ERRORS: broken or incomplete sentences, sentence fragments (NEVER flag the 'header' field for being short — it is a deliberate poster headline), unfinished or non-parallel bullets, subject-verb/agreement errors, wrong or awkward tense (in win-back/re-order copy, a past tense that implies the pet is gone, e.g. 'the food they loved'), double possessives, awkward word order, and clear typos.\n"
++ "B) HUFT RULEBOOK VIOLATIONS — flag only when clearly present:\n"
++ "  - Title Case used where sentence case is required (headlines, body, WhatsApp). Suggest sentence case. KEEP capitalised and do NOT flag: sub-brand names (Sara's Wholesome Food, NutriMeow, Meowsi), product category labels (Dog Food), event names (Mother's Day), and city names.\n"
++ "  - The discount CODE or the offer leads the copy ('use code'/the code/the % in the first line, before any hook or product). The hook or product must lead; the code belongs last. Suggest a version that opens on the hook.\n"
++ "  - A discount/offer with NO reason-to-believe anywhere (every discount needs a product reason — an ingredient/quality/format proof). Suggest adding the product reason.\n"
++ "  - Disease-prevention or medical claims (e.g. 'prevents gum disease', 'cures'): suggest a supportive phrasing ('helps support oral hygiene').\n"
++ "  - BANNED words/phrases: 'pampering'/'pamper' (Spa) -> 'expert grooming'/'gentle care'; for Meowsi a specific 'named meat' instead of 'human-grade chicken and fish'/'real muscle meat'/the protein name; 'novel proteins' -> 'gut-first, gentle nutrition'; bone broth called a 'super snack' -> 'hydration they'll actually love'; 'feline'/'canine' -> 'cat'/'dog'; for Hearty 'kibble' -> 'food'; a standalone 'Shop' heading; repeating the brand name in text when the context already has it.\n"
++ "  - YAKIES, HARD RULE: if the copy is for Yakies and mentions 'milk' (cow or yak), ALWAYS flag it — milk must never appear. Suggest the same line with the milk reference removed.\n"
++ "  - HUFT Spa copy that does not lead to or carry the line 'in hands that understand' may be flagged once if it reads off-platform — but only if clearly generic; do not nitpick.\n"
++ "Be conservative — only flag clear, confident issues; when unsure, do NOT flag. Max value is precision, not volume. "
++ "NEVER flag: the 'header' field for being a short fragment; emojis; British spelling (colour, favourite, centre); Hinglish that reads naturally (e.g. 'Garmi', 'cats ki asli diet'); or anything the ALLOWED BRAND RULES below permit. "
++ "Do NOT flag these (they are auto-corrected downstream): 'Rs'/'Rs.' vs the rupee sign, missing thousands commas, multiple '!', a full stop before an emoji, Bangalore vs Bengaluru, T&Cs formatting, 'Applicable' vs 'Valid', a leading 'FLAT', or 'fur baby'/'furball'. "
 + "Return ONLY JSON: {\"warnings\":[{\"i\":<option index number>,\"field\":\"body|header|subject|cta\",\"issue\":\"<=10 word description\",\"suggestion\":\"the corrected version of just that field\"}]}. "
 + "If there are no real issues, return {\"warnings\":[]}.";
 async function reviewCopy(text, ruleStr) {
@@ -174,7 +181,7 @@ async function reviewCopy(text, ruleStr) {
   } catch (e) { console.error("[review] skipped:", e.message); }
   return JSON.stringify(Array.isArray(parsed) ? arr : arr[0]);
 }
-const SERVER_BUILD = "v29.74s - Copy review now WARNS, never auto-corrects: a cheap cold Gemini Flash reviewer flags genuine language errors (broken/fragment sentences, agreement/tense, double possessives, typos) as a _warn list on each option; it is given the active rulebook so intentional brand wording is never flagged; it leaves the copy untouched and fails safe. Mechanical strip+clamp still runs LAST. Plus v29.72s creative_requests self-heal + v29.71s claude log + v29.70s caching.";
+const SERVER_BUILD = "v29.75s - Copy reviewer now also flags HUFT RULEBOOK violations (not just language errors): Title-case-where-sentence-case, code/offer leading before the hook, a discount with no RTB, disease/medical claims, banned words (pampering, named meat, novel proteins, bone-broth super-snack, feline/canine, Hearty 'kibble', standalone 'Shop'), and a HARD Yakies-milk flag. Still WARNS only (never auto-edits), stays conservative, and skips items the deterministic client fixer already auto-corrects. Plus v29.74s warns + v29.72s creative_requests self-heal + v29.71s claude log + v29.70s caching.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
