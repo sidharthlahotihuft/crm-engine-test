@@ -108,7 +108,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v31.2 - Rulebook now ENFORCED, not just suggested: the reviewer actively flags rulebook violations (sentence-case, code-before-hook, discount-without-RTB, disease claims, banned words, Yakies-milk) as Apply-fix/Allow chips on every option, and 'fur baby'/'furball' is auto-fixed to 'pet'. Plus v31.1 image-copy overlays + rulebook in generation + mechanical auto-fixes; v31.0 calendar fix.";
+const BUILD="v31.3 - Tile fix: run-together name slugs (e.g. 'SuperiorNutrition', 'PremiumImportKibbleBuyer') are now humanized into readable words across all tiles/rows — camelCase + underscores split into spaces, with a guard so real sub-brand names (NutriMeow, NutriWag, DashDog, HUFT) stay intact. Plus v31.2 rulebook enforcement; v31.1 image-copy + rulebook in generation.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -951,14 +951,22 @@ const BRIEF_STEPS = [
 ];
 
 const uid=()=>Math.random().toString(36).slice(2,9);
+// Humanize a run-together slug token: split camelCase + underscores/hyphens into real words, but keep true sub-brand names intact.
+const BRAND_KEEP=/^(NutriWag|NutriMeow|NutriDog|NutriCat|DashDog|DashMeow|HUFT)$/i;
+const humanizeToken=(s)=>typeof s!=="string"?s:s
+  .replace(/_+/g," ")
+  .replace(/([A-Za-z])-([A-Za-z])/g,"$1 $2")
+  .split(/\s+/)
+  .map(w=>BRAND_KEEP.test(w)?w:w.replace(/([a-z0-9])([A-Z])/g,"$1 $2").replace(/([A-Z]{2,})([A-Z][a-z])/g,"$1 $2"))
+  .join(" ").replace(/\s{2,}/g," ").trim();
 const parseName=(name)=>{
   if(!name)return{date:"",product:"",hook:"",full:"Untitled asset"};
   const parts=name.split("_");
   const dateMatch=parts[0]&&/^[A-Z][a-z]{2}\d{2}$/.test(parts[0]);
   const date=dateMatch?parts[0]:"";
   const rest=dateMatch?parts.slice(1):parts;
-  const product=rest[0]||"";
-  const hook=rest.slice(1).join(" ");
+  const product=humanizeToken(rest[0]||"");
+  const hook=humanizeToken(rest.slice(1).join(" "));
   return{date,product,hook,full:name};
 };
 const displayName=(name)=>{
@@ -1923,7 +1931,7 @@ function CalendarView({campaigns,onOpen,filterStage}){
               cursor:"pointer",lineHeight:1.3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"
             }}
             title={c.product||c.name}
-          >{c.product||parseName(c.name).product||"Asset"}</div>)}
+          >{humanizeToken(c.product)||parseName(c.name).product||"Asset"}</div>)}
           {items.length>3&&<div style={{fontSize:9,color:C.sub}}>+{items.length-3} more</div>}
         </div>;
       })}
@@ -1938,7 +1946,7 @@ function CalendarView({campaigns,onOpen,filterStage}){
         ?<div style={{padding:"16px",fontSize:13,color:C.sub}}>No assets created on this date.</div>
         :(byDate[selDay]||[]).map(c=><div key={c.id}onClick={()=>onOpen(c.id)}style={{display:"flex",alignItems:"center",gap:10,padding:"11px 16px",borderTop:`1px solid ${C.line}`,cursor:"pointer",background:"#fff"}}>
           <span style={{width:9,height:9,borderRadius:2,background:stageCol[c.stage]||C.sub,flexShrink:0}}/>
-          <span style={{fontWeight:700,fontSize:13.5,color:C.ink}}>{c.product||parseName(c.name).product||"Asset"}</span>
+          <span style={{fontWeight:700,fontSize:13.5,color:C.ink}}>{humanizeToken(c.product)||parseName(c.name).product||"Asset"}</span>
           <span style={{fontSize:11.5,color:C.sub}}>· {normCrmType(c.crm_type)} · {c.channel||"WhatsApp"}</span>
           <span style={{marginLeft:"auto",fontSize:10.5,fontWeight:700,color:stageCol[c.stage]||C.sub,background:(stageCol[c.stage]||C.sub)+"18",padding:"2px 8px",borderRadius:999}}>{c.stage}</span>
           <ChevronRight size={15}color={C.sub}/>
@@ -2073,7 +2081,7 @@ function ApprovalsTab({campaigns,onOpen,me,team,reload}){
           <span style={{fontSize:10.5,fontWeight:800,color:"#9333EA",background:"#9333EA18",padding:"2px 9px",borderRadius:999,flexShrink:0}}>{kind}</span>
           <div style={{minWidth:0,flex:1}}>
             <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
-              <span onClick={()=>onOpen(c.id,tab)}style={{fontWeight:800,fontSize:14,color:C.ink,cursor:"pointer"}}>{c.product||parseName(c.name).product||c.name}</span>
+              <span onClick={()=>onOpen(c.id,tab)}style={{fontWeight:800,fontSize:14,color:C.ink,cursor:"pointer"}}>{humanizeToken(c.product)||parseName(c.name).product||c.name}</span>
               <span style={{fontSize:11.5,color:C.sub}}>· {normCrmType(c.crm_type)} · {c.channel||"WhatsApp"}</span>
               {categoryOf(c)&&<span style={{fontSize:10.5,color:C.sub,background:C.paper,border:`1px solid ${C.line}`,padding:"1px 7px",borderRadius:999}}>{categoryOf(c)}</span>}
             </div>
@@ -2105,7 +2113,7 @@ function MyTasksTab({campaigns,onOpen,me,team}){
         {tasks.map(c=>{const s=stateOfCampaign(c),u=urgencyOf(c);return<div key={c.id}onClick={()=>onOpen(c.id,stageTab(c))}style={{display:"flex",alignItems:"center",gap:10,padding:"13px 18px",borderBottom:`1px solid ${C.line}`,cursor:"pointer",background:"#fff"}}>
           <div style={{minWidth:0,flex:1}}>
             <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
-              <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{c.product||parseName(c.name).product||c.name}</span>
+              <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{humanizeToken(c.product)||parseName(c.name).product||c.name}</span>
               <span style={{fontSize:11.5,color:C.sub}}>· {normCrmType(c.crm_type)} · {c.channel||"WhatsApp"}</span>
               {categoryOf(c)&&<span style={{fontSize:10.5,color:C.sub,background:C.paper,border:`1px solid ${C.line}`,padding:"1px 7px",borderRadius:999}}>{categoryOf(c)}</span>}
             </div>
@@ -2194,7 +2202,7 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
   const _rank=(c)=>{const d=dueFor(c);return isOverdue(d)?0:isDueToday(d)?1:2;};
   myTasks=[...myTasks].sort((a,b)=>_rank(a)-_rank(b));
   const TaskLine=({c,tab})=>{const u=urgency(c),s=stateOf(c);return<div onClick={()=>onOpen(c.id,tab||stageToTab(c.stage))}style={{display:"flex",alignItems:"center",gap:8,padding:"11px 18px",borderTop:`1px solid ${C.line}`,cursor:"pointer",background:"#fff"}}>
-    <span style={{fontWeight:700,fontSize:13.5,color:C.ink,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.product||parseName(c.name).product||c.name}</span>
+    <span style={{fontWeight:700,fontSize:13.5,color:C.ink,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{humanizeToken(c.product)||parseName(c.name).product||c.name}</span>
     <span style={{fontSize:11.5,color:C.sub,flexShrink:0}}>· {normCrmType(c.crm_type)} · {c.channel||"WhatsApp"}</span>
     <span style={{marginLeft:"auto",display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
       {u&&<span style={{fontSize:10.5,fontWeight:800,color:u.col,background:u.bg,padding:"2px 8px",borderRadius:999}}>{u.t}</span>}
@@ -2207,7 +2215,7 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
     <div onClick={()=>onOpen(c.id)}style={{flex:1,minWidth:0,cursor:"pointer"}}>
       {/* Hero: Product · D2C/Retail · Channel */}
       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
-        <span style={{fontWeight:800,fontSize:15,color:C.ink}}>{c.product||parseName(c.name).product||"—"}</span>
+        <span style={{fontWeight:800,fontSize:15,color:C.ink}}>{humanizeToken(c.product)||parseName(c.name).product||"—"}</span>
         <span style={{width:4,height:4,borderRadius:999,background:C.sub,flexShrink:0}}/>
         <span style={{fontWeight:700,fontSize:13,color:C.coral}}>{normCrmType(c.crm_type)}</span>
         <span style={{width:4,height:4,borderRadius:999,background:C.sub,flexShrink:0}}/>
@@ -2273,7 +2281,7 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
       </div>
       {approvals.slice(0,8).map(({c,kind,tab,action})=><div key={c.id+kind}style={{display:"flex",alignItems:"center",gap:8,padding:"11px 18px",borderTop:`1px solid ${C.line}`,background:"#fff"}}>
         <span style={{fontSize:10.5,fontWeight:800,color:"#9333EA",background:"#9333EA18",padding:"2px 8px",borderRadius:999,flexShrink:0}}>{kind}</span>
-        <span onClick={()=>onOpen(c.id,tab)}style={{fontWeight:700,fontSize:13.5,color:C.ink,cursor:"pointer"}}>{c.product||parseName(c.name).product||c.name}</span>
+        <span onClick={()=>onOpen(c.id,tab)}style={{fontWeight:700,fontSize:13.5,color:C.ink,cursor:"pointer"}}>{humanizeToken(c.product)||parseName(c.name).product||c.name}</span>
         <span style={{fontSize:11.5,color:C.sub}}>· {normCrmType(c.crm_type)} · {c.channel||"WhatsApp"}</span>
         <span style={{marginLeft:"auto",display:"flex",gap:6,alignItems:"center"}}>
           {approving===c.id+action?<span style={{fontSize:12,color:C.sub}}>Working…</span>:<>
@@ -2301,7 +2309,7 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
           <ChevronRight size={20}color={C.green}/>
         </div>
         {ready.slice(0,6).map(c=><div key={c.id}onClick={()=>onOpen(c.id)}style={{display:"flex",alignItems:"center",gap:8,padding:"11px 18px",borderTop:`1px solid ${C.line}`,cursor:"pointer",background:"#fff"}}>
-          <span style={{fontWeight:700,fontSize:13.5,color:C.ink}}>{c.product||parseName(c.name).product||c.name}</span>
+          <span style={{fontWeight:700,fontSize:13.5,color:C.ink}}>{humanizeToken(c.product)||parseName(c.name).product||c.name}</span>
           <span style={{fontSize:12,color:C.sub}}>· {normCrmType(c.crm_type)} · {c.channel||"WhatsApp"}</span>
           <ChevronRight size={16}color={C.sub}style={{marginLeft:"auto"}}/>
         </div>)}
@@ -3039,7 +3047,7 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
         <div style={{flex:1,minWidth:0}}>
           {/* Line 1: Product · Channel · Format · Owner */}
           <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3,flexWrap:"wrap"}}>
-            <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{c.product||parseName(c.name).product||"—"}</span>
+            <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{humanizeToken(c.product)||parseName(c.name).product||"—"}</span>
             <span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel||"WhatsApp"}</span>
             <span style={{fontSize:11,fontWeight:700,color:C.coral}}>· {normCrmType(c.crm_type)}</span>
             {c.created_by_name&&<span style={{fontSize:11,fontWeight:600,color:C.sub}}>· {c.created_by_name}</span>}
@@ -3547,7 +3555,7 @@ function BrandReviewTab({campaigns,patch,me,toast,onOpen,setTab}){
         <ChannelIcon channel={c.channel}/>
         <div style={{flex:1,minWidth:0}}>
           <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
-            <span style={{fontWeight:800,fontSize:14}}>{c.product||"—"}</span>
+            <span style={{fontWeight:800,fontSize:14}}>{humanizeToken(c.product)||"—"}</span>
             <span style={{fontSize:11,fontWeight:700,color:C.coral}}>{normCrmType(c.crm_type)}</span>
             <span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel}</span>
             {c.copy_approver&&<span style={{fontSize:11,color:C.sub}}>· copy by {c.copy_approver}</span>}
@@ -4050,7 +4058,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         <div onClick={()=>setOpenId(isOpen?null:c.id)}style={{display:"flex",alignItems:"center",gap:12,padding:"12px 18px",cursor:"pointer",userSelect:"none"}}>
           <div style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
             <span style={{color:C.sub,display:"flex",alignItems:"center",flexShrink:0}}>{isOpen?<ChevronDown size={14}/>:<ChevronRight size={14}/>}</span>
-            <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{c.product||"—"}</span>
+            <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{humanizeToken(c.product)||"—"}</span>
             <span style={{fontSize:11,fontWeight:700,color:C.coral}}>{normCrmType(c.crm_type)}</span>
             <span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel||"WhatsApp"}</span>
             {(()=>{
@@ -4128,7 +4136,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer",background:isOpen?"#FAF5FF":"#fff"}}>
         <div style={{flex:1,minWidth:0}}>
           <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3}}>
-            <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{c.product||"—"}</span>
+            <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{humanizeToken(c.product)||"—"}</span>
             <span style={{fontSize:11,fontWeight:700,color:C.coral}}>{normCrmType(c.crm_type)}</span>
             <span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel||"WhatsApp"}</span>
           </div>
@@ -6398,7 +6406,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
     const copyChangedAfterPrompts=d.imagePrompts&&d.promptsForCopyDir&&copy&&d.promptsForCopyDir!==copy.direction;
 
     if(!copy)return<div style={{borderBottom:`1px solid ${C.line}`,padding:"12px 18px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-      <div><span style={{fontWeight:700,fontSize:13,color:C.ink}}>{c.product||"—"}</span><span style={{fontSize:12,color:C.sub,marginLeft:8}}>{normCrmType(c.crm_type)} · {c.channel||"WhatsApp"}</span></div>
+      <div><span style={{fontWeight:700,fontSize:13,color:C.ink}}>{humanizeToken(c.product)||"—"}</span><span style={{fontSize:12,color:C.sub,marginLeft:8}}>{normCrmType(c.crm_type)} · {c.channel||"WhatsApp"}</span></div>
       <span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#92400E",background:"#FEF3C7",padding:"3px 9px",borderRadius:999}}>Copy not approved yet</span>
     </div>;
 
@@ -6520,7 +6528,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
         style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer",background:isOpen?"#F8F9FA":(_imgReady?_dtone.bg:"#fff")}}>
         <div style={{flex:1,minWidth:0}}>
           <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3}}>
-            <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{c.product||"—"}</span>
+            <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{humanizeToken(c.product)||"—"}</span>
             <span style={{fontSize:11,fontWeight:700,color:C.coral}}>{normCrmType(c.crm_type)}</span>
             <span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel||"WhatsApp"}</span>
           </div>
@@ -6925,7 +6933,7 @@ function AnalyticsTab({campaigns,patch,onOpen,me}){
     const r2=(x,y)=>y>0?+((x/y)*100).toFixed(1):"";
     const rows=inMonth.map(c=>{const a=A(c)||{};
       const sent=Number(a.sent||0),del=Number(a.delivered||0),read=Number(a.read||0),clk=Number(a.clicks||0);
-      return {"Go-live":String(c.go_live_date).slice(0,10),"Product":c.product||parseName(c.name).product||c.name,
+      return {"Go-live":String(c.go_live_date).slice(0,10),"Product":humanizeToken(c.product)||parseName(c.name).product||c.name,
         "Customer / Audience":c.audience_label||c.segment||"","CRM type":normCrmType(c.crm_type),"Channel":c.channel||"WhatsApp",
         "Stage":STAGE_LABEL[c.stage]||c.stage,"Sent":a.sent==null?"":sent,"Delivered":a.delivered==null?"":del,"Read":a.read==null?"":read,
         "Clicks":a.clicks==null?"":clk,"Orders":a.orders==null?"":Number(a.orders||0),"Revenue":a.revenue==null?"":Number(a.revenue||0),
@@ -6974,7 +6982,7 @@ function AnalyticsTab({campaigns,patch,onOpen,me}){
           return<div key={c.id}style={{borderBottom:`1px solid ${C.line}`}}>
             <div style={{display:"flex",alignItems:"center",gap:8,padding:"12px 16px"}}>
               <div style={{flex:2,minWidth:0}}>
-                <div style={{fontWeight:700,fontSize:13.5,color:C.ink,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.product||parseName(c.name).product||c.name}</div>
+                <div style={{fontWeight:700,fontSize:13.5,color:C.ink,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{humanizeToken(c.product)||parseName(c.name).product||c.name}</div>
                 <div style={{fontSize:11.5,color:C.sub}}>{normCrmType(c.crm_type)} · {c.channel||"WhatsApp"}{c.stage==="done"?"":" · "+(STAGE_LABEL[c.stage]||c.stage)}</div>
               </div>
               <span style={{flex:1,textAlign:"right",fontSize:13,color:(!isPushC&&a)?C.ink:C.sub}}>{isPushC?"—":(a?nf(a.sent):"—")}</span>
