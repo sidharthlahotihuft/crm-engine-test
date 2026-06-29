@@ -104,6 +104,15 @@ const applyBrandRules = (s) => {
   out = out.replace(/\bfur[\s-]?bab(?:y|ies)\b/gi, "furry family");
   out = out.replace(/\bfurry friends?\b/gi, "furry family");
   out = out.replace(/\bconsumers\b/gi, "pet parents").replace(/\bconsumer\b/gi, "pet parent");
+  // Clinical species words are rulebook-banned (canine/feline) -> warm HUFT voice. Case + plural preserved.
+  const speak = (text, from, to) => text.replace(new RegExp("\\b" + from + "(s?)\\b", "gi"), (m, pl) => {
+    const r = to + (pl ? "s" : "");
+    if (m === m.toUpperCase()) return r.toUpperCase();
+    if (m[0] === m[0].toUpperCase()) return r[0].toUpperCase() + r.slice(1);
+    return r;
+  });
+  out = speak(out, "canine", "dog");
+  out = speak(out, "feline", "cat");
   return out;
 };
 // Truncate to a hard char cap on a word boundary, no mid-word cut, no dangling punctuation.
@@ -159,8 +168,9 @@ const REVIEW_SYS =
 + "  - HUFT Spa copy that does not lead to or carry the line 'in hands that understand' may be flagged once if it reads off-platform — but only if clearly generic; do not nitpick.\n"
 + "Be conservative — only flag clear, confident issues; when unsure, do NOT flag. Max value is precision, not volume. "
 + "NEVER flag: the 'header' field for being a short fragment; emojis; British spelling (colour, favourite, centre); Hinglish that reads naturally (e.g. 'Garmi', 'cats ki asli diet'); or anything the ALLOWED BRAND RULES below permit. "
-+ "Do NOT flag these (they are auto-corrected downstream): 'Rs'/'Rs.' vs the rupee sign, missing thousands commas, multiple '!', a full stop before an emoji, Bangalore vs Bengaluru, T&Cs formatting, 'Applicable' vs 'Valid', a leading 'FLAT', or 'fur baby'/'furball'. "
-+ "Return ONLY JSON: {\"warnings\":[{\"i\":<option index number>,\"field\":\"body|header|subject|cta\",\"issue\":\"<=10 word description\",\"suggestion\":\"the corrected version of just that field\"}]}. "
++ "Do NOT flag these (they are auto-corrected downstream): 'Rs'/'Rs.' vs the rupee sign, missing thousands commas, multiple '!', a full stop before an emoji, Bangalore vs Bengaluru, T&Cs formatting, 'Applicable' vs 'Valid', a leading 'FLAT', 'fur baby'/'furball', or 'canine'/'feline' (auto-swapped to 'dog'/'cat'). "
++ "Return ONLY JSON: {\"warnings\":[{\"i\":<option index number>,\"field\":\"body|header|subject|cta\",\"issue\":\"<=10 word description\",\"wrong\":\"the exact offending text copied VERBATIM from that field \u2014 a single word or short phrase, NEVER the whole field\",\"suggestion\":\"the replacement for ONLY that wrong text; everything else in the field stays exactly as written\"}]}. "
++ "CRITICAL: 'wrong' MUST be an exact substring of the field, and 'suggestion' replaces ONLY 'wrong'. Never echo the whole field, never drop other sentences. "
 + "If there are no real issues, return {\"warnings\":[]}.";
 async function reviewCopy(text, ruleStr) {
   const parse = (s) => { try { return JSON.parse(s); } catch (_) { const m = s && s.match(/[\[{][\s\S]*[\]}]/); if (m) { try { return JSON.parse(m[0]); } catch (__) {} } return null; } };
@@ -176,14 +186,14 @@ async function reviewCopy(text, ruleStr) {
       if (!o || typeof o !== "object") return;
       const w = warns
         .filter(x => x && Number(x.i) === i && (x.issue || x.suggestion))
-        .map(x => ({ field: String(x.field || "body"), issue: String(x.issue || "").slice(0, 120), suggestion: typeof x.suggestion === "string" ? x.suggestion : "" }))
+        .map(x => ({ field: String(x.field || "body"), issue: String(x.issue || "").slice(0, 120), wrong: typeof x.wrong === "string" ? x.wrong : "", suggestion: typeof x.suggestion === "string" ? x.suggestion : "" }))
         .slice(0, 4);
       if (w.length) o._warn = w; else if (o._warn) delete o._warn;
     });
   } catch (e) { console.error("[review] skipped:", e.message); }
   return JSON.stringify(Array.isArray(parsed) ? arr : arr[0]);
 }
-const SERVER_BUILD = "v29.79s - Sanctioned personalisation token normalised to {{Name}} (preserved through strip, any case in). Plus v29.76s preserve token + v29.75s rulebook reviewer flags.";
+const SERVER_BUILD = "v29.80s - canine/feline auto-swapped to dog/cat in applyBrandRules (deterministic, case+plural preserved) so they never leak as a warn; reviewer now returns a verbatim 'wrong' substring + a replacement-only 'suggestion' (enables surgical client-side fixes, no field wipes); reviewer told not to flag canine/feline. Includes /api/report-issue + email attachments.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
