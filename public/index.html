@@ -108,7 +108,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v32.2 - Backlog: whole-tile colour-coding by stage across all tiles + a colour key on every list page; a date filter (All/7/30/90 days) on Brief/Copy/Design; Dashboard rebuilt to the monday.com stacked-section style (sections open by default); Design tile trimmed (collaborators moved into the expanded view, channel icon + owner added). Approval/review emails now include a direct link that deep-opens the asset (?asset=id). Plus v32.1 audience cap+more / excel drafts.";
+const BUILD="v32.3 - FIX blank page: the email deep-link effect was declared after the login/loading early returns, so it ran only after login and broke React hook order (blank screen). Moved it above the early returns. All v32.2 features intact (tile colour + legend + date filter + dashboard + design tile + deep links).";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -1585,6 +1585,21 @@ function App(){
   const[toasts,setToasts]=useState([]);
   const toast=(msg,type="success",dur=3500)=>{const id=Date.now();setToasts(t=>[...t,{id,msg,type}]);setTimeout(()=>setToasts(t=>t.filter(x=>x.id!==id)),dur);};
 
+  // Deep link from notification emails: ?asset=<id> opens that asset once campaigns load.
+  // Declared BEFORE the early returns below so hook order stays stable across renders.
+  const _deepLinkDone=React.useRef(false);
+  useEffect(()=>{
+    if(_deepLinkDone.current||!me||!campaigns.length)return;
+    const aid=new URLSearchParams(window.location.search).get("asset");
+    if(aid&&campaigns.some(c=>c.id===aid)){
+      _deepLinkDone.current=true;
+      const c=campaigns.find(x=>x.id===aid);
+      const stageTab=c?(c.stage==="done"?"done":(c.stage==="content"||c.stage==="brand_review")?"content":c.stage==="design"?"design":"brief"):"brief";
+      setActiveId(aid);setTab(stageTab);
+      try{window.history.replaceState({},"",window.location.pathname);}catch(e){}
+    }
+  },[me,campaigns]);
+
   if(checking)return<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.navy}}><Loader2 size={32} color="#fff" style={{animation:"spin 1s linear infinite"}}/></div>;
   if(!me)return<Login onAuth={onAuth}/>;
   const recentFeedback=(stage)=>feedback.filter(f=>f.stage===stage).slice(0,3).map(f=>`- ${f.text}`).join("\n")||"";
@@ -1753,17 +1768,6 @@ function App(){
     return{created,drafts,failed,errors};
   };
   const open=(id,jt)=>{const c=campaigns.find(x=>x.id===id);const stageTab=c?(c.stage==="done"?"done":(c.stage==="content"||c.stage==="brand_review")?"content":c.stage==="design"?"design":"brief"):"brief";setActiveId(id);setTab(jt||stageTab);};
-  // Deep link from notification emails: ?asset=<id> opens that asset once campaigns are loaded.
-  const _deepLinkDone=React.useRef(false);
-  React.useEffect(()=>{
-    if(_deepLinkDone.current||!me||!campaigns.length)return;
-    const aid=new URLSearchParams(window.location.search).get("asset");
-    if(aid&&campaigns.some(c=>c.id===aid)){
-      _deepLinkDone.current=true;
-      open(aid);
-      try{window.history.replaceState({},"",window.location.pathname);}catch(e){}
-    }
-  },[me,campaigns]);
 
   // Pending counts per stage (for nav badges)
   const scoped=scopeCampaigns(campaigns,me);
