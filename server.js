@@ -54,11 +54,12 @@ const safeJson = (s) => { try { return JSON.parse(s); } catch (e) { return null;
 const stripForbidden = (s) => {
   if (typeof s !== "string") return s;
   let out = s;
+  out = out.replace(/\{\{\s*name\s*\}\}/gi, "\u0001NAME\u0001"); // protect sanctioned personalisation token {{Name}}
   const SEP = "[\\s\\-_.\\u2010\\u2011\\u2012\\u2013\\u2014\\u2212]?"; // space, hyphen, underscore, dot, unicode dashes
   out = out.replace(new RegExp("\\bm" + SEP + "hash\\b", "gi"), "");  // M-hash / m hash / mhash / M–hash
   out = out.replace(new RegExp("\\bm" + SEP + "#", "gi"), "");         // M# / M-#
   out = out.replace(/#\s*m\b/gi, "");                                  // #M
-  out = out.replace(/\{\{[^}]*\}\}/g, "");                             // {{1}}, {{name}}
+  out = out.replace(/\{\{[^}]*\}\}/g, "");                             // {{1}}, {{Name}}
   out = out.replace(/\{[A-Za-z0-9_ .#-]{1,30}\}/g, "");               // {name}, {M-hash}
   out = out.replace(/#[A-Z0-9_]{2,30}#/gi, "");                        // #VAR#, #MOBILE#
   out = out.replace(/\[[A-Za-z][A-Za-z0-9_ .#-]{1,30}\]/g, "");       // [VARIABLE]
@@ -68,6 +69,7 @@ const stripForbidden = (s) => {
   out = out.replace(/[^.!?\n]*\b(?:opt[\s-]?out|unsubscribe)\b[^.!?\n]*[.!?]?/gi, "");
   out = out.replace(/[^.!?\n]*\breply\s+stop\b[^.!?\n]*[.!?]?/gi, "");
   out = out.replace(/[ \t]{2,}/g, " ").replace(/ +([,.!?])/g, "$1").replace(/\s+([,.])/g, "$1").replace(/^[\s,;:]+/gm, "").replace(/\n{3,}/g, "\n\n").trim();
+  out = out.replace(/\u0001NAME\u0001/g, "{{Name}}"); // restore sanctioned personalisation token
   return out;
 };
 const deepStrip = (v) => {
@@ -181,7 +183,7 @@ async function reviewCopy(text, ruleStr) {
   } catch (e) { console.error("[review] skipped:", e.message); }
   return JSON.stringify(Array.isArray(parsed) ? arr : arr[0]);
 }
-const SERVER_BUILD = "v29.75s - Copy reviewer now also flags HUFT RULEBOOK violations (not just language errors): Title-case-where-sentence-case, code/offer leading before the hook, a discount with no RTB, disease/medical claims, banned words (pampering, named meat, novel proteins, bone-broth super-snack, feline/canine, Hearty 'kibble', standalone 'Shop'), and a HARD Yakies-milk flag. Still WARNS only (never auto-edits), stays conservative, and skips items the deterministic client fixer already auto-corrects. Plus v29.74s warns + v29.72s creative_requests self-heal + v29.71s claude log + v29.70s caching.";
+const SERVER_BUILD = "v29.77s - Sanctioned personalisation token normalised to {{Name}} (preserved through strip, any case in). Plus v29.76s preserve token + v29.75s rulebook reviewer flags.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
