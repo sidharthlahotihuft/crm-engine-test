@@ -183,7 +183,7 @@ async function reviewCopy(text, ruleStr) {
   } catch (e) { console.error("[review] skipped:", e.message); }
   return JSON.stringify(Array.isArray(parsed) ? arr : arr[0]);
 }
-const SERVER_BUILD = "v29.77s - Sanctioned personalisation token normalised to {{Name}} (preserved through strip, any case in). Plus v29.76s preserve token + v29.75s rulebook reviewer flags.";
+const SERVER_BUILD = "v29.78s - Sanctioned personalisation token normalised to {{Name}} (preserved through strip, any case in). Plus v29.76s preserve token + v29.75s rulebook reviewer flags.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -1026,7 +1026,11 @@ async function notify({ toRole, toUserIds, campaignId, kind, body, url }) {
       emails = emails.concat(r.map(x => x.email).filter(Boolean));
     }
     emails = [...new Set(emails)];
-    if (emails.length) await sendEmail(emails.join(","), "[HUFT CRM] " + (kind || "Update"), body || "");
+    if (emails.length) {
+      const baseUrl = (process.env.APP_URL || "https://crm-engine-test.vercel.app").replace(/\/+$/, "");
+      const link = campaignId ? `\n\nReview / open this asset:\n${baseUrl}/?asset=${campaignId}` : (url ? `\n\n${url}` : "");
+      await sendEmail(emails.join(","), "[HUFT CRM] " + (kind || "Update"), (body || "") + link);
+    }
   } catch (e) { console.error("notify failed:", e.message); }
   return made;
 }
