@@ -108,7 +108,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v30.6b - Brief tiles now show a small italic line of the brief idea (single-minded message) under the hook/audience, so near-identical briefs (same product/channel/audience) are easy to tell apart at a glance; truncates to one line with the full idea on hover. Plus v30.6 warnings in the multi-option chooser.";
+const BUILD="v30.7 - Brief tiles restructured for scannability: line 1 = Product · Channel · Format(D2C/Retail) · Owner; line 2 = campaign month + created date (+ audience); line 3 = the idea (italic, truncated). Makes near-identical briefs easy to tell apart and shows who owns each. Plus v30.6 chooser warnings.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -2949,17 +2949,20 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns,
         <input type="checkbox"checked={isSel}onClick={e=>e.stopPropagation()}onChange={()=>toggleSel(c.id)}title="Select"style={{width:16,height:16,flexShrink:0,cursor:"pointer",accentColor:C.coral}}/>
         <ChannelIcon channel={c.channel}/>
         <div style={{flex:1,minWidth:0}}>
-          <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3}}>
+          {/* Line 1: Product · Channel · Format · Owner */}
+          <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3,flexWrap:"wrap"}}>
             <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{c.product||parseName(c.name).product||"—"}</span>
-            <span style={{fontSize:11,fontWeight:700,color:C.coral}}>{normCrmType(c.crm_type)}</span>
             <span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel||"WhatsApp"}</span>
+            <span style={{fontSize:11,fontWeight:700,color:C.coral}}>· {normCrmType(c.crm_type)}</span>
+            {c.created_by_name&&<span style={{fontSize:11,fontWeight:600,color:C.sub}}>· {c.created_by_name}</span>}
           </div>
+          {/* Line 2: Date — campaign month + created date */}
           <div style={{fontSize:12,color:C.sub,display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
-            {parseName(c.name).date&&<span style={{fontWeight:600,color:C.ink}}>{parseName(c.name).date}</span>}
-            {parseName(c.name).hook&&<span>{parseName(c.name).hook.replace(/_/g," ")}</span>}
+            {parseName(c.name).date&&<span style={{fontWeight:700,color:C.ink}}>{parseName(c.name).date}</span>}
+            {c.created_at&&<span>{fmtDate(c.created_at)}</span>}
             {c.audience_label&&<span>· {c.audience_label}</span>}
-            {c.created_at&&<span style={{marginLeft:"auto",fontSize:11,color:C.sub,background:"#F3F4F6",padding:"2px 7px",borderRadius:5,flexShrink:0}}>{fmtDate(c.created_at)}</span>}
           </div>
+          {/* Line 3: Idea */}
           {brief?.idea&&<div title={brief.idea} style={{fontSize:11.5,color:C.sub,marginTop:3,fontStyle:"italic",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{brief.idea}</div>}
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
