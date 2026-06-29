@@ -108,7 +108,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v31.3 - Tile fix: run-together name slugs (e.g. 'SuperiorNutrition', 'PremiumImportKibbleBuyer') are now humanized into readable words across all tiles/rows — camelCase + underscores split into spaces, with a guard so real sub-brand names (NutriMeow, NutriWag, DashDog, HUFT) stay intact. Plus v31.2 rulebook enforcement; v31.1 image-copy + rulebook in generation.";
+const BUILD="v31.5 - Personalisation token set to {{Name}} (capital, case-insensitive on the way in) for the one personalised WhatsApp option. Plus v31.4 action-led image copy + one-emoji + WA personalised option.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -153,14 +153,14 @@ const COPY_BEST_PRACTICES=`HIGH-ENGAGEMENT COPY RULES — these are HARD RULES, 
 - CRYSTAL CLARITY: every line must be instantly understandable on first read — no ambiguous phrasing, no confusing constructions, no maths the reader has to do. State plainly WHO gets WHAT and WHEN. (Ambiguous: "For the next 3 days, your first visit is Rs.500 off." Clear: "Get ₹500 off your first visit — offer ends in 3 days.") Spell out exactly what the discount applies to and any deadline in plain words.
 - VARY OPENINGS across the set — no two options should open the same way, and a name-greeting is NEVER the default (at most one option may use it, only if earned).
 - CTA MATCHES THE GOAL: read THIS brief's objective and audience, then pick the CTA verb that fits THAT goal — never a generic default. Win-back / lapsed → invite them back ("Come back", "Reorder", "Restock the bowl"); cart-abandon / repeat-intent → finish the order ("Complete your order", "Grab it before it's gone"); first-time / acquisition → low-pressure trial ("Try it", "Shop your first box"); cross-sell / upsell / bundle → add-on ("Add it on", "Pair it", "Complete the set"); replenishment / reorder / running-low → restock ("Reorder now", "Stock up"); a service (spa, grooming, vet, training, boarding) → book ("Book a slot", "Book now"); awareness / education / new launch → discover ("See how", "Meet the range", "Discover it"). The CTA is always a pictureable action tied to the store/app, never "Click here". CRUCIALLY, the body's CLOSING line must point at the SAME action as the CTA — never end flat, on a feature, or on a different ask. CTA, the body's ending, and the brief's goal must all agree on EVERY asset.
-- CLEAN FORMATTING: no ALL-CAPS words, no exclamation spam (no "!!!"), no "free!!!/buy now". EMOJIS: use 1-2 tasteful, purposeful emojis where they add warmth or meaning (a relevant 🐾 🐶 🐱 🎉 ✨, or a ✓ for proof points) — they lift engagement; never force them, never use more than 2, and never let an emoji replace a word.
+- CLEAN FORMATTING: no ALL-CAPS words, no exclamation spam (no "!!!"), no "free!!!/buy now". EMOJIS: every option must include EXACTLY ONE tasteful, purposeful emoji (a relevant 🐾 🐶 🐱 🎉 ✨, or a ✓ for proof points) — never zero, never more than one. Place the single emoji where it adds the most warmth (the hook/headline or a key line); never let an emoji replace a word.
 - FOR EDIBLES: always state the FORMAT explicitly (Chews / Fresh / Kibble / Wet / Gravy / Treats).
 - FUNNEL-STAGE URGENCY: match the urgency to where the reader sits in the funnel — the LOWER the funnel, the HIGHER the urgency to buy. Top of funnel (cold / new / awareness) = a warm invitation and intrigue, low pressure. Mid funnel (engaged, considering) = a clear nudge with a reason to act now. Bottom of funnel (cart left behind, repeat-intent, lapsed / win-back) = the strongest push to act now, backed by a real reason (offer, deadline, restock). Read the brief's audience/objective to place the reader, then dial urgency to match. Frame the ASK correctly for the stage: a LAPSED buyer is RE-conversion — welcome them back and acknowledge they've shopped with us before ("come back to…", "your pet's favourite is waiting"), never a cold first-time pitch; a cart-abandoner is a reminder to finish what they started, not a fresh sell; a brand-new audience is first-time conversion, so invite rather than pressure.
 - HONEST & INCLUSIVE: no health/medical overclaims, no fear-mongering; "family isn't defined by species". Stay true to the brief's objective and emotional pillar — cut anything off-objective.
 - NO SYSTEM BOILERPLATE OR IRRELEVANT COPY: never write opt-out / unsubscribe / "reply STOP" lines, legal footers, sender IDs, "T&Cs apply", placeholder/merge tags, or any channel/system text — those are added by the platform, not the creative. Every line must be relevant to THIS brief's message; if a line is generic filler or could appear on any campaign, cut it. The store/app/website action belongs in the CTA field, not the body.`;
 // HUFT personality + real winning-copy anchors (distilled from HUFT's own May/June marketing calendars). Injected into every copy generation.
 const HUFT_VOICE=`HUFT VOICE — this is the PERSONALITY that works; match its energy in EVERY line, and never let copy drift dry or corporate:
-Warm, witty and human — a clever, pet-loving friend talking to another, never an ad. Light, playful, full of delight; emotionally warm but always credible and honest. Second person ("your dog/cat"), present tense, active voice, British spelling. Use 1–2 PURPOSEFUL emojis that add warmth (🐶 🐱 🐾 ☀️ ⏰ ✔️ 🥺 🍗) — never as filler. A touch of Hinglish is welcome when it lands naturally (e.g. "Garmi"). Lean into wordplay, a curiosity gap, or a relatable pet-parent moment. Lead with delight or the hook; surface the offer in plain words; make the next step obvious. Premium and kind, never pushy, never clickbait, never salesy.
+Warm, witty and human — a clever, pet-loving friend talking to another, never an ad. Light, playful, full of delight; emotionally warm but always credible and honest. Second person ("your dog/cat"), present tense, active voice, British spelling. Use EXACTLY ONE purposeful emoji that adds warmth (🐶 🐱 🐾 ☀️ ⏰ ✔️ 🥺 🍗) — never as filler. A touch of Hinglish is welcome when it lands naturally (e.g. "Garmi"). Lean into wordplay, a curiosity gap, or a relatable pet-parent moment. Lead with delight or the hook; surface the offer in plain words; make the next step obvious. Premium and kind, never pushy, never clickbait, never salesy.
 
 REAL HUFT COPY THAT PERFORMED WELL — these are TONE ANCHORS only. Match this wit, warmth and rhythm; NEVER copy them verbatim, and never reuse their specific products/offers unless the current brief is about that. Always ground the copy in THE BRIEF in front of you.
 Push (headline → preview):
@@ -175,24 +175,26 @@ WhatsApp (image-copy overlay → message body):
 • Overlay: "Payday Sale · Ends Sunday" → Body: "Stop thinking, start adding your pet's favourites to the cart 🛒 The Payday Sale ends Sunday ⏰ — up to 10% off HUFT food and more."
 THE PATTERN: a short, playful hook that sparks curiosity or delight, then a warm payoff that lands it and points to the action. Bring exactly this wit and warmth to the brief in front of you — make it the best copy a HUFT writer could write.`;
 // Real winning IMAGE COPY (on-creative overlays) + the stacked overlay format HUFT actually ships. Injected into every copy generation (image channels).
-const HUFT_IMAGE_COPY=`HUFT IMAGE COPY — the on-creative overlay format that works (WhatsApp / Email / Meta image only; a PUSH has NO image — skip this entirely for push). Image copy is NOT one sentence — it is a SHORT STACK of lines read at a glance:
-- LINE 1 (the big line): the hook OR the offer, bold and instant — "Up to 30% off", "More than just a cool tee", "Someone's waiting for dinner…", "Back in stock, just in time for summer".
-- LINE 2 (clarifier): what it's ON / what it IS, plain words — "on Hearty Baked Food & Gravy", "on cats ki asli diet", "100% waterproof raincoats".
-- OPTIONAL USP strip: one short proof line with a | divider — "100% grain-free | Best cuts of meat", "Zero preservatives | 100% Natural Ingredients", "Quality Chicken & Fish | No Corn or Soy".
-- OPTIONAL code line, ALWAYS LAST, never first — "Use code MT10 for 10% off".
-Put each line on its OWN line (use real line breaks in the "header" value). Keep every line tight (max ~6 words), sentence case (designers may visually emphasise the big line — that is a design choice, not your case), with real personality. The big line carries the feeling; the code never leads.
+const HUFT_IMAGE_COPY=`HUFT IMAGE COPY (the "creative copy" that goes ON the design — WhatsApp / Email / Meta image only; a PUSH has NO image, skip this). It is ACTION-LED and written as a SHORT STACK of lines the designer lays out top-to-bottom. EVERY image creative drives an action and ENDS on a clear action CTA line, so the designer knows the button. Write it the way HUFT's marketing calendar "Creative Copy" column is written.
+STACK (top to bottom):
+- BIG LINE: the action-led hook OR the offer — lead with a verb or a real pull ("Switch to the cleaner gravy!", "Playtime upgraded with new toys!", "Let them scratch & you'll see the difference!", "Up to 30% off").
+- CLARIFIER: what it's on / what it is ("on Hearty dog food", "on cats ki asli diet").
+- OPTIONAL USP strip with a | divider ("Real meat | Zero preservatives", "Walk gear | Beds & Mats | Apparel", "100% grain-free | Best cuts of meat").
+- OPTIONAL code line ("Use code: TRT10").
+- ACTION CTA — the LAST line, MANDATORY: the button the designer places. Pick the verb that fits the brief's goal: "Shop now", "Explore now", "Order now", "Book now", "Reorder now", "Come back". This closing action is what makes the copy "action-led" — never end an image creative on a flat feature line.
+Put each line on its OWN line (real line breaks in the "header" value). Keep every line tight (≤6 words), sentence case (the designer handles any visual emphasis/caps). The action CTA closing line must match the brief's objective and the CTA field.
 
-REAL HUFT IMAGE COPY THAT PERFORMED — match the rhythm and shape, NEVER copy verbatim or reuse the product/offer unless the brief is about it. ( / marks a line break — output a real line break, not a slash):
-• "Up to 30% off / on Hearty Baked Food & Gravy"
-• "Up to 25% off / on cats ki asli diet / Best cuts of meat | 100% grain-free"
-• "Treats that love your cat, / at extra 10% off / 100% grain-free | Zero preservatives / Use code MT10 for 10% off"
-• "Someone's waiting for dinner… / Use code Meowsi15 for extra 15% off / 100% grain-free | Best cuts of meat"
-• "More than just a cool tee / A comfy layer that protects their coat on sunny walks"
-• "Your dog wants a new toy / & we've got it all! / Get 10% off with code TOY10"
-• "Back in stock, just in time for summer! / Summer's hydrating super-snack / Use code NM10 for extra 10% off"
-• "It's been a while. / Here's a good reason to come back. / Use code 300HUFT for ₹300 off"
-• "Food that fills & fuels your cat / at extra 10% off / Quality Chicken & Fish | No Corn or Soy"
-THE PATTERN: a bold feeling-first big line → a plain clarifier → optional proof strip → optional code last. Bring this exact shape to the brief in front of you.`;
+REAL HUFT CREATIVE COPY THAT SHIPPED (from the marketing calendar's Creative Copy column) — match this action-led shape and rhythm; NEVER copy verbatim or reuse a product/offer unless the brief is about it ( / marks a line break — output a real line break, not a slash):
+• "A season of adventure awaits / Walk gear | Beds & Mats | Apparel / Explore now"
+• "Playtime upgraded with new toys! / More ways to chase, scratch & pounce / Explore now"
+• "Let them scratch & you'll see the difference! / Cat trees & scratchers from ₹299 / Explore now"
+• "Extra 10% off / on Hearty dog food / Use code: HEARTY10 / Shop now"
+• "Switch to the cleaner gravy! / Up to 15% off / Real meat | Zero preservatives / Order now"
+• "Summer hydration, solved in one pour! / Moisture-rich & protein-rich / Order now"
+• "Your cat is a carnivore, not a carb-ivore! / Switch to Meowsi — no grains, no carbs / Shop now"
+• "An offer you can't refuse / ₹300 off on orders above ₹2,499 / Use code: 300HUFT / Shop now"
+• "Up to 30% off / on Sara's Wholesome Food / Shop now"
+THE PATTERN: an action-led hook (often a verb — switch, explore, save, upgrade, reorder) → a plain clarifier → optional proof strip → optional code → a clear action CTA as the closing line. Bring this exact action-led shape to the brief in front of you.`;
 // Distilled HUFT Master Copy & Creative Rulebook (copy-relevant rules, built from 12+ months of real review feedback). Injected into every copy generation.
 const HUFT_RULEBOOK=`HUFT MASTER RULEBOOK — copy rules from 12+ months of real review feedback. HARD: a creative that breaks any of these goes straight back. Apply to EVERY line, EVERY channel.
 
@@ -264,19 +266,22 @@ const WHATSAPP_RULES=`WHATSAPP RULES — follow this three-part anatomy:
 - State the food FORMAT explicitly (Chews / Fresh / Kibble / Wet / Gravy / Treats). Relevant over clever.
 - LENGTH: keep the whole body tight — aim for ~45–60 words across about 4–6 short lines (hard ceiling ~75 words). Cut anything that does not add value. The image overlay (the "header" field) is just 1–2 short, flowing lines — crisp and readable, never broken-up word fragments.
 - Do NOT add any opt-out, unsubscribe or "reply STOP" line — leave it out of the copy entirely.
-STRUCTURE REFERENCE (shape only — do NOT reuse this wording): warm open → an intriguing hook that breaks before "read more" → payoff sentences → product switch line → 2–3 proof bullets → store/app CTA. Hook + payoff lead the body; RTBs and CTA follow.`;
+STRUCTURE REFERENCE (shape only — do NOT reuse this wording): warm open → an intriguing hook that breaks before "read more" → payoff sentences → product switch line → 2–3 proof bullets → store/app CTA. Hook + payoff lead the body; RTBs and CTA follow.
+- PERSONALISED OPTION (WhatsApp only): make EXACTLY ONE of the options a personalised variant that greets the pet parent by first name using the token {{Name}} — e.g. open with "Hi {{Name}}! …" or "{{Name}}, …". Write {{Name}} exactly (double curly braces, lowercase). Every OTHER option must NOT use {{Name}} or any name greeting. This is the ONE place a merge token is allowed.`;
 // HARD: copy must never contain leftover merge tokens / placeholders. \"M-hash\" must never appear.
-const FORBIDDEN_TOKENS_RULE="FORBIDDEN — never output any of these anywhere in the copy: the literal text \"M-hash\" in ANY form (M-hash, M hash, mhash, M#, #M, or with any dash), any merge placeholders like {{1}}, {name}, #VAR#, #MOBILE#, [VARIABLE], <NAME>, or any unfilled template/merge tag. These are system artifacts, NOT words — they must never appear. Write the real words instead. If you don't have a real value (e.g. a customer's name), write a natural greeting with no placeholder at all (\"Hi there\", or just open on the message).";
+const FORBIDDEN_TOKENS_RULE="FORBIDDEN — never output any of these anywhere in the copy: the literal text \"M-hash\" in ANY form (M-hash, M hash, mhash, M#, #M, or with any dash), any merge placeholders like {{1}}, {name}, #VAR#, #MOBILE#, [VARIABLE], <NAME>, or any unfilled template/merge tag. These are system artifacts, NOT words — they must never appear. Write the real words instead. If you don't have a real value (e.g. a customer's name), write a natural greeting with no placeholder at all (\"Hi there\", or just open on the message). THE SINGLE EXCEPTION: the personalisation token {{Name}} (the pet parent's first name) IS allowed, but ONLY inside the one personalised WhatsApp option described in the WhatsApp rules — never on push or email, never in more than one option, and never any other token.";
 // Strip any forbidden placeholder tokens that slip through, across all copy fields.
 const stripForbidden=(s)=>{
   if(typeof s!=="string")return s;
   let out=s;
+  // protect the ONE sanctioned personalisation token (pet-parent first name) from all stripping below
+  out=out.replace(/\{\{\s*name\s*\}\}/gi,"\u0001NAME\u0001");
   // separator class covers space, ASCII hyphen, underscore, dot, and unicode dashes (– — ‑ ‐ −)
   const SEP="[\\s\\-_.\\u2010\\u2011\\u2012\\u2013\—\\u2212]?";
   out=out.replace(new RegExp("\\bm"+SEP+"hash\\b","gi"),"");   // M-hash / m hash / mhash / M–hash / M—hash
   out=out.replace(new RegExp("\\bm"+SEP+"#","gi"),"");          // M# / M-# (merge prefix)
   out=out.replace(/#\s*m\b/gi,"");                              // #M
-  out=out.replace(/\{\{[^}]*\}\}/g,"");                          // {{1}}, {{name}}
+  out=out.replace(/\{\{[^}]*\}\}/g,"");                          // {{1}}, {{Name}}
   out=out.replace(/\{[A-Za-z0-9_ .#-]{1,30}\}/g,"");            // {name}, {M-hash}
   out=out.replace(/#[A-Z0-9_]{2,30}#/gi,"");                     // #VAR#, #MOBILE#
   out=out.replace(/\[[A-Za-z][A-Za-z0-9_ .#-]{1,30}\]/g,"");    // [VARIABLE], [M-hash]
@@ -285,6 +290,7 @@ const stripForbidden=(s)=>{
   out=out.replace(/[^.!?\n]*\b(?:opt[\s-]?out|unsubscribe)\b[^.!?\n]*[.!?]?/gi,""); // opt-out / unsubscribe boilerplate
   out=out.replace(/[^.!?\n]*\breply\s+stop\b[^.!?\n]*[.!?]?/gi,"");                  // "reply STOP" boilerplate
   out=out.replace(/[ \t]{2,}/g," ").replace(/ +([,.!?])/g,"$1").replace(/\s+([,.])/g,"$1").replace(/^[\s,;:]+/gm,"").replace(/\n{3,}/g,"\n\n").trim();
+  out=out.replace(/\u0001NAME\u0001/g,"{{Name}}"); // restore sanctioned personalisation token
   return out;
 };
 // HUFT rulebook mechanical fixes — always-correct, deterministic normalisations of the most-flagged review mistakes.
@@ -307,7 +313,32 @@ const applyRulebookFixes=(s)=>{
   out=out.replace(/\bFLAT\s+(?=\d{1,3}\s?%)/gi,"");                        // drop "FLAT " before a percentage
   return out.replace(/[ \t]{2,}/g," ").trim();
 };
-const sanitizeOption=(o)=>{if(!o||typeof o!=="object")return o;const f={...o};["subject","header","body","cta","direction"].forEach(k=>{if(typeof f[k]==="string")f[k]=stripForbidden(f[k]);});["subject","header","body","cta"].forEach(k=>{if(typeof f[k]==="string")f[k]=applyRulebookFixes(f[k]);});if(Array.isArray(f.rtbs))f.rtbs=f.rtbs.map(x=>typeof x==="string"?applyRulebookFixes(stripForbidden(x)):x).filter(Boolean).slice(0,3);return f;};
+// Exactly ONE emoji per copy option: keep good placement when already 1, append a tasteful default when 0, trim extras when >1.
+const EMOJI_RE=/(?:\p{Extended_Pictographic}(?:\u200D\p{Extended_Pictographic}|[\uFE0F\u20E3\u{1F3FB}-\u{1F3FF}])*)/gu;
+const countEmoji=(s)=>typeof s==="string"?(s.match(EMOJI_RE)||[]).length:0;
+const firstEmoji=(s)=>{const m=typeof s==="string"&&s.match(EMOJI_RE);return m?m[0]:"";};
+const stripEmojiStr=(s)=>typeof s==="string"?s.replace(EMOJI_RE,"").replace(/\s{2,}/g," ").replace(/\s+([,.!?])/g,"$1").trim():s;
+const DEFAULT_EMOJI="🐾";
+const enforceOneEmoji=(o)=>{
+  if(!o||typeof o!=="object")return o;
+  const fields=["body","header","subject","cta"];
+  const total=fields.reduce((n,k)=>n+countEmoji(o[k]),0);
+  if(total===1)return o;                                   // already perfect — leave placement untouched
+  if(total===0){                                           // none — append one tasteful default
+    if(typeof o.body==="string"&&o.body.trim())o.body=o.body.replace(/[\s.]+$/,"")+" "+DEFAULT_EMOJI;
+    else if(typeof o.header==="string"&&o.header.trim())o.header=o.header.replace(/[\s.]+$/,"")+" "+DEFAULT_EMOJI;
+    return o;
+  }
+  let keepField="";                                        // >1 — keep the first (body→header→subject→cta), strip the rest
+  for(const k of fields){if(firstEmoji(o[k])){keepField=k;break;}}
+  fields.forEach(k=>{
+    if(typeof o[k]!=="string")return;
+    if(k===keepField){let seen=false;o[k]=o[k].replace(EMOJI_RE,m=>{if(!seen){seen=true;return m;}return "";}).replace(/\s{2,}/g," ").replace(/\s+([,.!?])/g,"$1").trim();}
+    else o[k]=stripEmojiStr(o[k]);
+  });
+  return o;
+};
+const sanitizeOption=(o)=>{if(!o||typeof o!=="object")return o;const f={...o};["subject","header","body","cta","direction"].forEach(k=>{if(typeof f[k]==="string")f[k]=stripForbidden(f[k]);});["subject","header","body","cta"].forEach(k=>{if(typeof f[k]==="string")f[k]=applyRulebookFixes(f[k]);});if(Array.isArray(f.rtbs))f.rtbs=f.rtbs.map(x=>typeof x==="string"?applyRulebookFixes(stripForbidden(x)):x).filter(Boolean).slice(0,3);return enforceOneEmoji(f);};
 const sanitizeOptions=(arr)=>Array.isArray(arr)?arr.map(sanitizeOption):arr;
 // Hard length caps per channel — passed to the server, which clamps regardless of what the model returns.
 const copyLimits=(isPush,isEmail)=>isPush?{header:50,body:90,cta:25}:isEmail?{subject:50,header:42,cta:30}:{header:42,cta:30};
@@ -316,8 +347,8 @@ const copyLimits=(isPush,isEmail)=>isPush?{header:50,body:90,cta:25}:isEmail?{su
 const COPY_SHAPE=(isPush,isEmail)=>(isPush
   ?"each: {direction,header,body,cta}. header=push TITLE (the FIRST line), max 40 chars (hard 50), one crisp flowing line that DRIVES AN ACTION — every push, even awareness, makes the reader want to act (tap, see, switch, save). body=the second line, max 70 chars — THIS IS A HARD LIMIT, never exceed 70 chars; at most TWO short complete sentences (one is better), natural flow not fragments, reinforcing the action. cta=2-3 words. Push has NO image — do not write image/overlay copy or rtbs. If the brief has an offer, put it in the title or body in plain words."
   :isEmail
-  ?"each: {direction,subject,header,body,cta,rtbs}. subject=email subject line under 50 chars. header=IMAGE COPY / hero overlay — a STACKED overlay, NOT one sentence: line 1 = the bold big line (hook or offer), line 2 = a plain clarifier, then an OPTIONAL short USP strip with a | divider, then an OPTIONAL code line LAST (never first). Put each line on its OWN line (real line breaks in the header value). Every line tight (max ~6 words), sentence case, with personality. Surface the offer on the big line when the brief has one. body=short scannable email (~50-80 words): warm 1-line opener, core value/offer in 1-2 lines, 2-3 proof points, friendly sign-off. cta=action phrase."
-  :"each: {direction,header,body,cta,rtbs}. header=IMAGE COPY / on-image overlay — a STACKED overlay, NOT one sentence: line 1 = the bold big line (the hook or the offer), line 2 = a plain clarifier (what it's on / what it is), then an OPTIONAL short USP strip with a | divider, then an OPTIONAL code line LAST (never first). Put each line on its OWN line (real line breaks in the header value). Every line tight (max ~6 words), sentence case, with personality. Surface the offer on the big line when the brief has one. body=tight WhatsApp message (~40-55 words): a STRONG hook line that earns the 'read more' tap (NEVER a generic opener), payoff, 2-3 proof bullets, the switch/offer line. Do NOT put the store/app/website link or an opt-out line in the body. cta=the action phrase that goes in the CTA field (e.g. 'Shop now at huft.com' or 'Order on the HUFT app').")
+  ?"each: {direction,subject,header,body,cta,rtbs}. subject=email subject line under 50 chars. header=IMAGE COPY / hero overlay — a STACKED overlay, NOT one sentence: line 1 = the bold big line (hook or offer), line 2 = a plain clarifier, then an OPTIONAL short USP strip with a | divider, then an OPTIONAL code line LAST (never first). Put each line on its OWN line (real line breaks in the header value). Every line tight (max ~6 words), sentence case, action-led — and the LAST line is a MANDATORY action CTA ('Shop now' / 'Explore now' / 'Order now' / 'Book now', matching the brief's goal). Surface the offer on the big line when the brief has one. body=short scannable email (~50-80 words): warm 1-line opener, core value/offer in 1-2 lines, 2-3 proof points, friendly sign-off. cta=action phrase."
+  :"each: {direction,header,body,cta,rtbs}. header=IMAGE COPY / on-image overlay — a STACKED overlay, NOT one sentence: line 1 = the bold big line (the hook or the offer), line 2 = a plain clarifier (what it's on / what it is), then an OPTIONAL short USP strip with a | divider, then an OPTIONAL code line LAST (never first). Put each line on its OWN line (real line breaks in the header value). Every line tight (max ~6 words), sentence case, action-led — and the LAST line is a MANDATORY action CTA ('Shop now' / 'Explore now' / 'Order now' / 'Book now', matching the brief's goal). Surface the offer on the big line when the brief has one. body=tight WhatsApp message (~40-55 words): a STRONG hook line that earns the 'read more' tap (NEVER a generic opener), payoff, 2-3 proof bullets, the switch/offer line. Do NOT put the store/app/website link or an opt-out line in the body. cta=the action phrase that goes in the CTA field (e.g. 'Shop now at huft.com' or 'Order on the HUFT app').")
   +(isPush?"":" rtbs=array of 2-3 SHORT reasons-to-believe / proof points (each ≤6 words, e.g. 'Real chicken first', '48-hour odour lock', '₹500 off first box') drawn ONLY from the brief's proof points/offer — never invented. These are optional add-ons the copy team may append to the image copy.");
 // ── Shared task / approval computation (used by Dashboard + standalone pages + nav counts) ──
 // ── Shared task / approval computation (used by Dashboard + standalone pages + nav counts) ──
