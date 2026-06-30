@@ -124,13 +124,13 @@ const clampLen = (s, max) => {
   return t.replace(/[\s,;:.\u2013\u2014-]+$/, "").trim();
 };
 // Universal safe maxima always applied; `limits` (from the client, channel-aware) tightens them.
-const HARD_MAX = { subject: 60, cta: 30, headerLine: 64 };
+const HARD_MAX = { subject: 60, cta: 30, headerLine: 90 };
 const enforceCopyLimits = (opt, L) => {
   if (!opt || typeof opt !== "object") return opt;
   const o = { ...opt };
   if (typeof o.subject === "string") o.subject = clampLen(o.subject, Math.min(L.subject || 1e9, HARD_MAX.subject));
   if (typeof o.cta === "string") o.cta = clampLen(o.cta, Math.min(L.cta || 1e9, HARD_MAX.cta));
-  if (typeof o.header === "string") o.header = o.header.split(/\r?\n/).map(ln => clampLen(ln, Math.min(L.header || 1e9, HARD_MAX.headerLine))).join("\n");
+  if (typeof o.header === "string") o.header = o.header.split(/\r?\n/).map(ln => clampLen(ln, HARD_MAX.headerLine)).join("\n"); // image-copy header: soft length (short, but never hard-cut mid-thought) — only a generous safety ceiling applies
   if (L.body && typeof o.body === "string") o.body = clampLen(o.body, L.body); // body cap only when the client knows the channel (e.g. push 90)
   return o;
 };
@@ -156,7 +156,7 @@ const COPY_HARD_RULES = " NON-NEGOTIABLE HARD RULES (never break): "
     + "(3) Say \"pet parents\", never \"consumers\". Use \"furry family\", never \"furry friend\" or \"fur baby\". "
     + "(4) Never use: premium, luxury, cutting-edge, state-of-the-art, revolutionary, game-changing. "
     + "(5) No fear-based messaging, no medical/cure claims, never shame pet parents. "
-    + "(6) Respect the length limits for the channel exactly (push title and body are hard character caps). "
+    + "(6) Respect channel length limits, BUT the image-copy \"header\" (hook + resolve) is a SOFT guide, not a hard cap: keep it short, yet ALWAYS complete — never cut a line to fit a length, finish the phrase even if it runs a few characters longer, and never end a line on a dangling word (at, for, on, the, a, just, and). Push title and body remain hard character caps. "
     + "(7) ACTION-LED ALWAYS: every piece of copy must drive a clear action (tap, switch, try, shop, book, learn, save); even awareness copy moves the reader to act, never just informs. "
     + "(8) Push notifications: the action MUST be in the FIRST line (the title) — every push, even awareness ones, drives an action. Push has NO image, so never write image/overlay copy or image RTBs for a push. "
     + "(9) No opt-out / unsubscribe / 'reply STOP' lines or any channel/system boilerplate — the platform adds those, not the copy.";
@@ -216,7 +216,7 @@ async function reviewCopy(text, ruleStr) {
   } catch (e) { console.error("[review] skipped:", e.message); }
   return JSON.stringify(Array.isArray(parsed) ? arr : arr[0]);
 }
-const SERVER_BUILD = "v29.84s - Adds POST /api/campaigns/:id/request-distribution: for a retail-WhatsApp finalized asset, creates an in-app task + email to Rahul Bharadwaj and Shubham Gandhi (the distribution owners) and flags data.distributionRequested. Pairs with index v33.3 (Request-for-distribution button + dashboard Ready-for-distribution + draft briefs). Builds on v29.83s - Seeds a Sara's Wholesome brand style (navy #102242 / cream #E8C09B / accents) from the Brand Manual into brand_styles on startup (idempotent), so the Composer auto-applies it. Pairs with index v32.9 (BRAND_CONTEXT gains a Visual Identity & Creative reference from the brand books, surfaced on the Brand styling page). Builds on v29.82s.";
+const SERVER_BUILD = "v29.85s - Adds POST /api/campaigns/:id/request-distribution: for a retail-WhatsApp finalized asset, creates an in-app task + email to Rahul Bharadwaj and Shubham Gandhi (the distribution owners) and flags data.distributionRequested. Pairs with index v33.3 (Request-for-distribution button + dashboard Ready-for-distribution + draft briefs). Builds on v29.83s - Seeds a Sara's Wholesome brand style (navy #102242 / cream #E8C09B / accents) from the Brand Manual into brand_styles on startup (idempotent), so the Composer auto-applies it. Pairs with index v32.9 (BRAND_CONTEXT gains a Visual Identity & Creative reference from the brand books, surfaced on the Brand styling page). Builds on v29.82s.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
