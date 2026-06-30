@@ -105,11 +105,11 @@ const TAB_VIS={
   head_marketing:["dashboard","approvals","done"],
   brand_team:["dashboard","mytasks","brief","content","library","done","analytics"],
   design_team:["dashboard","mytasks","design","library","done","analytics"],
-  business:["dashboard","mytasks","brief","content","design","done","analytics","archive"],
+  business:["dashboard","mytasks","brief","done","analytics","archive"],
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v32.7 - Model A/B in the Copy tab (admin): Compare models generates 2 Claude + 1 Gemini options, each tagged with a Claude/Gemini chip; a which-performed-better vote (Claude/Gemini/Tie) with all-time tally; same question added to the copy feedback popup. Pairs with server v29.82s (/api/generate-compare + /api/model-vote).";
+const BUILD="v32.8 - Business team no longer sees the Copy or Design tabs (briefs + finalized assets only). My Tasks now shows the concrete action needed from the logged-in person (Write the brief / Write the copy / Build the design, etc.) as a solid action chip, and only lists items that are actually on them — business no longer sees in-flight team work like 'In design'. Builds on v32.7 (model A/B).";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -402,10 +402,34 @@ const computeMyTasks=(campaigns,me)=>{
   let t;
   if(isBrandTeam(me))t=inProg.filter(c=>c.stage==="content"&&!c.data?.selfMade&&!(c.data?.copyOptions&&c.data?.selectedCopyIdx!=null));
   else if(isDesignTeam(me))t=inProg.filter(c=>c.stage==="design"&&!c.data?.selfMade&&!c.data?.design?.pendingApproval);
-  else if(isBusiness(me))t=inProg.filter(c=>c.stage==="brief"||(c.data?.selfMade&&(c.stage==="content"||c.stage==="design")&&!c.data?.design?.selfFinal));
+  else if(isBusiness(me))t=inProg.filter(c=>c.stage==="brief"&&!(c.data&&c.data.brief));
   else t=inProg;
   const rank=(c)=>{const d=dueForCampaign(c);return isOverdueD(d)?0:isDueTodayD(d)?1:2;};
   return [...t].sort((a,b)=>rank(a)-rank(b));
+};
+// The concrete action the logged-in person must take on this asset, or null if it's not on them.
+// Drives the My Tasks action chip so each row says what to DO, not just what stage it's in.
+const myAction=(c,me)=>{
+  if(!c||isArchived(c)||c.stage==="done")return null;
+  if(isBusiness(me)){
+    if(c.stage==="brief"&&!(c.data&&c.data.brief))return{label:"Write the brief",col:"#D97706"};
+    return null; // once the brief is raised, business has nothing more to do
+  }
+  if(isBrandTeam(me)){
+    if(c.stage==="content"&&!c.data?.selfMade){
+      if(c.data?.sentBack)return{label:"Revise the copy",col:"#C2410C"};
+      if(!(c.data?.copyOptions&&c.data?.selectedCopyIdx!=null))return{label:c.data?.copyOptions?"Pick & send copy":"Write the copy",col:"#D97706"};
+    }
+    return null;
+  }
+  if(isDesignTeam(me)){
+    if(c.stage==="design"&&!c.data?.selfMade&&!c.data?.design?.pendingApproval){
+      if(c.data?.sentBack||c.data?.design?.sentBack)return{label:"Revise the design",col:"#C2410C"};
+      return{label:c.data?.design?.finalFile?"Finish & submit design":"Build the design",col:"#0E9488"};
+    }
+    return null;
+  }
+  return null; // leads/exec/super: My Tasks is a pipeline overview, no single personal action
 };
 // ── Who's involved + what it's waiting on (for clearer row identifiers) ──
 const _first=(n)=>((n||"").trim().split(/\s+/)[0]||"");
@@ -2292,7 +2316,7 @@ function MyTasksTab({campaigns,onOpen,me,team}){
     {tasks.length===0
       ?<Card><Empty icon={<ClockIcon size={26}color={C.sub}/>}title="Nothing on your plate"sub="New work assigned to you will show up here."/></Card>
       :<Card style={{padding:0,overflow:"hidden"}}>
-        {tasks.map(c=>{const s=stateOfCampaign(c),u=urgencyOf(c);return<div key={c.id}onClick={()=>onOpen(c.id,stageTab(c))}style={{display:"flex",alignItems:"center",gap:10,padding:"13px 18px",borderBottom:`1px solid ${C.line}`,cursor:"pointer",background:"#fff"}}>
+        {tasks.map(c=>{const s=stateOfCampaign(c),u=urgencyOf(c),act=seesAll(me)?null:myAction(c,me);return<div key={c.id}onClick={()=>onOpen(c.id,stageTab(c))}style={{display:"flex",alignItems:"center",gap:10,padding:"13px 18px",borderBottom:`1px solid ${C.line}`,cursor:"pointer",background:"#fff"}}>
           <div style={{minWidth:0,flex:1}}>
             <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
               <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{humanizeToken(c.product)||parseName(c.name).product||c.name}</span>
@@ -2303,7 +2327,9 @@ function MyTasksTab({campaigns,onOpen,me,team}){
             <WhoChips c={c}me={me}team={team}/>
           </div>
           {u&&<span style={{fontSize:10.5,fontWeight:800,color:u.col,background:u.bg,padding:"2px 8px",borderRadius:999,flexShrink:0}}>{u.t}</span>}
-          <span style={{fontSize:10.5,fontWeight:700,color:s.col,background:s.col+"18",padding:"2px 8px",borderRadius:999,flexShrink:0}}>{s.t}</span>
+          {act
+            ?<span style={{fontSize:10.5,fontWeight:800,color:"#fff",background:act.col,padding:"2px 9px",borderRadius:999,flexShrink:0}}>{act.label}</span>
+            :<span style={{fontSize:10.5,fontWeight:700,color:s.col,background:s.col+"18",padding:"2px 8px",borderRadius:999,flexShrink:0}}>{s.t}</span>}
           <ChevronRight size={16}color={C.sub}style={{flexShrink:0}}/>
         </div>;})}
       </Card>}
