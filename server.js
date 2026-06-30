@@ -193,7 +193,7 @@ async function reviewCopy(text, ruleStr) {
   } catch (e) { console.error("[review] skipped:", e.message); }
   return JSON.stringify(Array.isArray(parsed) ? arr : arr[0]);
 }
-const SERVER_BUILD = "v29.80s - canine/feline auto-swapped to dog/cat in applyBrandRules (deterministic, case+plural preserved) so they never leak as a warn; reviewer now returns a verbatim 'wrong' substring + a replacement-only 'suggestion' (enables surgical client-side fixes, no field wipes); reviewer told not to flag canine/feline. Includes /api/report-issue + email attachments.";
+const SERVER_BUILD = "v29.81s - Rulebook injection now states every DB rule (and any rule added later) is a HARD non-negotiable rule, no soft/optional/'where possible' rules. Plus admin-only providerOverride on /api/generate (claude|gemini) for model A/B comparison. Builds on v29.80s (canine/feline auto-swap, reviewer verbatim 'wrong', surgical client fixes, /api/report-issue).";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -1794,9 +1794,12 @@ app.delete("/api/reports/:id", authMiddleware, roles("admin","business"), async 
 // ── GENERATE ──────────────────────────────────────────────────────────────────
 
 app.post("/api/generate", authMiddleware, async (req, res) => {
-  const { system = "", prompt = "", kind = "", limits = null } = req.body;
+  const { system = "", prompt = "", kind = "", limits = null, providerOverride = null } = req.body;
   // Per-content-type routing: copy → Anthropic (Claude), brief → Gemini, everything else → env default.
-  const want = kind === "copy" ? "claude" : kind === "brief" ? "gemini" : undefined;
+  let want = kind === "copy" ? "claude" : kind === "brief" ? "gemini" : undefined;
+  // Admin-only model-comparison hook: force a specific provider (claude|gemini) to A/B copy quality.
+  // Ignored for non-admins and for any value other than claude|gemini — default routing is untouched.
+  if (req.user && ["admin", "super_admin"].includes(req.user.role) && (providerOverride === "claude" || providerOverride === "gemini")) want = providerOverride;
   // HARDEST RULES injected into the system prompt (belt) — and enforced on the way out (suspenders).
   const HARD_RULES = " NON-NEGOTIABLE HARD RULES (never break): "
     + "(1) Never output \"M-hash\" in any form (M-hash, M hash, mhash, M#, #M) or any unfilled merge/template placeholder ({{1}}, {name}, #VAR#, [VARIABLE], <NAME>) — these are system artifacts, not words; if you have no real value, write natural words with no placeholder. "
@@ -1816,7 +1819,7 @@ app.post("/api/generate", authMiddleware, async (req, res) => {
   if (kind === "copy") {
     try {
       const rules = await db("SELECT text FROM rules WHERE type='copy' AND active=true ORDER BY id");
-      if (rules && rules.length) { ruleText = rules.map(r => "- " + r.text).join("\n"); sys = sys0 + "\n\nACTIVE RULEBOOK (authoritative — always apply every rule, never ignore):\n" + ruleText; }
+      if (rules && rules.length) { ruleText = rules.map(r => "- " + r.text).join("\n"); sys = sys0 + "\n\nACTIVE RULEBOOK — EVERY rule below is a HARD, NON-NEGOTIABLE rule. There are NO soft, optional, 'preferred', or 'where possible' rules here: treat each as mandatory and apply it to EVERY option, on EVERY channel, EVERY time. Any rule added to this list later is automatically a hard rule too. Breaking ANY single rule means the copy is rejected and sent back. If two rules ever appear to conflict, satisfy both by rewriting — never drop one:\n" + ruleText; }
     } catch (e) {}
   }
   try {
