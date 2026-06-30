@@ -109,7 +109,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v33.0 - My Tasks redesigned for leads/super: leads with a Needs you section (their own pending approvals) shown first, then the rest of the pipeline as monday.com-style oversight sections grouped by state (Needs copy, In design, pending approvals, etc.), each collapsible with a coloured header + count. Team/business keep their action list. Builds on v32.9 (brand books).";
+const BUILD="v33.1 - Dashboard rows now show two dates: Brief (when the brief/campaign was raised, created_at) and Ready (when the asset was finalized, went_live_at). Added to the business Assets-ready card and the shared dashboard row (Ready shows only on finalized rows). Builds on v33.0.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -2481,7 +2481,8 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
         {parseName(c.name).hook&&<span>{parseName(c.name).hook.replace(/_/g," ")}</span>}
         {(c.audience_label||c.segment)&&<span>· {c.audience_label||c.segment}</span>}
         {c.objective&&<span>· {c.objective}</span>}
-        {c.created_at&&<span style={{marginLeft:4,fontSize:11,color:C.sub,background:"#F3F4F6",padding:"1px 6px",borderRadius:4}}>{fmtDate(c.created_at)}</span>}
+        {c.created_at&&<span style={{marginLeft:4,fontSize:11,color:C.sub,background:"#F3F4F6",padding:"1px 6px",borderRadius:4}}>Brief {fmtDate(c.created_at)}</span>}
+        {(c.stage==="done"||c.went_live_at)&&<span style={{fontSize:11,color:C.green,background:C.green+"18",padding:"1px 6px",borderRadius:4}}>Ready {fmtDate(c.went_live_at||c.updated_at)}</span>}
       </div>
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:6,alignItems:"center"}}>
         {c.stage==="done"
@@ -2566,7 +2567,11 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
         {ready.slice(0,6).map(c=><div key={c.id}onClick={()=>onOpen(c.id)}style={{display:"flex",alignItems:"center",gap:8,padding:"11px 18px",borderTop:`1px solid ${C.line}`,cursor:"pointer",background:"#fff"}}>
           <span style={{fontWeight:700,fontSize:13.5,color:C.ink}}>{humanizeToken(c.product)||parseName(c.name).product||c.name}</span>
           <span style={{fontSize:12,color:C.sub}}>· {normCrmType(c.crm_type)} · {c.channel||"WhatsApp"}</span>
-          <ChevronRight size={16}color={C.sub}style={{marginLeft:"auto"}}/>
+          <span style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
+            {c.created_at&&<span style={{fontSize:11,color:C.sub}}>Brief <b style={{color:C.ink,fontWeight:700}}>{fmtDate(c.created_at)}</b></span>}
+            {(c.went_live_at||c.updated_at)&&<span style={{fontSize:11,color:C.green}}>Ready <b style={{fontWeight:700}}>{fmtDate(c.went_live_at||c.updated_at)}</b></span>}
+            <ChevronRight size={16}color={C.sub}/>
+          </span>
         </div>)}
       </Card>;
     })()}
