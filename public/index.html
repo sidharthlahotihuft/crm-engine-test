@@ -109,7 +109,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v33.1 - Dashboard rows now show two dates: Brief (when the brief/campaign was raised, created_at) and Ready (when the asset was finalized, went_live_at). Added to the business Assets-ready card and the shared dashboard row (Ready shows only on finalized rows). Builds on v33.0.";
+const BUILD="v33.3 - Draft briefs: business can Save as draft (stays in Brief tab, hidden from the creative team) and Publish when ready. Retail-WhatsApp finalized assets get a Request-for-distribution button (tasks + emails Rahul Bharadwaj & Shubham Gandhi) and surface on the dashboard as Ready for distribution. Hardened a focus-loss bug: the Rulebook rule-entry input was an inline component that remounted on re-render (wiping the half-typed rule) — hoisted to a stable top-level RuleSection. Builds on v33.2 (comments hidden, push Headline/Subheadline, WA image-prompt removal, business lifecycle lockout, WA/D2C defaults).";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -1725,7 +1725,7 @@ function App(){
     }catch(e){alert("Delete failed: "+e.message);}
   };
   const newCampaign=async()=>{
-    const c=await api.post("/api/campaigns",{stage:"brief"});
+    const c=await api.post("/api/campaigns",{stage:"brief",channel:"WhatsApp",crm_type:"D2C"});
     setCampaigns(cs=>[c,...cs]);setActiveId(c.id);setTab("brief");
   };
 
@@ -2250,8 +2250,8 @@ function ReviewModal({c,me,kind,action,tab,onApprove,onSendBackDone,onEdit,onClo
         <div style={{fontSize:10,fontWeight:800,color:C.purple,textTransform:"uppercase",letterSpacing:.5,marginBottom:6}}>Under review</div>
         {copy&&<div style={{background:"#F5F3FF",border:"1px solid #DDD6FE",borderRadius:10,padding:"11px 13px",marginBottom:10}}>
           {copy.subject&&<div style={{marginBottom:5}}><div style={{fontSize:9,fontWeight:800,color:C.sub,textTransform:"uppercase"}}>Subject</div><div style={{fontSize:13,fontWeight:700,color:C.ink}}>{copy.subject}</div></div>}
-          {copy.header&&<div style={{marginBottom:5}}><div style={{fontSize:9,fontWeight:800,color:C.sub,textTransform:"uppercase"}}>{isPushC?"Title":"Image copy"}</div><div style={{fontSize:13,fontWeight:700,color:C.ink,whiteSpace:"pre-line"}}>{copy.header}</div></div>}
-          {copy.body&&<div style={{marginBottom:5}}><div style={{fontSize:9,fontWeight:800,color:C.sub,textTransform:"uppercase"}}>{isPushC?"Message":"Body copy"}</div><div style={{fontSize:12.5,color:"#374151",lineHeight:1.5,whiteSpace:"pre-line"}}>{copy.body}</div></div>}
+          {copy.header&&<div style={{marginBottom:5}}><div style={{fontSize:9,fontWeight:800,color:C.sub,textTransform:"uppercase"}}>{isPushC?"Headline":"Image copy"}</div><div style={{fontSize:13,fontWeight:700,color:C.ink,whiteSpace:"pre-line"}}>{copy.header}</div></div>}
+          {copy.body&&<div style={{marginBottom:5}}><div style={{fontSize:9,fontWeight:800,color:C.sub,textTransform:"uppercase"}}>{isPushC?"Subheadline":"Body copy"}</div><div style={{fontSize:12.5,color:"#374151",lineHeight:1.5,whiteSpace:"pre-line"}}>{copy.body}</div></div>}
           {copy.cta&&<div style={{fontSize:12,fontWeight:700,color:C.purple}}>{copy.cta} →</div>}
           <div style={{display:"flex",gap:7,marginTop:9,flexWrap:"wrap"}}>
             {isWA&&<button onClick={()=>setShowWA(true)}style={{fontSize:11.5,fontWeight:700,color:"#0b141a",background:"#25D36622",border:"1px solid #25D36655",borderRadius:7,padding:"5px 10px",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}><MessageSquare size={12}/>Preview on WhatsApp</button>}
@@ -2260,9 +2260,6 @@ function ReviewModal({c,me,kind,action,tab,onApprove,onSendBackDone,onEdit,onClo
         </div>}
         {img&&<div style={{borderRadius:10,overflow:"hidden",border:`1px solid ${C.line}`,marginBottom:10}}><img src={img}alt="creative"style={{width:"100%",display:"block"}}/></div>}
         {!copy&&!img&&<div style={{fontSize:12.5,color:C.sub,marginBottom:10}}>Open the full asset to see everything under review.</div>}
-        {/* Comments */}
-        <div style={{fontSize:10,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.5,margin:"6px 0"}}>Comments</div>
-        <CommentThread campaignId={c.id}context={ctx}me={me}compact={true}/>
         {/* Send-back reason */}
         {mode==="sendback"&&<div style={{marginTop:12,background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:10,padding:"11px 13px"}}>
           <div style={{fontSize:11.5,fontWeight:800,color:"#9A3412",marginBottom:6}}>Reason for sending back{isCopyGate?" (the writer sees this)":action==="design"?" (the design team sees this)":""}</div>
@@ -2572,6 +2569,21 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
             {(c.went_live_at||c.updated_at)&&<span style={{fontSize:11,color:C.green}}>Ready <b style={{fontWeight:700}}>{fmtDate(c.went_live_at||c.updated_at)}</b></span>}
             <ChevronRight size={16}color={C.sub}/>
           </span>
+        </div>)}
+      </Card>;
+    })()}
+    {(()=>{const rfd=campaigns.filter(c=>c.stage==="done"&&!isArchived(c)&&/retail/i.test(c.crm_type||"")&&/whatsapp/i.test(c.channel||"")&&c.data&&c.data.distributionRequested);
+      if(!rfd.length)return null;
+      return<Card style={{padding:0,overflow:"hidden",marginBottom:18,border:`1.5px solid ${C.coral}`}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,padding:"15px 18px",background:C.coralSoft}}>
+          <div style={{width:36,height:36,borderRadius:10,background:C.coral,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Send size={18}/></div>
+          <div style={{flex:1}}><div style={{fontWeight:800,fontSize:15.5,color:C.ink}}>Ready for distribution · {rfd.length}</div><div style={{fontSize:12.5,color:C.sub}}>Retail · WhatsApp assets sent to Rahul Bharadwaj &amp; Shubham Gandhi to push out.</div></div>
+        </div>
+        {rfd.slice(0,8).map(c=><div key={c.id}onClick={()=>onOpen(c.id)}style={{display:"flex",alignItems:"center",gap:8,padding:"11px 18px",borderTop:`1px solid ${C.line}`,cursor:"pointer",background:"#fff"}}>
+          <span style={{fontWeight:700,fontSize:13.5,color:C.ink}}>{humanizeToken(c.product)||parseName(c.name).product||c.name}</span>
+          <span style={{fontSize:12,color:C.sub}}>· {normCrmType(c.crm_type)} · {c.channel||"WhatsApp"}</span>
+          <span style={{marginLeft:"auto",fontSize:11,color:C.sub}}>{c.data.distributionRequested.at?"Requested "+fmtDate(c.data.distributionRequested.at):""}</span>
+          <ChevronRight size={16}color={C.sub}/>
         </div>)}
       </Card>;
     })()}
@@ -3209,6 +3221,9 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns:
     setTab("content");
   };
   const allBriefs=(campaigns||[]).filter(c=>c.stage==="brief"&&!isArchived(c));
+  const awaiting=allBriefs.filter(c=>!(c.data&&c.data.brief));
+  const drafts=allBriefs.filter(c=>c.data&&c.data.brief);
+  const publishDraft=(c)=>patch(c.id,{stage:"content",data:{...(c.data||{}),draft:false}});
   const briefedElsewhere=(campaigns||[]).filter(c=>c.stage!=="brief"&&!isArchived(c)&&c.data?.brief).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
   const briefArchived=(campaigns||[]).filter(c=>isArchived(c)&&c.data?.brief).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
   const done=(campaigns||[]).filter(c=>c.stage!=="brief"&&c.data?.brief);
@@ -3329,6 +3344,7 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns:
     const _tone=!brief?ROW_TONE.attention:(c.stage==="done"?ROW_TONE.done:ROW_TONE.approved);
     const isSel=selected.has(c.id);
     const stageMeta=!brief?(c.data?.importDraft?{label:"Imported · add details",color:"#B45309",bg:"#FEF3C7"}:{label:"No brief yet",color:"#B91C1C",bg:"#FEF2F2"})
+      :c.data?.draft?{label:"Draft",color:"#B45309",bg:"#FEF3C7"}
       :c.stage==="content"?{label:"In copy",color:C.purple,bg:C.purple+"14"}
       :c.stage==="brand_review"?{label:"Brand review",color:"#9333EA",bg:"#F3E8FF"}
       :c.stage==="design"?{label:"In design",color:C.teal,bg:C.teal+"14"}
@@ -3475,14 +3491,21 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns:
           </div>
           {bulkGen?<Spin label=""/>:<Btn onClick={runBulkGenerate}><Sparkles size={15}/>Generate all copy</Btn>}
         </div>}
-        {allBriefs.length>0&&<CollapsibleSection title="New assets · awaiting brief" count={allBriefs.length} color={C.coral} icon={<Sparkles size={15}/>} extra={
+        {awaiting.length>0&&<CollapsibleSection title="New assets · awaiting brief" count={awaiting.length} color={C.coral} icon={<Sparkles size={15}/>} extra={
           <label style={{display:"inline-flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:11.5}}>
-            <input type="checkbox"checked={allBriefs.length>0&&allBriefs.every(c=>selected.has(c.id))}onChange={e=>selectMany(allBriefs.map(c=>c.id),e.target.checked)}style={{width:15,height:15,cursor:"pointer",accentColor:C.coral}}/>
+            <input type="checkbox"checked={awaiting.length>0&&awaiting.every(c=>selected.has(c.id))}onChange={e=>selectMany(awaiting.map(c=>c.id),e.target.checked)}style={{width:15,height:15,cursor:"pointer",accentColor:C.coral}}/>
             <span style={{color:C.sub,fontWeight:600}}>Select all</span>
           </label>}>
-          {groupByDate(allBriefs).map(([date,items])=><div key={date}style={{marginBottom:10}}>
+          {groupByDate(awaiting).map(([date,items])=><div key={date}style={{marginBottom:10}}>
             <DateGroupHeader date={date}count={items.length}color={C.coral}/>
             <Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><React.Fragment key={c.id}>{AssetRow({c})}</React.Fragment>)}</Card>
+          </div>)}
+        </CollapsibleSection>}
+        {(isBusiness(me)||isSuper(me))&&drafts.length>0&&<CollapsibleSection title="Drafts" count={drafts.length} color="#B45309" icon={<FileText size={15}/>} defaultOpen={true}>
+          <div style={{fontSize:12,color:C.sub,margin:"0 2px 8px"}}>Saved by the business team — the creative team can't see these until you publish.</div>
+          {groupByDate(drafts).map(([date,items])=><div key={date}style={{marginBottom:10}}>
+            <DateGroupHeader date={date}count={items.length}color="#B45309"/>
+            <Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><React.Fragment key={c.id}>{AssetRow({c})}<div style={{padding:"8px 18px",borderTop:`1px dashed ${C.line}`,background:"#FFFBF5",display:"flex",justifyContent:"flex-end",gap:8,alignItems:"center"}}><span style={{fontSize:11.5,color:C.sub,marginRight:"auto"}}>Draft — not visible to the creative team yet.</span><Btn small onClick={()=>publishDraft(c)}><Check size={14}/>Publish to creative team</Btn></div></React.Fragment>)}</Card>
           </div>)}
         </CollapsibleSection>}
         {briefedElsewhere.length>0&&(()=>{
@@ -3597,11 +3620,11 @@ function SelfBriefForm({active,patch,audiences,onDone,onBack}){
   const sugg=moreAud?allSugg:allSugg.slice(0,6);
   const pickAud=(a)=>{sync("audience_label",a.name);setSelf(s=>({...s,trigger:(s.trigger&&s.trigger.trim())?s.trigger:(a.trigger_event||""),insight:(s.insight&&s.insight.trim())?s.insight:(a.key_insight||"")}));};
   const ready=draft.name&&draft.channel&&draft.audience_label&&self.trigger.trim()&&self.insight.trim()&&self.idea.trim();
-  const save=()=>{
+  const save=(asDraft)=>{
     patch(active.id,{
       ...draft,
-      stage:"content",
-      data:{...(active.data||{}),brief:{strategicInsight:self.insight,trigger:self.trigger,idea:self.idea,proofPoints:[],pillar:"",whatsappNote:"Written by business team",source:"self"}}
+      stage:asDraft?"brief":"content",
+      data:{...(active.data||{}),draft:!!asDraft,brief:{strategicInsight:self.insight,trigger:self.trigger,idea:self.idea,proofPoints:[],pillar:"",whatsappNote:"Written by business team",source:"self"}}
     });
     onDone();
   };
@@ -3644,9 +3667,10 @@ function SelfBriefForm({active,patch,audiences,onDone,onBack}){
     <Field label="Objective"value={draft.objective}onChange={v=>sync("objective",v)}/>
     <Field label="The idea (single-minded message)"textarea value={self.idea}onChange={v=>setSelf(s=>({...s,idea:v}))}/>
     <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-      <Btn onClick={save}disabled={!ready}><Check size={16}/>Save brief</Btn>
+      <Btn onClick={()=>save(false)}disabled={!ready}><Check size={16}/>Publish brief</Btn>
+      <Btn variant="ghost"onClick={()=>save(true)}disabled={!draft.name}><FileText size={15}/>Save as draft</Btn>
       <Btn variant="ghost"onClick={onBack}>Back</Btn>
-      {!ready&&<span style={{fontSize:11.5,color:C.sub}}>Fill name, channel, audience, trigger, insight and the idea to save.</span>}
+      {!ready&&<span style={{fontSize:11.5,color:C.sub}}>Fill name, channel, audience, trigger, insight and the idea to publish — or Save as draft to finish later (the creative team won't see it until you publish).</span>}
     </div>
   </div>;
 }
@@ -3781,6 +3805,7 @@ function BriefSummaryCard({active,activeBrief,copyRules,busy,refineFor,gen,opts,
 
 // ── Comment thread (copy or design context) ───────────────────────────────────
 function CommentThread({campaignId,context,me,compact}){
+  return null; // comments feature hidden app-wide
   const[items,setItems]=useState(null);
   const[draft,setDraft]=useState("");
   const[replyTo,setReplyTo]=useState(null);
@@ -3912,9 +3937,6 @@ function BrandReviewTab({campaigns,patch,me,toast,onOpen,setTab}){
             <Btn variant="ghost"onClick={()=>reject(c)}><X size={15}/>Send back to copy</Btn>
           </>}
         </div>}
-        {!reviewedRow&&canBrandApprove(me)&&<div style={{fontSize:11.5,color:C.sub,marginBottom:10}}>Send-back returns it to the copy team. Add any specific changes as a comment below — they'll see it.</div>}
-
-        <CommentThread campaignId={c.id}context="copy"me={me}/>
       </div>}
     </div>;
   };
@@ -4493,12 +4515,9 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
                 <Btn small variant="ghost"onClick={brandReject}><X size={13}/>Send back to copy</Btn>
               </>}
             </div>}
-            {canBrandReview&&<div style={{fontSize:11,color:C.sub,marginTop:7}}>Add specific changes as a comment below — the copy team sees it on send-back.</div>}
           </div>}
           {c.stage!=="brand_review"&&c.brand_approver&&<div style={{marginTop:12,fontSize:11,color:"#9333EA",fontWeight:700,display:"flex",alignItems:"center",gap:5}}><CheckCircle2 size={12}/>Brand approved by {c.brand_approver}</div>}
 
-          {/* Comments — available to everyone, always */}
-          <CommentThread campaignId={c.id}context="copy"me={me}/>
           {manualMode&&<ManualCopyForm initial={manualMode==="edit"?o:null}channel={c.channel}onSave={saveManual}onCancel={()=>setManualMode(null)}/>}
         </div>}
       </div>;
@@ -4749,7 +4768,7 @@ function ManualCopyForm({initial,channel,onSave,onCancel}){
   </div>;
 }
 
-function ApprovedCopyCard({copy,channel,product,image}){
+function ApprovedCopyCard({copy,channel,product,image,hideImageCopy}){
   const[showMock,setShowMock]=useState(false);
   const[showPush,setShowPush]=useState(false);
   const isWA=/whatsapp/i.test(channel||"");
@@ -4765,9 +4784,9 @@ function ApprovedCopyCard({copy,channel,product,image}){
         <CopyBtn text={()=>copyTextFromOption(copy)}/>
       </div>
     </div>
-    {/* Image copy — on-image overlay text */}
-    {copy.header&&<div style={{marginBottom:8}}>
-      <div style={{fontSize:9,fontWeight:800,color:"#7C3AED",textTransform:"uppercase",letterSpacing:.6,marginBottom:3}}>Image copy</div>
+    {/* Image copy — on-image overlay text (hidden for WhatsApp finalized: it's baked into the design) */}
+    {copy.header&&!hideImageCopy&&<div style={{marginBottom:8}}>
+      <div style={{fontSize:9,fontWeight:800,color:"#7C3AED",textTransform:"uppercase",letterSpacing:.6,marginBottom:3}}>{isPush?"Headline":"Image copy"}</div>
       <div style={{fontWeight:700,fontSize:13.5,lineHeight:1.4,color:"#1E1B4B",whiteSpace:"pre-line"}}>{copy.header}</div>
     </div>}
     {/* RTB on the image — proof points to place on the creative, separate from the image copy */}
@@ -4777,7 +4796,7 @@ function ApprovedCopyCard({copy,channel,product,image}){
     </div>}
     {/* Body copy — the message caption */}
     {copy.body&&<div>
-      <div style={{fontSize:9,fontWeight:800,color:"#0F766E",textTransform:"uppercase",letterSpacing:.6,marginBottom:3}}>Body copy</div>
+      <div style={{fontSize:9,fontWeight:800,color:"#0F766E",textTransform:"uppercase",letterSpacing:.6,marginBottom:3}}>{isPush?"Subheadline":"Body copy"}</div>
       <div style={{fontSize:12,color:"#4C1D95",lineHeight:1.5,whiteSpace:"pre-line"}}>{copy.body}</div>
     </div>}
     {copy.cta&&<div style={{marginTop:8,fontSize:11,fontWeight:700,color:"#5B21B6"}}>{copy.cta} →</div>}
@@ -7138,8 +7157,6 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
           <FinalDesignUpload c={c}d={d}patch={patch}me={me}/>
         </div>}
         <FeedbackBar stage="design"by={me.name}onSave={saveFeedback}/>
-        {/* Art direction comments — design context, available to everyone */}
-        <CommentThread campaignId={c.id}context="design"me={me}/>
         {c.stage==="done"&&(isBusiness(me)||isSuper(me))&&<ReportUploader campaign={c}me={me}onUploaded={()=>patch(c.id,{has_report:true})}/>}
       </div>}
     </div>;
@@ -7221,6 +7238,17 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate}){
     const canManage=isSuper(me)||isBusiness(me);
     const[emailing,setEmailing]=useState(false);
     const assetReadySent=!!c.data?.assetReadySentAt;
+    const distReq=c.data?.distributionRequested;
+    const isRetailWA=/retail/i.test(c.crm_type||"")&&/whatsapp/i.test(c.channel||"");
+    const[reqDist,setReqDist]=useState(false);
+    const requestDistribution=async()=>{setReqDist(true);
+      try{
+        const r=await api.post("/api/campaigns/"+c.id+"/request-distribution",{});
+        patch(c.id,{data:{...(c.data||{}),distributionRequested:(r&&r.campaign&&r.campaign.data&&r.campaign.data.distributionRequested)||{at:new Date().toISOString()}}});
+        if(typeof toast!=="undefined"&&toast){const miss=(r&&r.missing)||[];toast(miss.length?("Requested — but no user found for: "+miss.join(", ")):("Distribution requested — Rahul & Shubham notified"+((r&&r.emailConfigured)?" (task + email)":" (task)")),miss.length?"error":"success");}
+      }catch(e){if(typeof toast!=="undefined"&&toast)toast("Couldn't request distribution — try again","error");}
+      setReqDist(false);
+    };
     const notifyAssetReady=async()=>{setEmailing(true);
       try{
         const prod=c.product||c.name||"An asset";
@@ -7264,8 +7292,8 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate}){
       {/* Expanded detail */}
       {isOpen&&<div style={{padding:"0 18px 16px"}}>
         {brief&&<div style={{fontSize:12.5,color:C.ink,marginBottom:8,lineHeight:1.5,fontWeight:600}}>{brief.idea}</div>}
-        {copy&&<ApprovedCopyCard copy={copy}channel={c.channel}product={c.product}image={c.data?.design?.generatedImage||c.data?.design?.finalFile||null}/>}
-        {approvedPrompt&&<div style={{marginBottom:8,background:"#fff",borderRadius:8,padding:"10px 13px",borderLeft:"3px solid "+C.teal,border:`1px solid ${C.line}`}}>
+        {copy&&<ApprovedCopyCard copy={copy}channel={c.channel}product={c.product}image={c.data?.design?.generatedImage||c.data?.design?.finalFile||null}hideImageCopy={/whatsapp/i.test(c.channel||"")}/>}
+        {approvedPrompt&&!/whatsapp/i.test(c.channel||"")&&<div style={{marginBottom:8,background:"#fff",borderRadius:8,padding:"10px 13px",borderLeft:"3px solid "+C.teal,border:`1px solid ${C.line}`}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
             <div style={{fontSize:10,fontWeight:700,color:C.teal,textTransform:"uppercase",letterSpacing:.5}}>Image prompt — {approvedPrompt.label}</div>
             <CopyBtn text={()=>approvedPrompt.prompt||""}label="Copy prompt"/>
@@ -7299,16 +7327,19 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate}){
               :null}
           <span style={{fontSize:11,color:C.sub}}>Alerts brand, business &amp; marketing (in-app always; email if SMTP configured).</span>
         </div>}
+        {isRetailWA&&(finalFile||design.finalLink)&&<div style={{margin:"8px 0",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:10,padding:"10px 13px"}}>
+          <Send size={15}color={C.coral}/>
+          <span style={{fontSize:12.5,color:C.ink,fontWeight:600}}>Retail · WhatsApp — needs distribution.</span>
+          {distReq
+            ?<span style={{fontSize:11.5,fontWeight:700,color:C.green,display:"inline-flex",alignItems:"center",gap:5}}><CheckCircle2 size={13}/>Distribution requested{distReq.at?" · "+fmtDate(distReq.at):""}</span>
+            :(reqDist?<Spin label="Sending…"/>:<button onClick={requestDistribution}style={{fontSize:12,fontWeight:800,color:"#fff",background:C.coral,border:"none",borderRadius:7,padding:"6px 12px",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}><Send size={13}/>Request for distribution</button>)}
+          <span style={{fontSize:11,color:C.sub}}>Tasks &amp; emails Rahul Bharadwaj and Shubham Gandhi to send it out.</span>
+        </div>}
         <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginTop:6}}>
-          <button onClick={()=>reactivate(c)}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.ink,fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}><RotateCcw size={12}/>Reactivate</button>
-          {["super_admin","business","design_lead","design_team"].includes(_r(me))&&onDuplicate&&<button onClick={()=>onDuplicate(c)}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.ink,fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}><Copy size={12}/>Duplicate</button>}
-          {canManage&&<button onClick={()=>{if(window.confirm("Archive this asset? It moves to the Archive tab."))patch(c.id,{data:{archived:true}});}}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.sub,fontWeight:600}}>Archive</button>}
-          {canManage&&<button onClick={()=>onDelete&&onDelete(c.id)}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:"1px solid #FECACA",background:"#FFF5F5",cursor:"pointer",color:"#B91C1C",fontWeight:600}}>Delete</button>}
-        </div>
-        <div style={{marginTop:14,paddingTop:12,borderTop:`1px solid ${C.line}`}}>
-          <div style={{fontSize:11,fontWeight:800,color:C.ink,textTransform:"uppercase",letterSpacing:.5,marginBottom:6,display:"flex",alignItems:"center",gap:5}}><MessageSquare size={12}/>Final asset feedback</div>
-          {isExec(me)&&<div style={{fontSize:11.5,color:C.sub,marginBottom:6}}>Your comment here alerts the brand &amp; design leads (in-app, plus email if configured).</div>}
-          <CommentThread campaignId={c.id}context="final"me={me}/>
+          {!isBusiness(me)&&<button onClick={()=>reactivate(c)}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.ink,fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}><RotateCcw size={12}/>Reactivate</button>}
+          {["super_admin","design_lead","design_team"].includes(_r(me))&&onDuplicate&&<button onClick={()=>onDuplicate(c)}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.ink,fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}><Copy size={12}/>Duplicate</button>}
+          {isSuper(me)&&<button onClick={()=>{if(window.confirm("Archive this asset? It moves to the Archive tab."))patch(c.id,{data:{archived:true}});}}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.sub,fontWeight:600}}>Archive</button>}
+          {isSuper(me)&&<button onClick={()=>onDelete&&onDelete(c.id)}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:"1px solid #FECACA",background:"#FFF5F5",cursor:"pointer",color:"#B91C1C",fontWeight:600}}>Delete</button>}
         </div>
       </div>}
     </div>;
@@ -7519,29 +7550,7 @@ function ArchiveTab({campaigns,patch,onOpen,me,onDelete}){
 }
 
 
-function RulesDrawer({onClose,copyRules,promptRules,addRule,toggleRule,delRule,me,feedback,inline}){
-  const[suggestions,setSuggestions]=useState(null);
-  const[sugBusy,setSugBusy]=useState(false);
-  const[dismissed,setDismissed]=useState([]);
-
-  const suggestFromFeedback=async()=>{
-    setSugBusy(true);setSuggestions(null);
-    try{
-      const fbText=(feedback||[]).slice(0,10).map(f=>`[${f.stage}] ${f.text}`).join("\n")||"(no feedback yet)";
-      const existingCopy=copyRules.map(r=>r.text).join("\n");
-      const existingPrompt=promptRules.map(r=>r.text).join("\n");
-      const sys=`You are a CRM creative strategist for HUFT (Indian pet care brand). Analyse the team's generation feedback and suggest new rulebook rules to improve future AI outputs. Return ONLY JSON: {copy:[string,string,string],prompt:[string,string,string]} — 3 copy rules and 3 design/prompt rules. Rules must be concise, actionable, and not duplicate existing rules.`;
-      const usr=`Recent feedback:\n${fbText}\n\nExisting copy rules:\n${existingCopy}\n\nExisting prompt rules:\n${existingPrompt}`;
-      const j=await callClaude(sys,usr,true);
-      setSuggestions(j);
-    }catch(e){console.error(e);}
-    setSugBusy(false);
-  };
-
-  const accept=(type,text)=>{addRule(type,text);setDismissed(d=>[...d,text]);};
-  const dismiss=(text)=>setDismissed(d=>[...d,text]);
-
-  const Section=({title,color,rules,type,placeholder})=>{
+function RuleSection({title,color,rules,type,placeholder,addRule,toggleRule,delRule,me,suggestions,dismissed,accept,dismiss}){
     const[t,setT]=useState("");
     const add=()=>{if(!t.trim())return;addRule(type,t.trim());setT("");};
     const sugs=(suggestions?suggestions[type==="copy"?"copy":"prompt"]||[]:[]).filter(s=>!dismissed.includes(s)&&!rules.find(r=>r.text===s));
@@ -7568,7 +7577,30 @@ function RulesDrawer({onClose,copyRules,promptRules,addRule,toggleRule,delRule,m
         {canBrandApprove(me)&&<button onClick={()=>delRule(r.id)}style={{border:"none",background:"transparent",cursor:"pointer",color:C.sub}}><Trash2 size={15}/></button>}
       </div>)}
     </div>;
+}
+
+function RulesDrawer({onClose,copyRules,promptRules,addRule,toggleRule,delRule,me,feedback,inline}){
+  const[suggestions,setSuggestions]=useState(null);
+  const[sugBusy,setSugBusy]=useState(false);
+  const[dismissed,setDismissed]=useState([]);
+
+  const suggestFromFeedback=async()=>{
+    setSugBusy(true);setSuggestions(null);
+    try{
+      const fbText=(feedback||[]).slice(0,10).map(f=>`[${f.stage}] ${f.text}`).join("\n")||"(no feedback yet)";
+      const existingCopy=copyRules.map(r=>r.text).join("\n");
+      const existingPrompt=promptRules.map(r=>r.text).join("\n");
+      const sys=`You are a CRM creative strategist for HUFT (Indian pet care brand). Analyse the team's generation feedback and suggest new rulebook rules to improve future AI outputs. Return ONLY JSON: {copy:[string,string,string],prompt:[string,string,string]} — 3 copy rules and 3 design/prompt rules. Rules must be concise, actionable, and not duplicate existing rules.`;
+      const usr=`Recent feedback:\n${fbText}\n\nExisting copy rules:\n${existingCopy}\n\nExisting prompt rules:\n${existingPrompt}`;
+      const j=await callClaude(sys,usr,true);
+      setSuggestions(j);
+    }catch(e){console.error(e);}
+    setSugBusy(false);
   };
+
+  const accept=(type,text)=>{addRule(type,text);setDismissed(d=>[...d,text]);};
+  const dismiss=(text)=>setDismissed(d=>[...d,text]);
+
 
   const[seeding,setSeeding]=useState(false);
   const seedRules=async()=>{if(!window.confirm("This will replace ALL rules with the default HUFT rulebook. Continue?"))return;setSeeding(true);try{const r=await api.post("/api/rules/seed",{});window.location.reload();}catch(e){alert("Seed failed: "+e.message);}setSeeding(false);};
@@ -7583,8 +7615,8 @@ function RulesDrawer({onClose,copyRules,promptRules,addRule,toggleRule,delRule,m
     </div>
     {canBrandApprove(me)&&(copyRules.length+promptRules.length)<5&&<div style={{marginBottom:14,padding:"10px 14px",background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}><div><div style={{fontSize:13,fontWeight:700,color:"#B91C1C"}}>Rulebook is empty</div><div style={{fontSize:12,color:"#7F1D1D",marginTop:2}}>Load the default HUFT brand rules to get started.</div></div>{seeding?<Spin label="Seeding…"/>:<Btn small onClick={seedRules}style={{background:"#B91C1C",color:"#fff"}}>Load defaults</Btn>}</div>}
     {canBrandApprove(me)&&(copyRules.length+promptRules.length)>=5&&<div style={{marginBottom:14,textAlign:"right"}}><button onClick={seedRules}style={{fontSize:11.5,color:C.sub,background:"none",border:"none",cursor:"pointer",textDecoration:"underline"}}>↺ Reset to default rules</button></div>}
-    <Section title="CRM Copy rules"color={C.coral}rules={copyRules}type="copy"placeholder='e.g. Never say "cheap"; lead with value'/>
-    <Section title="Design Prompt rules"color={C.teal}rules={promptRules}type="prompt"placeholder="e.g. Always real Indian-breed pets"/>
+    <RuleSection title="CRM Copy rules"color={C.coral}rules={copyRules}type="copy"placeholder='e.g. Never say "cheap"; lead with value'addRule={addRule}toggleRule={toggleRule}delRule={delRule}me={me}suggestions={suggestions}dismissed={dismissed}accept={accept}dismiss={dismiss}/>
+    <RuleSection title="Design Prompt rules"color={C.teal}rules={promptRules}type="prompt"placeholder="e.g. Always real Indian-breed pets"addRule={addRule}toggleRule={toggleRule}delRule={delRule}me={me}suggestions={suggestions}dismissed={dismissed}accept={accept}dismiss={dismiss}/>
   </Drawer>;
 }
 
