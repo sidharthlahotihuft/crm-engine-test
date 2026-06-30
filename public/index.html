@@ -109,7 +109,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v32.8 - Business team no longer sees the Copy or Design tabs (briefs + finalized assets only). My Tasks now shows the concrete action needed from the logged-in person (Write the brief / Write the copy / Build the design, etc.) as a solid action chip, and only lists items that are actually on them — business no longer sees in-flight team work like 'In design'. Builds on v32.7 (model A/B).";
+const BUILD="v33.0 - My Tasks redesigned for leads/super: leads with a Needs you section (their own pending approvals) shown first, then the rest of the pipeline as monday.com-style oversight sections grouped by state (Needs copy, In design, pending approvals, etc.), each collapsible with a coloured header + count. Team/business keep their action list. Builds on v32.9 (brand books).";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -616,7 +616,7 @@ const C={navy:"#241A14",navy2:"#32241B",coral:"#E8632A",coralSoft:"#FBE7DA",
 const BRAND_CONTEXT = `
 ════════════════════════════════════════════════════════
 HUFT BRAND INTELLIGENCE — MASTER CONTEXT v2.0
-Source: Brand Architecture, Communication Playbook, Edibles Brand Positioning, Brand Intelligence Brief
+Source: Brand Architecture, Communication Playbook, Edibles Brand Positioning, Brand Intelligence Brief, Sara's Brand Manual, Hearty Brand Book, Master & Sub-Brand Creatives
 ════════════════════════════════════════════════════════
 
 ▌ BRAND OVERVIEW
@@ -833,7 +833,29 @@ CRM OPERATIONS
 Campaign naming: MonYY_SubBrand/Product_Hook_AudienceCode. Example: Jun26_Meowsi_Winback_LapsedCat
 CRM types: D2C (all channels, app/web links OK) vs Retail (WhatsApp only, NO web/app links, store context).
 Campaign objectives: Conversion (trial/first purchase), Upsell (existing buyer to higher-tier), Retention (loyalist re-engagement), Win-back (lapsed 60–180 days), Education (awareness, ingredient truth), Launch (new product/SKU introduction).
-CRM pillars: Trust 30% · Importance 40% · Edutainment 20% · Brand Values 10%.`.trim();
+CRM pillars: Trust 30% · Importance 40% · Edutainment 20% · Brand Values 10%.
+
+════════════════════════════════════════
+VISUAL IDENTITY & CREATIVE REFERENCE (from the brand books)
+════════════════════════════════════════
+
+▐ SARA'S WHOLESOME FOOD — VISUAL (Brand Manual)
+Palette: primary deep navy #102242, secondary warm cream #E8C09B. Variant accents — Chicken & Turkey #FAAB18 (yellow), Lamb & Apple #CC1C6A (pink), Chicken & Brown Rice #DC5829 (orange), Paneer & Eggs #00A6B4 (teal). Premium variants sit on a navy field; Classic variants on a cream field.
+Fonts: James Stroker (rugged display), Misses (the "Sara's" script wordmark), Personal Services, Korolev Rounded Medium (body / percentages). "WHOLESOME FOOD" is bold rounded caps with a small bone divider beneath the wordmark.
+Look & ingredients: a real farm-fresh bowl is the hero, with raw ingredient cut-outs (meat, spinach, carrot, pumpkin, apple, egg, paneer), hand-drawn veg line-art and flourishes, and on-pack ratio call-outs (e.g. 60% meat / 40% fruit-veg & supplements; human-grade ingredients). Tags: "Grain Free" (premium) / "Classic", "Made with farm fresh ingredients", "100% Fresh · All Natural · Complete Meal", "Ready to eat — cut + open + serve". Process story: fresh raw ingredients → slow-cooked in small batches → packed & retort (shelf-stable, no preservatives) → enjoy.
+
+▐ HEARTY — ORIGIN & PERSONALITY (Brand Book)
+Origin: born to fix India's economised, sub-standard kibble; now made in-house in purpose-built facilities with a dog-nutrition expert. Gently oven-baked, NOT extruded; real fruit/veg/Indian superherbs, not powders; fresh meat, not leftovers; expert-formulated, not commercial. 60% freshest meat.
+Personality keywords: warm, confident, proactive, transparent, empathetic, knowledgeable, inclusive; fun, youthful, observant, solution-oriented. "There's heart in everything Hearty."
+
+▐ MASTER & CAMPAIGN CREATIVES (Master deck)
+Master line: "Where Pets Are Family." Sub-brand creative families: Sara's (SWF), Meowsi, Hearty, Treats.
+Campaign creative types and their go-to copy shapes:
+- Sale: discount-led — e.g. "FLAT XX% OFF" + "Extra YY%" stacked; keep the offer the hero (use placeholders, never invent the number).
+- Treats ("TREAT THEM RIGHT"): "TREAT THEM RIGHT with real superfoods!" / "…with high protein!" / "…with 0 artificial preservatives!" — dog treats from Rs.XX, cat treats from Rs.XX [confirm].
+- New Store Opening (NSO): "NOW OPEN — your pet's second home! New HUFT Store & Spa, <city>"; or a hype angle, "Come see what the hype is about."
+- Retail & Spa: flyers, vouchers, stall & wall branding, billboards — store-experience led, no app/web links.
+`.trim();
 
 /* ===== Reasons-to-believe (RTBs) by product/category ==================== */
 // Tapped in the brief, woven into copy body. Users can multi-select + add custom.
@@ -2306,33 +2328,57 @@ function ApprovalsTab({campaigns,onOpen,me,team,reload}){
   </div>;
 }
 function MyTasksTab({campaigns,onOpen,me,team}){
-  const tasks=computeMyTasks(campaigns,me);
   const stageTab=(c)=>c.stage==="brief"?"brief":c.stage==="content"||c.stage==="brand_review"?"content":c.stage==="design"?"design":"done";
-  const overdue=tasks.filter(c=>isOverdueD(dueForCampaign(c)));
-  const today=tasks.filter(c=>isDueTodayD(dueForCampaign(c)));
+  const lead=seesAll(me);
+  const all=computeMyTasks(campaigns,me); // seesAll → whole pipeline; team/business → only their actionable items
+  // Personal = what THIS person must act on. Leads/super → their pending approvals; teams/business → their action items.
+  const APPROVE_LABEL={copy:"Approve copy",design:"Approve design",asset:"Approve full asset",final:"Final sign-off"};
+  const mine=lead
+    ?computeApprovals(campaigns,me).map(a=>({c:a.c,label:APPROVE_LABEL[a.action]||"Review",col:"#9333EA",tab:a.tab}))
+    :all.map(c=>{const m=myAction(c,me);return{c,label:(m&&m.label)||"Open",col:(m&&m.col)||C.coral,tab:stageTab(c)};});
+  const mineIds=new Set(mine.map(m=>m.c.id));
+  const oversight=lead?all.filter(c=>!mineIds.has(c.id)):[];
+  // Group oversight by pipeline state (monday.com-style sections).
+  const ORDER=["Needs brief","Brief ready","Needs copy","Copy in progress","Copy \u00b7 pending approval","In design","Design \u00b7 pending approval","Full-asset review","Design ready","Final sign-off"];
+  const groups={};
+  oversight.forEach(c=>{const s=stateOfCampaign(c);(groups[s.t]||(groups[s.t]={col:s.col,items:[]})).items.push(c);});
+  const ordered=Object.keys(groups).sort((x,y)=>{const ix=ORDER.indexOf(x),iy=ORDER.indexOf(y);return (ix<0?99:ix)-(iy<0?99:iy);});
+  const overdue=all.filter(c=>isOverdueD(dueForCampaign(c))).length;
+  const today=all.filter(c=>isDueTodayD(dueForCampaign(c))).length;
+
+  const Row=({c,tab,action})=>{const u=urgencyOf(c),s=stateOfCampaign(c);return<div onClick={()=>onOpen(c.id,tab||stageTab(c))}style={{display:"flex",alignItems:"center",gap:10,padding:"13px 18px",borderBottom:`1px solid ${C.line}`,cursor:"pointer",background:"#fff"}}>
+    <div style={{minWidth:0,flex:1}}>
+      <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
+        <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{humanizeToken(c.product)||parseName(c.name).product||c.name}</span>
+        <span style={{fontSize:11.5,color:C.sub}}>· {normCrmType(c.crm_type)} · {c.channel||"WhatsApp"}</span>
+        {categoryOf(c)&&<span style={{fontSize:10.5,color:C.sub,background:C.paper,border:`1px solid ${C.line}`,padding:"1px 7px",borderRadius:999}}>{categoryOf(c)}</span>}
+      </div>
+      {dueForCampaign(c)&&<div style={{fontSize:11.5,color:C.sub,marginTop:2}}>Due {fmtDate(dueForCampaign(c))}</div>}
+      <WhoChips c={c}me={me}team={team}/>
+    </div>
+    {u&&<span style={{fontSize:10.5,fontWeight:800,color:u.col,background:u.bg,padding:"2px 8px",borderRadius:999,flexShrink:0}}>{u.t}</span>}
+    {action
+      ?<span style={{fontSize:10.5,fontWeight:800,color:"#fff",background:action.col,padding:"2px 9px",borderRadius:999,flexShrink:0}}>{action.label}</span>
+      :<span style={{fontSize:10.5,fontWeight:700,color:s.col,background:s.col+"18",padding:"2px 8px",borderRadius:999,flexShrink:0}}>{s.t}</span>}
+    <ChevronRight size={16}color={C.sub}style={{flexShrink:0}}/>
+  </div>;};
+  const wrap=(rows)=><Card style={{padding:0,overflow:"hidden"}}>{rows}</Card>;
+
   return<div>
-    <div style={{marginBottom:16}}><Eyebrow>My Tasks</Eyebrow><h1 style={{margin:"4px 0 0",fontSize:24,fontWeight:800}}>{seesAll(me)?"Tasks in the pipeline":"Your tasks"}</h1>
-      <div style={{fontSize:13.5,color:C.sub,marginTop:4}}>{tasks.length} open · {overdue.length} overdue · {today.length} due today. Overdue and due-today are sorted first.</div></div>
-    {tasks.length===0
-      ?<Card><Empty icon={<ClockIcon size={26}color={C.sub}/>}title="Nothing on your plate"sub="New work assigned to you will show up here."/></Card>
-      :<Card style={{padding:0,overflow:"hidden"}}>
-        {tasks.map(c=>{const s=stateOfCampaign(c),u=urgencyOf(c),act=seesAll(me)?null:myAction(c,me);return<div key={c.id}onClick={()=>onOpen(c.id,stageTab(c))}style={{display:"flex",alignItems:"center",gap:10,padding:"13px 18px",borderBottom:`1px solid ${C.line}`,cursor:"pointer",background:"#fff"}}>
-          <div style={{minWidth:0,flex:1}}>
-            <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
-              <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{humanizeToken(c.product)||parseName(c.name).product||c.name}</span>
-              <span style={{fontSize:11.5,color:C.sub}}>· {normCrmType(c.crm_type)} · {c.channel||"WhatsApp"}</span>
-              {categoryOf(c)&&<span style={{fontSize:10.5,color:C.sub,background:C.paper,border:`1px solid ${C.line}`,padding:"1px 7px",borderRadius:999}}>{categoryOf(c)}</span>}
-            </div>
-            {dueForCampaign(c)&&<div style={{fontSize:11.5,color:C.sub,marginTop:2}}>Due {fmtDate(dueForCampaign(c))}</div>}
-            <WhoChips c={c}me={me}team={team}/>
-          </div>
-          {u&&<span style={{fontSize:10.5,fontWeight:800,color:u.col,background:u.bg,padding:"2px 8px",borderRadius:999,flexShrink:0}}>{u.t}</span>}
-          {act
-            ?<span style={{fontSize:10.5,fontWeight:800,color:"#fff",background:act.col,padding:"2px 9px",borderRadius:999,flexShrink:0}}>{act.label}</span>
-            :<span style={{fontSize:10.5,fontWeight:700,color:s.col,background:s.col+"18",padding:"2px 8px",borderRadius:999,flexShrink:0}}>{s.t}</span>}
-          <ChevronRight size={16}color={C.sub}style={{flexShrink:0}}/>
-        </div>;})}
-      </Card>}
+    <div style={{marginBottom:16}}><Eyebrow>My Tasks</Eyebrow><h1 style={{margin:"4px 0 0",fontSize:24,fontWeight:800}}>{lead?"Your tasks & the pipeline":"Your tasks"}</h1>
+      <div style={{fontSize:13.5,color:C.sub,marginTop:4}}>{mine.length} on you{lead?` \u00b7 ${oversight.length} in the pipeline`:""} · {overdue} overdue · {today} due today.</div></div>
+    {mine.length===0&&oversight.length===0
+      ?<Card><Empty icon={<ClockIcon size={26}color={C.sub}/>}title="Nothing on your plate"sub="New work that needs you will show up here."/></Card>
+      :<React.Fragment>
+        <CollapsibleSection title={lead?"Needs you":"Your tasks"}count={mine.length}color={C.coral}icon={<ClockIcon size={15}/>}defaultOpen={true}>
+          {mine.length===0
+            ?<div style={{padding:"14px 18px",fontSize:13,color:C.sub,background:"#fff",border:`1px solid ${C.line}`,borderRadius:11}}>Nothing needs your sign-off right now — the pipeline below is for oversight.</div>
+            :wrap(mine.map(m=><Row key={m.c.id}c={m.c}tab={m.tab}action={{label:m.label,col:m.col}}/>))}
+        </CollapsibleSection>
+        {lead&&ordered.map(label=>{const g=groups[label];return<CollapsibleSection key={label}title={label}count={g.items.length}color={g.col}defaultOpen={false}>
+          {wrap(g.items.map(c=><Row key={c.id}c={c}/>))}
+        </CollapsibleSection>;})}
+      </React.Fragment>}
   </div>;
 }
 function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
@@ -3907,6 +3953,14 @@ function BrandStylingTab({me,toast}){
         <div style={{fontSize:13.5,color:C.sub,marginTop:4}}>The composer auto-applies these to a brief's sub-brand — headline / sub-headline / CTA fonts, palette, and the sub-brand lockup.</div></div>
       {canEdit&&<Btn onClick={()=>setForm(blank(""))}><Plus size={16}/>New sub-brand</Btn>}
     </div>
+    <Card style={{marginBottom:16,background:C.paper}}>
+      <div style={{fontSize:12.5,fontWeight:800,color:C.ink,marginBottom:6,display:"flex",alignItems:"center",gap:7}}><FileText size={15}/>Source brand books</div>
+      <div style={{fontSize:12.5,color:C.sub,lineHeight:1.6,marginBottom:9}}>These are the seeds for the styles below and for the brand voice & visual cues the engine references in every generation:</div>
+      <div style={{display:"grid",gap:6}}>
+        {[["Sara's Brand Manual","palette, fonts, packaging & ingredient look"],["Edibles Brand Positioning","Sara's positioning, taglines, variant cheat-sheet"],["Hearty Brand Book","origin story, vision/mission, personality"],["Master & Sub-Brand Creatives","campaign types — Sale, NSO, Retail & Spa, Treats"]].map(([n,d])=><div key={n}style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:12.5}}><FileText size={13}color={C.coral}style={{flexShrink:0,marginTop:2}}/><div><b style={{color:C.ink}}>{n}</b> <span style={{color:C.sub}}>— {d}</span></div></div>)}
+      </div>
+      <div style={{fontSize:11.5,color:C.sub,marginTop:9,fontStyle:"italic"}}>Sara's Wholesome style is seeded from the manual. Add the others from their books.</div>
+    </Card>
     {form&&<Card style={{marginBottom:16}}>
       <div style={{fontWeight:800,fontSize:15,marginBottom:12}}>{styles.find(s=>s.sub_brand===form.sub_brand)?"Edit":"New"} sub-brand style</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
