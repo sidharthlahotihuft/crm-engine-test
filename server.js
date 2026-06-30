@@ -147,6 +147,29 @@ const enforceCopyHardRules = (text, limits) => {
   }
   return stripForbidden(text); // plain-text response → still strip forbidden tokens
 };
+
+// Single source of truth for the copy system prompt: the 9 hardest rules + the live DB rulebook,
+// every rule framed as hard. Used by /api/generate AND /api/generate-compare so they never drift.
+const COPY_HARD_RULES = " NON-NEGOTIABLE HARD RULES (never break): "
+    + "(1) Never output \"M-hash\" in any form (M-hash, M hash, mhash, M#, #M) or any unfilled merge/template placeholder ({{1}}, {name}, #VAR#, [VARIABLE], <NAME>) — these are system artifacts, not words; if you have no real value, write natural words with no placeholder. "
+    + "(2) British English only — colour not color, favourite not favorite, personalise not personalize, centre not center. "
+    + "(3) Say \"pet parents\", never \"consumers\". Use \"furry family\", never \"furry friend\" or \"fur baby\". "
+    + "(4) Never use: premium, luxury, cutting-edge, state-of-the-art, revolutionary, game-changing. "
+    + "(5) No fear-based messaging, no medical/cure claims, never shame pet parents. "
+    + "(6) Respect the length limits for the channel exactly (push title and body are hard character caps). "
+    + "(7) ACTION-LED ALWAYS: every piece of copy must drive a clear action (tap, switch, try, shop, book, learn, save); even awareness copy moves the reader to act, never just informs. "
+    + "(8) Push notifications: the action MUST be in the FIRST line (the title) — every push, even awareness ones, drives an action. Push has NO image, so never write image/overlay copy or image RTBs for a push. "
+    + "(9) No opt-out / unsubscribe / 'reply STOP' lines or any channel/system boilerplate — the platform adds those, not the copy.";
+const COPY_RULEBOOK_PREAMBLE = "\n\nACTIVE RULEBOOK — EVERY rule below is a HARD, NON-NEGOTIABLE rule. There are NO soft, optional, 'preferred', or 'where possible' rules here: treat each as mandatory and apply it to EVERY option, on EVERY channel, EVERY time. Any rule added to this list later is automatically a hard rule too. Breaking ANY single rule means the copy is rejected and sent back. If two rules ever appear to conflict, satisfy both by rewriting — never drop one:\n";
+async function assembleCopySys(systemBase){
+  const sys0 = (systemBase || "") + COPY_HARD_RULES;
+  let sys = sys0, ruleText = "";
+  try {
+    const rules = await db("SELECT text FROM rules WHERE type='copy' AND active=true ORDER BY id");
+    if (rules && rules.length) { ruleText = rules.map(r => "- " + r.text).join("\n"); sys = sys0 + COPY_RULEBOOK_PREAMBLE + ruleText; }
+  } catch (e) {}
+  return { sys, ruleText };
+}
 // ── Review pass (warn, don't auto-correct) ───────────────────────────────────
 // A cheap, cold second pass (Gemini Flash) that FLAGS possible language errors without
 // changing the copy. The rulebook is passed in so intentional brand choices (e.g. "furry
@@ -193,7 +216,7 @@ async function reviewCopy(text, ruleStr) {
   } catch (e) { console.error("[review] skipped:", e.message); }
   return JSON.stringify(Array.isArray(parsed) ? arr : arr[0]);
 }
-const SERVER_BUILD = "v29.81s - Rulebook injection now states every DB rule (and any rule added later) is a HARD non-negotiable rule, no soft/optional/'where possible' rules. Plus admin-only providerOverride on /api/generate (claude|gemini) for model A/B comparison. Builds on v29.80s (canine/feline auto-swap, reviewer verbatim 'wrong', surgical client fixes, /api/report-issue).";
+const SERVER_BUILD = "v29.82s - Model A/B: /api/generate-compare (admin) returns 2 Claude + 1 Gemini options each tagged _model, through the same hard-rules+rulebook+reviewer+enforce pipeline (shared assembleCopySys, no rule-text drift). Plus /api/model-vote + /api/model-votes tally (model_votes table). Builds on v29.81s (all rules hard, providerOverride).";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -1800,28 +1823,8 @@ app.post("/api/generate", authMiddleware, async (req, res) => {
   // Admin-only model-comparison hook: force a specific provider (claude|gemini) to A/B copy quality.
   // Ignored for non-admins and for any value other than claude|gemini — default routing is untouched.
   if (req.user && ["admin", "super_admin"].includes(req.user.role) && (providerOverride === "claude" || providerOverride === "gemini")) want = providerOverride;
-  // HARDEST RULES injected into the system prompt (belt) — and enforced on the way out (suspenders).
-  const HARD_RULES = " NON-NEGOTIABLE HARD RULES (never break): "
-    + "(1) Never output \"M-hash\" in any form (M-hash, M hash, mhash, M#, #M) or any unfilled merge/template placeholder ({{1}}, {name}, #VAR#, [VARIABLE], <NAME>) — these are system artifacts, not words; if you have no real value, write natural words with no placeholder. "
-    + "(2) British English only — colour not color, favourite not favorite, personalise not personalize, centre not center. "
-    + "(3) Say \"pet parents\", never \"consumers\". Use \"furry family\", never \"furry friend\" or \"fur baby\". "
-    + "(4) Never use: premium, luxury, cutting-edge, state-of-the-art, revolutionary, game-changing. "
-    + "(5) No fear-based messaging, no medical/cure claims, never shame pet parents. "
-    + "(6) Respect the length limits for the channel exactly (push title and body are hard character caps). "
-    + "(7) ACTION-LED ALWAYS: every piece of copy must drive a clear action (tap, switch, try, shop, book, learn, save); even awareness copy moves the reader to act, never just informs. "
-    + "(8) Push notifications: the action MUST be in the FIRST line (the title) — every push, even awareness ones, drives an action. Push has NO image, so never write image/overlay copy or image RTBs for a push. "
-    + "(9) No opt-out / unsubscribe / 'reply STOP' lines or any channel/system boilerplate — the platform adds those, not the copy.";
-  const sys0 = kind === "copy" ? (system + HARD_RULES) : system;
-  // No-leak guarantee: the server fetches the active copy rulebook from the DB and injects it itself,
-  // so the rules apply even if a client omits them, and any newly added rule takes effect immediately.
-  let sys = sys0;
-  let ruleText = "";
-  if (kind === "copy") {
-    try {
-      const rules = await db("SELECT text FROM rules WHERE type='copy' AND active=true ORDER BY id");
-      if (rules && rules.length) { ruleText = rules.map(r => "- " + r.text).join("\n"); sys = sys0 + "\n\nACTIVE RULEBOOK — EVERY rule below is a HARD, NON-NEGOTIABLE rule. There are NO soft, optional, 'preferred', or 'where possible' rules here: treat each as mandatory and apply it to EVERY option, on EVERY channel, EVERY time. Any rule added to this list later is automatically a hard rule too. Breaking ANY single rule means the copy is rejected and sent back. If two rules ever appear to conflict, satisfy both by rewriting — never drop one:\n" + ruleText; }
-    } catch (e) {}
-  }
+  let sys = system, ruleText = "";
+  if (kind === "copy") { const _a = await assembleCopySys(system); sys = _a.sys; ruleText = _a.ruleText; }
   try {
     let text = await generate(sys, prompt, want);
     if (kind === "copy") {
@@ -1829,6 +1832,59 @@ app.post("/api/generate", authMiddleware, async (req, res) => {
       text = enforceCopyHardRules(text, limits); // mechanical strip + length clamp stays LAST (final guard)
     }
     res.json({ text });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── MODEL A/B: generate 2 from Claude + 1 from Gemini, each tagged with _model ──
+// Admin-only. Same pipeline as /api/generate (hard rules + rulebook + reviewer + enforce).
+app.post("/api/generate-compare", authMiddleware, async (req, res) => {
+  if (!["admin", "super_admin"].includes(req.user.role)) return res.status(403).json({ error: "Admin only" });
+  const { system = "", prompt = "", limits = null } = req.body;
+  const { sys, ruleText } = await assembleCopySys(system);
+  const ask = (n) => sys + `\n\nFOR THIS REQUEST ONLY: return EXACTLY ${n} option${n > 1 ? "s" : ""} in the JSON array — no more, no fewer.`;
+  const tag = (text, model) => {
+    let arr = null;
+    try { arr = JSON.parse(text); } catch (_) { const mm = text && text.match(/\[[\s\S]*\]/); if (mm) { try { arr = JSON.parse(mm[0]); } catch (__) {} } }
+    if (!Array.isArray(arr)) arr = (arr && typeof arr === "object") ? [arr] : [];
+    return arr.map(o => (o && typeof o === "object") ? { ...o, _model: model } : o);
+  };
+  try {
+    const [cText, gText] = await Promise.all([
+      generate(ask(2), prompt, "claude"),
+      generate(ask(1), prompt, "gemini"),
+    ]);
+    const merged = [...tag(cText, "claude").slice(0, 2), ...tag(gText, "gemini").slice(0, 1)];
+    let text = JSON.stringify(merged);
+    text = await reviewCopy(text, ruleText);   // flags _warn per option (model tag preserved)
+    text = enforceCopyHardRules(text, limits);  // mechanical strip + length clamp (final guard)
+    res.json({ text });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── MODEL A/B votes: which model performed better ────────────────────────────
+let _votesReady = false;
+async function ensureVotes() {
+  if (_votesReady) return;
+  await db("CREATE TABLE IF NOT EXISTS model_votes (id SERIAL PRIMARY KEY, campaign_id TEXT, winner TEXT, voter TEXT, created_at TIMESTAMPTZ DEFAULT now())");
+  _votesReady = true;
+}
+app.post("/api/model-vote", authMiddleware, async (req, res) => {
+  const { campaignId = null, winner = "" } = req.body;
+  if (!["claude", "gemini", "tie"].includes(winner)) return res.status(400).json({ error: "winner must be claude|gemini|tie" });
+  try {
+    await ensureVotes();
+    await db("INSERT INTO model_votes (campaign_id, winner, voter) VALUES ($1,$2,$3)", [campaignId, winner, req.user.email || req.user.name || ""]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get("/api/model-votes", authMiddleware, async (req, res) => {
+  try {
+    await ensureVotes();
+    const rows = await db("SELECT winner, COUNT(*)::int n FROM model_votes GROUP BY winner");
+    const t = { claude: 0, gemini: 0, tie: 0 };
+    (rows || []).forEach(r => { if (t[r.winner] != null) t[r.winner] = Number(r.n); });
+    t.total = t.claude + t.gemini + t.tie;
+    res.json(t);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
