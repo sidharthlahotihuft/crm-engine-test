@@ -109,7 +109,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v33.3 - Draft briefs: business can Save as draft (stays in Brief tab, hidden from the creative team) and Publish when ready. Retail-WhatsApp finalized assets get a Request-for-distribution button (tasks + emails Rahul Bharadwaj & Shubham Gandhi) and surface on the dashboard as Ready for distribution. Hardened a focus-loss bug: the Rulebook rule-entry input was an inline component that remounted on re-render (wiping the half-typed rule) — hoisted to a stable top-level RuleSection. Builds on v33.2 (comments hidden, push Headline/Subheadline, WA image-prompt removal, business lifecycle lockout, WA/D2C defaults).";
+const BUILD="v33.4 - Removed the \"Send email — asset ready\" alert from finalized assets everywhere (the asset-ready email band on the Done detail). Retail-WhatsApp \"Request for distribution\" is unchanged. Builds on v33.3 - Draft briefs: business can Save as draft (stays in Brief tab, hidden from the creative team) and Publish when ready. Retail-WhatsApp finalized assets get a Request-for-distribution button (tasks + emails Rahul Bharadwaj & Shubham Gandhi) and surface on the dashboard as Ready for distribution. Hardened a focus-loss bug: the Rulebook rule-entry input was an inline component that remounted on re-render (wiping the half-typed rule) — hoisted to a stable top-level RuleSection. Builds on v33.2 (comments hidden, push Headline/Subheadline, WA image-prompt removal, business lifecycle lockout, WA/D2C defaults).";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -7316,16 +7316,6 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate}){
           </div>
           {finalFile&&<a href={finalFile.dataUrl}download={finalFile.name}style={{fontSize:11.5,fontWeight:600,color:C.ink,textDecoration:"none",border:`1px solid ${C.line}`,borderRadius:7,padding:"4px 9px",display:"inline-flex",alignItems:"center",gap:4}}><Download size={12}/>Download</a>}
           {design.finalLink&&<a href={design.finalLink}target="_blank"rel="noreferrer"style={{fontSize:11.5,fontWeight:600,color:C.teal,textDecoration:"none",display:"inline-flex",alignItems:"center",gap:4}}><ExternalLink size={12}/>Open</a>}
-        </div>}
-        {(finalFile||design.finalLink)&&<div style={{margin:"8px 0",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:C.tealSoft,border:`1px solid ${C.teal}55`,borderRadius:10,padding:"10px 13px"}}>
-          <ImageIcon size={15}color={C.teal}/>
-          <span style={{fontSize:12.5,color:C.ink,fontWeight:600}}>Final asset is ready.</span>
-          {assetReadySent
-            ?<span style={{fontSize:11.5,fontWeight:700,color:C.green,display:"inline-flex",alignItems:"center",gap:5}}><CheckCircle2 size={13}/>Alert sent{c.data?.assetReadySentAt?" · "+fmtDate(c.data.assetReadySentAt):""}</span>
-            :canManage
-              ?(emailing?<Spin label="Sending…"/>:<Btn small variant="teal"onClick={notifyAssetReady}><BellIcon size={13}/>Send email — asset ready</Btn>)
-              :null}
-          <span style={{fontSize:11,color:C.sub}}>Alerts brand, business &amp; marketing (in-app always; email if SMTP configured).</span>
         </div>}
         {isRetailWA&&(finalFile||design.finalLink)&&<div style={{margin:"8px 0",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:10,padding:"10px 13px"}}>
           <Send size={15}color={C.coral}/>
