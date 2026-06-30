@@ -109,7 +109,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v35.3 - In the conversational brief, after the last step the engine now drafts the single-minded IDEA and shows it in an editable box; \"Generate brief\" is gated behind it — the team can only generate once the idea is there, and can edit it first if it is not right. Nothing reaches the copy team until they confirm the idea by generating. Before generating copy, the Copy panel now shows a clear \"Check the brief is right before you generate\" strip with an Edit brief button that opens the full brief editor inline — so the copy team can verify the brief and fix it if anything is wrong before hitting Generate. The self-serve brief now shows the idea line back to you in a highlighted box right above Publish, so you can confirm exactly what you are asking the team to create before submitting. Removed the \"How is this asset getting made?\" question from the guided brief form (briefs go to the creative team by default; the make-it-myself option still lives in the brief actions for super). The CTA & RTB footer control is now a single always-visible toggle with a chevron that flips (down = expand, up = collapse), so it is obvious you can open or close it; the Done link also still collapses it. The CTA toggle and RTB footer controls under each creative mock are now collapsed by default behind a small \"CTA & RTB footer\" button, so the image copy and body copy sit together instead of being pushed apart. Tap it to add/edit the CTA and RTBs. Fixed the compare row: option tiles are now equal-width columns that fill the row and shrink to fit (no more horizontal scroll clipping cards at the edges). Language warnings are collapsed into the small amber badge in each tile header — tap it to expand the issue + Apply fix / Allow as written, so the boxes no longer bloat the tile height. The \"Copy updated — you can now resend for approval\" toast no longer fires on every edit (CTA toggle, RTB add, inline edit). It now appears only once, right after a send-back, where resending is actually the next step; ordinary editing is silent. RTBs restored in two places: the self-serve brief now has an RTB / proof-point picker (product suggestions + custom add) so they flow through to the creative, and the image-copy card now shows product RTB suggestions to tap even when the brief gave none (plus the free-text add). Copy options now lay out in a single horizontal row (scroll across) instead of a 2-column grid, so the options sit side by side and are easy to compare instead of wrapping onto different rows at uneven heights. RTB footer: the copy team can now ADD their own proof point (free-text) to the footer strip even when the brief supplies none, plus pick/remove suggestions right on the card. The \"Add a note for the design team\" option now shows in the Copy panel without needing to select an option first. Creative card logo is now a neutral LOGO placeholder badge (brand logo goes in at design time, per product). Image copy no longer cut: the server now treats the image-copy header length as a soft guide (short but always complete) instead of hard-clamping each line. Simplified the creative-card caption to just \"Creative mock\" (dropped the redundant component list / stray middot). Creative card: real HUFT logo; image copy edited directly IN the square (duplicate band below removed); smaller square; optional CTA toggle; copy-team RTBs show in the footer strip; fixed image copy being cut (removed the old ~3-7 words/two-lines rule that truncated the resolve). Builds on v34.0 perf - Performance: the React, ReactDOM, spreadsheet (xlsx) and screenshot (html2canvas) libraries now load deferred/non-blocking instead of holding up the whole page in <head>, so the app starts parsing and booting sooner (xlsx ~900KB + html2canvas ~200KB are feature-only and already guarded in code). Builds on v33.9 - Added a 1080x1080 creative-card visualizer (logo + image copy hook/resolve + RTB footer strip + CTA button) shown right in each copy option for the copy team AND on the approved-copy card for the designer, so everyone can see how the image copy, RTB footer and button sit together on the actual creative. Builds on v33.8 - Image-copy resolve line must now read COMPLETE and natural, not clipped: it keeps the connectors and the offer qualifier (e.g. \"now at just ₹999 for your first visit\", never a bare \"now ₹999\"). Relaxed the over-tight word cap so the model finishes the thought instead of truncating it. Builds on v33.7 - Copy-team visualizer: the WhatsApp preview now shows the image copy as a hook + resolve overlay with the footer RTB strip on a creative mock (so image copy and body copy are seen together), plus an explainer of how the two relate. When a real image is attached, the preview shows it as-is and NO LONGER overlays the generated image copy on top. Builds on v33.6 - Image copy now follows the structure learned from HUFT shipped creatives: header = a HERO HOOK (an idea: tension/wordplay/question/belief-flip) + a RESOLVE line (Switch to [Product], or the offer/answer) read as one thought; rtbs = a pipe-separated FOOTER proof strip (proof points for products, capability tags for app/service); proof never sits on the hero. Builds on v33.5 - Image copy is now generated as ONE short, coherent, self-contained line (not a stacked strip of fragments) — it should land the whole message at a glance; RTB/proof stays in the separate footer line. Builds on v33.4 - Removed the \"Send email — asset ready\" alert from finalized assets everywhere (the asset-ready email band on the Done detail). Retail-WhatsApp \"Request for distribution\" is unchanged. Builds on v33.3 - Draft briefs: business can Save as draft (stays in Brief tab, hidden from the creative team) and Publish when ready. Retail-WhatsApp finalized assets get a Request-for-distribution button (tasks + emails Rahul Bharadwaj & Shubham Gandhi) and surface on the dashboard as Ready for distribution. Hardened a focus-loss bug: the Rulebook rule-entry input was an inline component that remounted on re-render (wiping the half-typed rule) — hoisted to a stable top-level RuleSection. Builds on v33.2 (comments hidden, push Headline/Subheadline, WA image-prompt removal, business lifecycle lockout, WA/D2C defaults).";
+const BUILD="v35.5 - The brief idea now drafts AUTOMATICALLY the moment the required fields are complete — no \"Review the idea\" tap. It appears in the editable confirm box on its own, and re-drafts automatically (debounced) if you change a key field like product, audience or the one-message RTB. You still can only generate once the idea is there and you are happy with it. Fixed the idea gate (the v35.3 version was added to an unused brief component, so it never showed). The LIVE guided brief form now: (1) asks for the ONE message you most want users to take away — a single-select RTB instead of a multi-pick list, which makes the creative far more focused; and (2) before generating, you hit \"Review the idea\", the engine drafts the single-minded idea into an editable box, and only then does \"Looks good — generate brief\" unlock — edit or re-draft if it is not right. Nothing reaches the copy team until the idea is confirmed. In the conversational brief, after the last step the engine now drafts the single-minded IDEA and shows it in an editable box; \"Generate brief\" is gated behind it — the team can only generate once the idea is there, and can edit it first if it is not right. Nothing reaches the copy team until they confirm the idea by generating. Before generating copy, the Copy panel now shows a clear \"Check the brief is right before you generate\" strip with an Edit brief button that opens the full brief editor inline — so the copy team can verify the brief and fix it if anything is wrong before hitting Generate. The self-serve brief now shows the idea line back to you in a highlighted box right above Publish, so you can confirm exactly what you are asking the team to create before submitting. Removed the \"How is this asset getting made?\" question from the guided brief form (briefs go to the creative team by default; the make-it-myself option still lives in the brief actions for super). The CTA & RTB footer control is now a single always-visible toggle with a chevron that flips (down = expand, up = collapse), so it is obvious you can open or close it; the Done link also still collapses it. The CTA toggle and RTB footer controls under each creative mock are now collapsed by default behind a small \"CTA & RTB footer\" button, so the image copy and body copy sit together instead of being pushed apart. Tap it to add/edit the CTA and RTBs. Fixed the compare row: option tiles are now equal-width columns that fill the row and shrink to fit (no more horizontal scroll clipping cards at the edges). Language warnings are collapsed into the small amber badge in each tile header — tap it to expand the issue + Apply fix / Allow as written, so the boxes no longer bloat the tile height. The \"Copy updated — you can now resend for approval\" toast no longer fires on every edit (CTA toggle, RTB add, inline edit). It now appears only once, right after a send-back, where resending is actually the next step; ordinary editing is silent. RTBs restored in two places: the self-serve brief now has an RTB / proof-point picker (product suggestions + custom add) so they flow through to the creative, and the image-copy card now shows product RTB suggestions to tap even when the brief gave none (plus the free-text add). Copy options now lay out in a single horizontal row (scroll across) instead of a 2-column grid, so the options sit side by side and are easy to compare instead of wrapping onto different rows at uneven heights. RTB footer: the copy team can now ADD their own proof point (free-text) to the footer strip even when the brief supplies none, plus pick/remove suggestions right on the card. The \"Add a note for the design team\" option now shows in the Copy panel without needing to select an option first. Creative card logo is now a neutral LOGO placeholder badge (brand logo goes in at design time, per product). Image copy no longer cut: the server now treats the image-copy header length as a soft guide (short but always complete) instead of hard-clamping each line. Simplified the creative-card caption to just \"Creative mock\" (dropped the redundant component list / stray middot). Creative card: real HUFT logo; image copy edited directly IN the square (duplicate band below removed); smaller square; optional CTA toggle; copy-team RTBs show in the footer strip; fixed image copy being cut (removed the old ~3-7 words/two-lines rule that truncated the resolve). Builds on v34.0 perf - Performance: the React, ReactDOM, spreadsheet (xlsx) and screenshot (html2canvas) libraries now load deferred/non-blocking instead of holding up the whole page in <head>, so the app starts parsing and booting sooner (xlsx ~900KB + html2canvas ~200KB are feature-only and already guarded in code). Builds on v33.9 - Added a 1080x1080 creative-card visualizer (logo + image copy hook/resolve + RTB footer strip + CTA button) shown right in each copy option for the copy team AND on the approved-copy card for the designer, so everyone can see how the image copy, RTB footer and button sit together on the actual creative. Builds on v33.8 - Image-copy resolve line must now read COMPLETE and natural, not clipped: it keeps the connectors and the offer qualifier (e.g. \"now at just ₹999 for your first visit\", never a bare \"now ₹999\"). Relaxed the over-tight word cap so the model finishes the thought instead of truncating it. Builds on v33.7 - Copy-team visualizer: the WhatsApp preview now shows the image copy as a hook + resolve overlay with the footer RTB strip on a creative mock (so image copy and body copy are seen together), plus an explainer of how the two relate. When a real image is attached, the preview shows it as-is and NO LONGER overlays the generated image copy on top. Builds on v33.6 - Image copy now follows the structure learned from HUFT shipped creatives: header = a HERO HOOK (an idea: tension/wordplay/question/belief-flip) + a RESOLVE line (Switch to [Product], or the offer/answer) read as one thought; rtbs = a pipe-separated FOOTER proof strip (proof points for products, capability tags for app/service); proof never sits on the hero. Builds on v33.5 - Image copy is now generated as ONE short, coherent, self-contained line (not a stacked strip of fragments) — it should land the whole message at a glance; RTB/proof stays in the separate footer line. Builds on v33.4 - Removed the \"Send email — asset ready\" alert from finalized assets everywhere (the asset-ready email band on the Done detail). Retail-WhatsApp \"Request for distribution\" is unchanged. Builds on v33.3 - Draft briefs: business can Save as draft (stays in Brief tab, hidden from the creative team) and Publish when ready. Retail-WhatsApp finalized assets get a Request-for-distribution button (tasks + emails Rahul Bharadwaj & Shubham Gandhi) and surface on the dashboard as Ready for distribution. Hardened a focus-loss bug: the Rulebook rule-entry input was an inline component that remounted on re-render (wiping the half-typed rule) — hoisted to a stable top-level RuleSection. Builds on v33.2 (comments hidden, push Headline/Subheadline, WA image-prompt removal, business lifecycle lockout, WA/D2C defaults).";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -1025,12 +1025,12 @@ const BRIEF_STEPS = [
     optional:true,
   },
   {
-    key:"rtbs", question:"Which RTBs should the copy focus on?",
-    hint:"Reasons-to-believe — the proof points the copy should lean on. Select all that apply, or add your own. These get woven into the copy body.",
-    multiSelect:true,
+    key:"rtbs", question:"What's the one message you most want them to take away?",
+    hint:"Pick the single strongest reason-to-believe — the one proof point the creative should land. One sharp message makes the creative far more focused than a list. Or type your own.",
+    singlePick:true,
     optionsFromProduct:true, // options resolved at render time from the chosen product
     freeText:true,
-    placeholder:"Add a custom RTB and press enter…",
+    placeholder:"Or type the one message…",
     optional:true,
   },
   {
@@ -2657,12 +2657,16 @@ function BriefFastForm({campaignId,patch,onBriefReady,me,recentFeedback,product,
   const[err,setErr]=useState("");
   const[customRtb,setCustomRtb]=useState("");
   const[moreFor,setMoreFor]=useState({});
+  const[ideaDraft,setIdeaDraft]=useState("");
+  const[ideaReady,setIdeaReady]=useState(false);
+  const[synthIdea,setSynthIdea]=useState(false);
   const[linkInput,setLinkInput]=useState("");
   const[maker,setMaker]=useState("team"); // "team" = creative team · "self" = make it myself (templatized)
   const[unusedImgs,setUnusedImgs]=useState(null);
   useEffect(()=>{let on=true;api.get("/api/image-library").then(all=>{if(!on)return;setUnusedImgs((Array.isArray(all)?all:[]).filter(x=>!x.last_used_at&&x.kind!=="product"&&x.kind!=="logo").slice(0,24));}).catch(()=>{if(on)setUnusedImgs([]);});return()=>{on=false;};},[]);
   const set=(k,v)=>setAnswers(a=>({...a,[k]:v}));
   const toggleMulti=(k,v)=>setAnswers(a=>{const cur=Array.isArray(a[k])?a[k]:[];return{...a,[k]:cur.includes(v)?cur.filter(x=>x!==v):[...cur,v]};});
+  const setSingle=(k,v)=>setAnswers(a=>({...a,[k]:(Array.isArray(a[k])&&a[k][0]===v)?[]:[v]}));
   const optsFor=(s)=>{
     if(s.optionsFromProduct)return rtbsForProduct(answers.product||product)||[];
     if(s.key==="audience"&&Array.isArray(audiences)&&audiences.length){const m=audiencesForProduct(answers.product||product,audiences).map(a=>a.name);if(m.length)return m;}
@@ -2703,7 +2707,7 @@ function BriefFastForm({campaignId,patch,onBriefReady,me,recentFeedback,product,
         tat_brief_due:briefDue,tat_content_due:contentDue,tat_design_due:designDue,
         brief_started_at:new Date(now).toISOString(),
         rtbs:rtbList,references:refList,
-        data:{brief:{...j,trigger:answers.trigger||"",rtbs:rtbList,references:refList,referenceFiles:refFiles,source:"form"},selfMade:(isSuper(me)&&maker==="self")},
+        data:{brief:{...j,idea:((ideaDraft||"").trim()||j.idea),trigger:answers.trigger||"",rtbs:rtbList,references:refList,referenceFiles:refFiles,source:"form"},selfMade:(isSuper(me)&&maker==="self")},
         stage:"content",
       });
       onBriefReady();
@@ -2712,6 +2716,26 @@ function BriefFastForm({campaignId,patch,onBriefReady,me,recentFeedback,product,
 
   const Chip=({label,active,onClick})=><button onClick={onClick}style={{fontSize:12,fontWeight:600,padding:"5px 11px",borderRadius:999,cursor:"pointer",border:`1px solid ${active?C.coral:C.line}`,background:active?C.coralSoft:"#fff",color:active?C.coral:C.ink}}>{label}</button>;
 
+  const draftIdea=async()=>{
+    if(missing.length){setErr("Please fill the required fields first.");return;}
+    setIdeaReady(true);setSynthIdea(true);setErr("");
+    try{
+      const _rtb=(answers.rtbs||[]).filter(Boolean);
+      const sys=`You distill ONE single-minded creative idea for a HUFT WhatsApp CRM asset — the single message the creative must land. Return ONLY JSON: {"idea":"one sharp sentence, no quotes"}`;
+      const usr=`Product/Brand: ${answers.product||product||""}\nAudience: ${answers.audience||""}\nTrigger: ${answers.trigger||"derive"}\nObjective: ${answers.objective||""}\nOffer: ${answers.offer||"none"}\nHook/Angle: ${answers.hook||"derive"}\nKey message / RTB to land: ${_rtb.join("; ")||"derive from product"}`;
+      const j=await callClaude(sys,usr,true,"brief");
+      setIdeaDraft(((j&&j.idea)||"").trim());
+    }catch(e){setErr("Couldn't draft the idea automatically — write it in yourself, then generate.");}
+    setSynthIdea(false);
+  };
+  const ideaSig=[answers.product||product||"",answers.audience||"",answers.trigger||"",answers.objective||"",answers.offer||"",answers.hook||"",(answers.rtbs||[]).join(",")].join("|");
+  const lastIdeaSig=React.useRef("");
+  useEffect(()=>{
+    if(missing.length!==0)return;
+    if(ideaSig===lastIdeaSig.current)return;
+    const t=setTimeout(()=>{lastIdeaSig.current=ideaSig;draftIdea();},1200);
+    return()=>clearTimeout(t);
+  },[ideaSig,missing.length]);
   return<div style={{display:"flex",flexDirection:"column",gap:12,maxHeight:"calc(100vh - 230px)",overflowY:"auto",padding:"2px"}}>
     <div style={{fontSize:12.5,color:C.sub}}>Fill what you know — <b style={{color:C.coral}}>*</b> fields are required. The engine writes the polished brief in one go.</div>
     {BRIEF_STEPS.map(s=>{
@@ -2727,6 +2751,12 @@ function BriefFastForm({campaignId,patch,onBriefReady,me,recentFeedback,product,
           ?<div>
             <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:(answers.references||[]).length?8:0}}>{(answers.references||[]).map((l,i)=><span key={i}style={{fontSize:11.5,background:C.paper,border:`1px solid ${C.line}`,borderRadius:7,padding:"3px 8px",display:"inline-flex",alignItems:"center",gap:6}}>{l}<button onClick={()=>set("references",(answers.references||[]).filter((_,j)=>j!==i))}style={{border:"none",background:"none",cursor:"pointer",color:C.sub}}>✕</button></span>)}</div>
             <input value={linkInput}onChange={e=>setLinkInput(e.target.value)}onKeyDown={e=>{if(e.key==="Enter"&&linkInput.trim()){set("references",[...(answers.references||[]),linkInput.trim()]);setLinkInput("");}}}placeholder={s.placeholder}style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 10px",fontSize:13,boxSizing:"border-box"}}/>
+          </div>
+          :s.singlePick
+          ?<div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>{chipOpts.map(opt=><Chip key={opt}label={opt}active={(answers[s.key]||[])[0]===opt}onClick={()=>setSingle(s.key,opt)}/>)}</div>
+            <input value={customRtb}onChange={e=>setCustomRtb(e.target.value)}onKeyDown={e=>{if(e.key==="Enter"&&customRtb.trim()){setSingle(s.key,customRtb.trim());setCustomRtb("");}}}placeholder={s.placeholder}style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 10px",fontSize:13,boxSizing:"border-box"}}/>
+            {(answers[s.key]||[])[0]&&<div style={{fontSize:11.5,color:C.coral,fontWeight:700,marginTop:7,display:"flex",alignItems:"center",gap:5}}><Check size={13}/>The creative will land: {(answers[s.key]||[])[0]}</div>}
           </div>
           :s.multiSelect
           ?<div>
@@ -2744,9 +2774,26 @@ function BriefFastForm({campaignId,patch,onBriefReady,me,recentFeedback,product,
     })}
     {err&&<div style={{color:C.coral,fontSize:12.5,fontWeight:600}}>{err}</div>}
 
-    <div style={{position:"sticky",bottom:0,background:"#FFFBF7",paddingTop:8,paddingBottom:4,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-      {generating?<Spin label="Writing your brief…"/>:<Btn onClick={generateBrief}disabled={missing.length>0}><Sparkles size={15}/>Generate brief</Btn>}
-      {missing.length>0&&<span style={{fontSize:11.5,color:C.sub}}>Still needed: {missing.length} required field{missing.length>1?"s":""}</span>}
+    <div style={{position:"sticky",bottom:0,background:"#FFFBF7",paddingTop:8,paddingBottom:4,display:"flex",flexDirection:"column",gap:8}}>
+      {ideaReady&&<div style={{background:"#FFF3EC",border:`1px solid ${C.coral}33`,borderRadius:11,padding:"12px 14px"}}>
+        <div style={{fontSize:10.5,fontWeight:800,color:C.coral,textTransform:"uppercase",letterSpacing:.5,marginBottom:6,display:"flex",alignItems:"center",gap:5}}><Sparkles size={12}/>The idea — confirm before you generate</div>
+        {synthIdea
+          ?<div style={{display:"flex",alignItems:"center",gap:8,color:C.sub,fontSize:13}}><Loader2 size={14}style={{animation:"spin 1s linear infinite"}}/>Drafting the single-minded idea…</div>
+          :<React.Fragment>
+            <textarea value={ideaDraft}onChange={e=>setIdeaDraft(e.target.value)}rows={2}placeholder="The single-minded idea the creative should land…"style={{width:"100%",boxSizing:"border-box",border:`1px solid ${C.line}`,borderRadius:8,padding:"9px 11px",fontSize:14,lineHeight:1.5,fontWeight:600,color:C.ink,resize:"vertical",fontFamily:"inherit"}}/>
+            <div style={{fontSize:11,color:C.sub,marginTop:6,lineHeight:1.5}}>This is what the creative will say at its core. Happy with it? Generate the brief. Not right? Edit it above or re-draft — nothing goes to the copy team until you do.</div>
+            <button onClick={draftIdea}style={{marginTop:7,background:"none",border:"none",color:C.coral,fontSize:11.5,fontWeight:700,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,padding:0}}><RefreshCw size={11}/>Re-draft the idea</button>
+          </React.Fragment>}
+      </div>}
+      <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+        {generating?<Spin label="Writing your brief…"/>
+          :ideaReady
+          ?<Btn onClick={generateBrief}disabled={synthIdea||missing.length>0||!((ideaDraft||"").trim())}><Sparkles size={15}/>Looks good — generate brief</Btn>
+          :missing.length>0
+          ?<Btn disabled={true}><Sparkles size={15}/>Generate brief</Btn>
+          :<Btn onClick={draftIdea}><Sparkles size={15}/>Draft the idea</Btn>}
+        {missing.length>0&&<span style={{fontSize:11.5,color:C.sub}}>Still needed: {missing.length} required field{missing.length>1?"s":""}</span>}
+      </div>
     </div>
   </div>;
 }
