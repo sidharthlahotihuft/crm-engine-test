@@ -216,7 +216,7 @@ async function reviewCopy(text, ruleStr) {
   } catch (e) { console.error("[review] skipped:", e.message); }
   return JSON.stringify(Array.isArray(parsed) ? arr : arr[0]);
 }
-const SERVER_BUILD = "v29.82s - Model A/B: /api/generate-compare (admin) returns 2 Claude + 1 Gemini options each tagged _model, through the same hard-rules+rulebook+reviewer+enforce pipeline (shared assembleCopySys, no rule-text drift). Plus /api/model-vote + /api/model-votes tally (model_votes table). Builds on v29.81s (all rules hard, providerOverride).";
+const SERVER_BUILD = "v29.84s - Adds POST /api/campaigns/:id/request-distribution: for a retail-WhatsApp finalized asset, creates an in-app task + email to Rahul Bharadwaj and Shubham Gandhi (the distribution owners) and flags data.distributionRequested. Pairs with index v33.3 (Request-for-distribution button + dashboard Ready-for-distribution + draft briefs). Builds on v29.83s - Seeds a Sara's Wholesome brand style (navy #102242 / cream #E8C09B / accents) from the Brand Manual into brand_styles on startup (idempotent), so the Composer auto-applies it. Pairs with index v32.9 (BRAND_CONTEXT gains a Visual Identity & Creative reference from the brand books, surfaced on the Brand styling page). Builds on v29.82s.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -1099,6 +1099,27 @@ app.post("/api/notify", authMiddleware, async (req, res) => {
     const { toRole, toUserIds, campaignId, kind, body, url } = req.body || {};
     const made = await notify({ toRole, toUserIds, campaignId, kind, body, url });
     res.json({ ok: true, created: made.length, emailConfigured: !!getMailer() });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Retail-WhatsApp finalized asset → request distribution: in-app task + email to the distribution owners.
+const DISTRIBUTION_NAMES = ["Rahul Bharadwaj", "Shubham Gandhi"];
+app.post("/api/campaigns/:id/request-distribution", authMiddleware, async (req, res) => {
+  try {
+    const rows = await db("SELECT * FROM campaigns WHERE id=$1", [req.params.id]);
+    const c = rows[0];
+    if (!c) return res.status(404).json({ error: "Asset not found" });
+    const prod = c.product || c.name || "An asset";
+    const people = await db("SELECT id,name,email FROM users WHERE name ILIKE ANY($1)",
+      [DISTRIBUTION_NAMES.map(n => "%" + n + "%")]);
+    const ids = people.map(p => p.id);
+    const body = prod + " (Retail \u00b7 WhatsApp) \u2014 the final asset is ready. Please send it for distribution.";
+    if (ids.length) await notify({ toUserIds: ids, campaignId: c.id, kind: "Asset ready \u2014 please send for distribution", body });
+    const data = typeof c.data === "string" ? (c.data ? JSON.parse(c.data) : {}) : (c.data || {});
+    data.distributionRequested = { at: new Date().toISOString(), by: (req.user && req.user.name) || null, to: people.map(p => p.name) };
+    const upd = await db("UPDATE campaigns SET data=$1, updated_at=NOW() WHERE id=$2 RETURNING *", [JSON.stringify(data), c.id]);
+    const missing = DISTRIBUTION_NAMES.filter(n => !people.some(p => (p.name || "").toLowerCase().includes(n.toLowerCase())));
+    res.json({ ok: true, notified: ids.length, recipients: people.map(p => p.name), missing, emailConfigured: !!getMailer(), campaign: upd[0] });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1985,6 +2006,13 @@ app.listen(PORT, async () => {
       logo_id TEXT, notes TEXT,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`);
+    // Seed default sub-brand styles from the brand manuals (idempotent — ON CONFLICT DO NOTHING never clobbers manual edits).
+    await pool.query(
+      `INSERT INTO brand_styles (sub_brand, headline_font, subhead_font, cta_font, bg, text_color, cta_color, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (sub_brand) DO NOTHING`,
+      ["Sara's Wholesome","Korolev","Rubik","Korolev","#102242","#E8C09B","#FAAB18",
+       "Seeded from Sara's Brand Manual. Primary navy #102242, secondary cream #E8C09B. Variant accents: Chicken & Turkey #FAAB18, Lamb & Apple #CC1C6A, Chicken & Brown Rice #DC5829, Paneer & Eggs #00A6B4. Brand fonts: James Stroker (display), Misses (Sara's script wordmark), Personal Services, Korolev Rounded Medium (body). Look: farm-fresh bowl hero, raw ingredient cut-outs, hand-drawn veg line-art, 'Made with farm fresh ingredients'."]
+    );
     await pool.query(`CREATE TABLE IF NOT EXISTS creative_requests (
       id TEXT PRIMARY KEY,
       campaign_id TEXT,
