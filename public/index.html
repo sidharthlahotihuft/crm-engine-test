@@ -109,7 +109,7 @@ const TAB_VIS={
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
-const BUILD="v34.5 - Copy options now lay out in a single horizontal row (scroll across) instead of a 2-column grid, so the options sit side by side and are easy to compare instead of wrapping onto different rows at uneven heights. RTB footer: the copy team can now ADD their own proof point (free-text) to the footer strip even when the brief supplies none, plus pick/remove suggestions right on the card. The \"Add a note for the design team\" option now shows in the Copy panel without needing to select an option first. Creative card logo is now a neutral LOGO placeholder badge (brand logo goes in at design time, per product). Image copy no longer cut: the server now treats the image-copy header length as a soft guide (short but always complete) instead of hard-clamping each line. Simplified the creative-card caption to just \"Creative mock\" (dropped the redundant component list / stray middot). Creative card: real HUFT logo; image copy edited directly IN the square (duplicate band below removed); smaller square; optional CTA toggle; copy-team RTBs show in the footer strip; fixed image copy being cut (removed the old ~3-7 words/two-lines rule that truncated the resolve). Builds on v34.0 perf - Performance: the React, ReactDOM, spreadsheet (xlsx) and screenshot (html2canvas) libraries now load deferred/non-blocking instead of holding up the whole page in <head>, so the app starts parsing and booting sooner (xlsx ~900KB + html2canvas ~200KB are feature-only and already guarded in code). Builds on v33.9 - Added a 1080x1080 creative-card visualizer (logo + image copy hook/resolve + RTB footer strip + CTA button) shown right in each copy option for the copy team AND on the approved-copy card for the designer, so everyone can see how the image copy, RTB footer and button sit together on the actual creative. Builds on v33.8 - Image-copy resolve line must now read COMPLETE and natural, not clipped: it keeps the connectors and the offer qualifier (e.g. \"now at just ₹999 for your first visit\", never a bare \"now ₹999\"). Relaxed the over-tight word cap so the model finishes the thought instead of truncating it. Builds on v33.7 - Copy-team visualizer: the WhatsApp preview now shows the image copy as a hook + resolve overlay with the footer RTB strip on a creative mock (so image copy and body copy are seen together), plus an explainer of how the two relate. When a real image is attached, the preview shows it as-is and NO LONGER overlays the generated image copy on top. Builds on v33.6 - Image copy now follows the structure learned from HUFT shipped creatives: header = a HERO HOOK (an idea: tension/wordplay/question/belief-flip) + a RESOLVE line (Switch to [Product], or the offer/answer) read as one thought; rtbs = a pipe-separated FOOTER proof strip (proof points for products, capability tags for app/service); proof never sits on the hero. Builds on v33.5 - Image copy is now generated as ONE short, coherent, self-contained line (not a stacked strip of fragments) — it should land the whole message at a glance; RTB/proof stays in the separate footer line. Builds on v33.4 - Removed the \"Send email — asset ready\" alert from finalized assets everywhere (the asset-ready email band on the Done detail). Retail-WhatsApp \"Request for distribution\" is unchanged. Builds on v33.3 - Draft briefs: business can Save as draft (stays in Brief tab, hidden from the creative team) and Publish when ready. Retail-WhatsApp finalized assets get a Request-for-distribution button (tasks + emails Rahul Bharadwaj & Shubham Gandhi) and surface on the dashboard as Ready for distribution. Hardened a focus-loss bug: the Rulebook rule-entry input was an inline component that remounted on re-render (wiping the half-typed rule) — hoisted to a stable top-level RuleSection. Builds on v33.2 (comments hidden, push Headline/Subheadline, WA image-prompt removal, business lifecycle lockout, WA/D2C defaults).";
+const BUILD="v34.7 - The \"Copy updated — you can now resend for approval\" toast no longer fires on every edit (CTA toggle, RTB add, inline edit). It now appears only once, right after a send-back, where resending is actually the next step; ordinary editing is silent. RTBs restored in two places: the self-serve brief now has an RTB / proof-point picker (product suggestions + custom add) so they flow through to the creative, and the image-copy card now shows product RTB suggestions to tap even when the brief gave none (plus the free-text add). Copy options now lay out in a single horizontal row (scroll across) instead of a 2-column grid, so the options sit side by side and are easy to compare instead of wrapping onto different rows at uneven heights. RTB footer: the copy team can now ADD their own proof point (free-text) to the footer strip even when the brief supplies none, plus pick/remove suggestions right on the card. The \"Add a note for the design team\" option now shows in the Copy panel without needing to select an option first. Creative card logo is now a neutral LOGO placeholder badge (brand logo goes in at design time, per product). Image copy no longer cut: the server now treats the image-copy header length as a soft guide (short but always complete) instead of hard-clamping each line. Simplified the creative-card caption to just \"Creative mock\" (dropped the redundant component list / stray middot). Creative card: real HUFT logo; image copy edited directly IN the square (duplicate band below removed); smaller square; optional CTA toggle; copy-team RTBs show in the footer strip; fixed image copy being cut (removed the old ~3-7 words/two-lines rule that truncated the resolve). Builds on v34.0 perf - Performance: the React, ReactDOM, spreadsheet (xlsx) and screenshot (html2canvas) libraries now load deferred/non-blocking instead of holding up the whole page in <head>, so the app starts parsing and booting sooner (xlsx ~900KB + html2canvas ~200KB are feature-only and already guarded in code). Builds on v33.9 - Added a 1080x1080 creative-card visualizer (logo + image copy hook/resolve + RTB footer strip + CTA button) shown right in each copy option for the copy team AND on the approved-copy card for the designer, so everyone can see how the image copy, RTB footer and button sit together on the actual creative. Builds on v33.8 - Image-copy resolve line must now read COMPLETE and natural, not clipped: it keeps the connectors and the offer qualifier (e.g. \"now at just ₹999 for your first visit\", never a bare \"now ₹999\"). Relaxed the over-tight word cap so the model finishes the thought instead of truncating it. Builds on v33.7 - Copy-team visualizer: the WhatsApp preview now shows the image copy as a hook + resolve overlay with the footer RTB strip on a creative mock (so image copy and body copy are seen together), plus an explainer of how the two relate. When a real image is attached, the preview shows it as-is and NO LONGER overlays the generated image copy on top. Builds on v33.6 - Image copy now follows the structure learned from HUFT shipped creatives: header = a HERO HOOK (an idea: tension/wordplay/question/belief-flip) + a RESOLVE line (Switch to [Product], or the offer/answer) read as one thought; rtbs = a pipe-separated FOOTER proof strip (proof points for products, capability tags for app/service); proof never sits on the hero. Builds on v33.5 - Image copy is now generated as ONE short, coherent, self-contained line (not a stacked strip of fragments) — it should land the whole message at a glance; RTB/proof stays in the separate footer line. Builds on v33.4 - Removed the \"Send email — asset ready\" alert from finalized assets everywhere (the asset-ready email band on the Done detail). Retail-WhatsApp \"Request for distribution\" is unchanged. Builds on v33.3 - Draft briefs: business can Save as draft (stays in Brief tab, hidden from the creative team) and Publish when ready. Retail-WhatsApp finalized assets get a Request-for-distribution button (tasks + emails Rahul Bharadwaj & Shubham Gandhi) and surface on the dashboard as Ready for distribution. Hardened a focus-loss bug: the Rulebook rule-entry input was an inline component that remounted on re-render (wiping the half-typed rule) — hoisted to a stable top-level RuleSection. Builds on v33.2 (comments hidden, push Headline/Subheadline, WA image-prompt removal, business lifecycle lockout, WA/D2C defaults).";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -3605,7 +3605,8 @@ function EditBriefForm({brief,active,patch,onDone}){
 
 function SelfBriefForm({active,patch,audiences,onDone,onBack}){
   const[draft,setDraft]=useState({name:active.name||"",product:active.product||"",channel:active.channel||"",crm_type:active.crm_type||"D2C",audience_label:active.audience_label||active.segment||"",objective:active.objective||""});
-  const[self,setSelf]=useState({trigger:"",insight:"",idea:""});
+  const[self,setSelf]=useState({trigger:"",insight:"",idea:"",rtbs:[]});
+  const[rtbDraft,setRtbDraft]=useState("");
   const[moreAud,setMoreAud]=useState(false);
   const sync=(k,v)=>setDraft(d=>({...d,[k]:v}));
   const allSugg=audiencesForProduct(draft.product,audiences);
@@ -3616,7 +3617,7 @@ function SelfBriefForm({active,patch,audiences,onDone,onBack}){
     patch(active.id,{
       ...draft,
       stage:asDraft?"brief":"content",
-      data:{...(active.data||{}),draft:!!asDraft,brief:{strategicInsight:self.insight,trigger:self.trigger,idea:self.idea,proofPoints:[],pillar:"",whatsappNote:"Written by business team",source:"self"}}
+      data:{...(active.data||{}),draft:!!asDraft,brief:{strategicInsight:self.insight,trigger:self.trigger,idea:self.idea,proofPoints:self.rtbs,rtbs:self.rtbs,pillar:"",whatsappNote:"Written by business team",source:"self"}}
     });
     onDone();
   };
@@ -3658,6 +3659,19 @@ function SelfBriefForm({active,patch,audiences,onDone,onBack}){
     <Field label="Strategic insight (the consumer truth)"textarea value={self.insight}onChange={v=>setSelf(s=>({...s,insight:v}))}placeholder="The truth this should hook into — in your own words. e.g. they lapsed out of convenience, not dissatisfaction."/>
     <Field label="Objective"value={draft.objective}onChange={v=>sync("objective",v)}/>
     <Field label="The idea (single-minded message)"textarea value={self.idea}onChange={v=>setSelf(s=>({...s,idea:v}))}/>
+    <div style={{marginBottom:14}}>
+      <div style={{fontSize:12.5,fontWeight:600,color:C.sub,marginBottom:5}}>RTBs / proof points (optional) — these become the footer proof on the creative & the suggestions the copy team can place</div>
+      {self.rtbs.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:7}}>
+        {self.rtbs.map((r,i)=><button key={"r"+i}onClick={()=>setSelf(st=>({...st,rtbs:st.rtbs.filter(x=>x!==r)}))}style={{fontSize:11.5,fontWeight:600,padding:"5px 11px",borderRadius:999,cursor:"pointer",border:`1px solid ${C.teal}`,background:C.tealSoft,color:C.teal,display:"inline-flex",alignItems:"center",gap:5}}><Check size={12}/>{r}<X size={11}style={{opacity:.7}}/></button>)}
+      </div>}
+      {(()=>{const sugg=(rtbsForProduct(draft.product)||[]).filter(r=>!self.rtbs.includes(r));return sugg.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:7}}>
+        {sugg.slice(0,8).map((r,i)=><button key={"g"+i}onClick={()=>setSelf(st=>({...st,rtbs:[...st.rtbs,r]}))}style={{fontSize:11.5,fontWeight:600,padding:"5px 11px",borderRadius:999,cursor:"pointer",border:`1px solid ${C.line}`,background:"#fff",color:C.ink,display:"inline-flex",alignItems:"center",gap:5}}><Plus size={12}/>{r}</button>)}
+      </div>;})()}
+      <div style={{display:"flex",gap:6}}>
+        <input value={rtbDraft}onChange={e=>setRtbDraft(e.target.value)}onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();const t=rtbDraft.trim();if(t&&!self.rtbs.includes(t))setSelf(st=>({...st,rtbs:[...st.rtbs,t]}));setRtbDraft("");}}}placeholder="Add a proof point and press enter…"style={{flex:1,boxSizing:"border-box",border:`1px solid ${C.line}`,borderRadius:8,padding:"8px 11px",fontSize:13,fontFamily:"inherit"}}/>
+        <Btn small variant="ghost"onClick={()=>{const t=rtbDraft.trim();if(t&&!self.rtbs.includes(t))setSelf(st=>({...st,rtbs:[...st.rtbs,t]}));setRtbDraft("");}}><Plus size={13}/>Add</Btn>
+      </div>
+    </div>
     <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
       <Btn onClick={()=>save(false)}disabled={!ready}><Check size={16}/>Publish brief</Btn>
       <Btn variant="ghost"onClick={()=>save(true)}disabled={!draft.name}><FileText size={15}/>Save as draft</Btn>
@@ -4410,7 +4424,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       const base=opts||[];
       const newOpts=base.map((o,i)=>i===idx?{...o,...updated,manual:true}:o);
       patch(c.id,{data:{...(c.data||{}),copyOptions:newOpts,sentBack:false}});
-      if(toast)toast("Copy updated ✓ — you can now resend for approval","success");
+      if(toast&&c.data&&c.data.sentBack)toast("Copy updated ✓ — you can now resend for approval","success"); // only nudge after a send-back (fires once; sentBack clears on this same edit) — normal editing stays silent
     };
     // Resolve one language warning on option `idx`: useFix=true swaps in the suggestion; either way the warning clears.
     const resolveWarnAt=(idx,wi,useFix)=>{
@@ -4609,13 +4623,13 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
           </div>}
           {sel!=null&&<div style={{marginBottom:10}}>
             <div style={{fontSize:11,fontWeight:700,color:"#5B21B6",textTransform:"uppercase",letterSpacing:.5,marginBottom:6,display:"flex",alignItems:"center",gap:4}}><CheckCircle2 size={11}/>Approved copy</div>
-            <ContentCard o={opts[sel]}idx={sel}sel={true}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}onFixFeedback={fixPerFeedback}onEditSave={editDirectly}onResolveWarn={resolveWarnAt}onRtbToggle={toggleRtb}channel={c.channel}anySelected={sel!=null}sentBack={c.data?.sentBack}isResend={!!c.data?.lastRejectReason}image={mockImage}/>
+            <ContentCard o={opts[sel]}idx={sel}sel={true}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}onFixFeedback={fixPerFeedback}onEditSave={editDirectly}onResolveWarn={resolveWarnAt}onRtbToggle={toggleRtb}channel={c.channel}product={c.product}anySelected={sel!=null}sentBack={c.data?.sentBack}isResend={!!c.data?.lastRejectReason}image={mockImage}/>
           </div>}
           <DesignNote c={c}patch={patch}me={me}/>
           {sel!=null&&<button onClick={()=>setShowAll(v=>!v)}style={{display:"flex",alignItems:"center",gap:5,background:"none",border:"none",cursor:"pointer",color:C.sub,fontSize:12.5,fontWeight:600,marginBottom:8}}>{showAll?<><ChevronDown size={13}/>Hide other options</>:<><Eye size={13}/>See other {opts.length-1} options</>}</button>}
           {sel==null&&opts&&opts.length>1&&<div style={{marginBottom:10,fontSize:12.5,color:C.sub,background:C.paper,border:`1px solid ${C.line}`,borderRadius:10,padding:"9px 13px"}}>Pick <b>one</b> option below — it goes straight to Ilena for approval.</div>}
           {(sel==null||showAll)&&<div style={{display:"flex",gap:12,marginBottom:10,overflowX:"auto",paddingBottom:8,alignItems:"flex-start",scrollSnapType:"x proximity"}}>
-            {opts.map((o,i)=>{if(sel!=null&&i===sel)return null;return<div key={i}style={{flex:"0 0 360px",minWidth:0,scrollSnapAlign:"start"}}><ContentCard o={o}idx={i}sel={false}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}onFixFeedback={fixPerFeedback}onEditSave={editDirectly}onResolveWarn={resolveWarnAt}onRtbToggle={toggleRtb}channel={c.channel}anySelected={sel!=null}sentBack={c.data?.sentBack}isResend={!!c.data?.lastRejectReason}image={mockImage}/></div>;})}</div>}
+            {opts.map((o,i)=>{if(sel!=null&&i===sel)return null;return<div key={i}style={{flex:"0 0 360px",minWidth:0,scrollSnapAlign:"start"}}><ContentCard o={o}idx={i}sel={false}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}onFixFeedback={fixPerFeedback}onEditSave={editDirectly}onResolveWarn={resolveWarnAt}onRtbToggle={toggleRtb}channel={c.channel}product={c.product}anySelected={sel!=null}sentBack={c.data?.sentBack}isResend={!!c.data?.lastRejectReason}image={mockImage}/></div>;})}</div>}
         </div>}
         {sel!=null&&<div style={{marginTop:12,background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:10,padding:"14px 16px"}}>
           <div style={{fontSize:12,fontWeight:700,color:"#15803D",textTransform:"uppercase",letterSpacing:.5,marginBottom:10,display:"flex",alignItems:"center",gap:6}}><CheckCircle2 size={13}/>Copy approved — next steps</div>
@@ -4776,7 +4790,7 @@ function ApprovedCopyCard({copy,channel,product,image,hideImageCopy}){
         <CopyBtn text={()=>copyTextFromOption(copy)}/>
       </div>
     </div>
-    {!isPush&&!hideImageCopy&&copy.header&&<div style={{margin:"2px 0 10px"}}><CreativeCard o={copy}/></div>}
+    {!isPush&&!hideImageCopy&&copy.header&&<div style={{margin:"2px 0 10px"}}><CreativeCard o={copy} product={product}/></div>}
     {/* Image copy — on-image overlay text (hidden for WhatsApp finalized: it's baked into the design) */}
     {copy.header&&!hideImageCopy&&<div style={{marginBottom:8}}>
       <div style={{fontSize:9,fontWeight:800,color:"#7C3AED",textTransform:"uppercase",letterSpacing:.6,marginBottom:3}}>{isPush?"Headline":"Image copy"}</div>
@@ -4798,7 +4812,7 @@ function ApprovedCopyCard({copy,channel,product,image,hideImageCopy}){
   </div>;
 }
 
-function CreativeCard({o,idx,editable,onEditSave,onRtbToggle}){
+function CreativeCard({o,idx,editable,onEditSave,onRtbToggle,product}){
   const[editing,setEditing]=useState(false);
   const[draft,setDraft]=useState("");
   const[rtbDraft,setRtbDraft]=useState("");
@@ -4809,7 +4823,7 @@ function CreativeCard({o,idx,editable,onEditSave,onRtbToggle}){
   const hook=_l[0]||"";
   const resolve=_l.slice(1).join("\n");
   const strip=(Array.isArray(o&&o.rtbsSelected)&&o.rtbsSelected.length)?o.rtbsSelected:[];
-  const allRtbs=Array.isArray(o&&o.rtbs)?o.rtbs:[];
+  const allRtbs=(Array.isArray(o&&o.rtbs)&&o.rtbs.length)?o.rtbs:((typeof rtbsForProduct==="function"&&rtbsForProduct(product))||[]);
   const patchOpt=(p)=>onEditSave&&onEditSave(idx,{...o,...p});
   const startEdit=()=>{setDraft(header);setEditing(true);};
   const saveEdit=()=>{patchOpt({header:draft.trim()});setEditing(false);};
@@ -5076,7 +5090,7 @@ function DesignNote({c,patch,me,readOnly}){
       </div>}
   </div>;
 }
-function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,busy,onSelect,onRefine,onEditSave,onResolveWarn,onRtbToggle,channel,sentBack,isResend,image,onFixFeedback,anySelected}){
+function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,busy,onSelect,onRefine,onEditSave,onResolveWarn,onRtbToggle,channel,product,sentBack,isResend,image,onFixFeedback,anySelected}){
   const[showWA,setShowWA]=useState(false);
   const[showPush,setShowPush]=useState(false);
   const isWAchan=/whatsapp/i.test(channel||"");
@@ -5137,7 +5151,7 @@ function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,
           </div>
         </div>)}
       </div>}
-      {!isPush&&<div style={{marginBottom:12}}><CreativeCard o={o} idx={idx} editable={true} onEditSave={onEditSave} onRtbToggle={onRtbToggle}/></div>}
+      {!isPush&&<div style={{marginBottom:12}}><CreativeCard o={o} idx={idx} editable={true} onEditSave={onEditSave} onRtbToggle={onRtbToggle} product={product}/></div>}
       {isPush
         /* Push notification preview */
         ?<div style={{background:C.navy,borderRadius:10,padding:12}}>
