@@ -75,6 +75,7 @@ const ROLE_META={
   design_lead:{label:"Design Lead",color:"#0F766E",tab:"design"},
   design_team:{label:"Design Team",color:"#16A34A",tab:"design"},
   business:{label:"Business Team",color:"#0D9488",tab:"dashboard"},
+  project_manager:{label:"Project Manager",color:"#7C3AED",tab:"dashboard"},
 };
 const ROLE_TAB=Object.fromEntries(Object.entries(ROLE_META).map(([k,v])=>[k,v.tab]));
 const roleLabel=(r)=>(ROLE_META[normRole(r)]||{}).label||r||"—";
@@ -87,6 +88,8 @@ const isLead=(me)=>["brand_lead","design_lead"].includes(_r(me));
 const seesAll=(me)=>["super_admin","brand_lead","design_lead"].includes(_r(me)); // leads = everything minus settings
 const isExec=(me)=>["cxo","head_marketing"].includes(_r(me));                    // dashboard + final assets only
 const isBusiness=(me)=>_r(me)==="business";
+const isPM=(me)=>_r(me)==="project_manager";
+const canRemind=(me)=>["super_admin","brand_lead","design_lead","project_manager"].includes(_r(me)); // PM & leads can nudge late owners
 const isBrandTeam=(me)=>_r(me)==="brand_team";
 const isDesignTeam=(me)=>_r(me)==="design_team";
 const canManageTeam=(me)=>isSuper(me);                                            // settings = super only
@@ -106,6 +109,7 @@ const TAB_VIS={
   brand_team:["dashboard","mytasks","brief","content","library","done","analytics"],
   design_team:["dashboard","mytasks","design","library","done","analytics"],
   business:["dashboard","mytasks","brief","done","analytics","archive"],
+  project_manager:["dashboard","brief","content","design","done","analytics","archive"],
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
@@ -493,7 +497,9 @@ const waitingOn=(c,team)=>{
   if(c.stage==="design"&&d&&d.finalReview)return{gate:"final",label:"Waiting for final sign-off",by:named("final",SLOT_FALLBACK.final)};
   return null;
 };
+const GATE_ROLE={copy:"brand_lead",design:"design_lead",asset:"brand_lead",final:"head_marketing"};
 function WhoChips({c,me,team}){
+  const[reminded,setReminded]=useState(false);
   if(!c)return null;
   const raised=c.created_by_name;
   const writer=c.copy_author;
@@ -517,6 +523,7 @@ function WhoChips({c,me,team}){
     {copyPerson&&chip("#EDE9FE","#6D28D9",<PenLine size={10}/>,"Copy: "+copyPerson)}
     {designer&&chip("#E0F2FE","#0369A1",<Palette size={10}/>,"Design: "+designer+(designerIsLead?" (lead)":""))}
     {w&&chip("#FEF3C7","#92400E",<ClockIcon size={10}/>,w.label+(w.by?" · "+w.by:""))}
+    {w&&canRemind(me)&&(reminded?<span style={{fontSize:10.5,fontWeight:800,color:"#16A34A"}}>Reminded ✓</span>:<button onClick={e=>{e.stopPropagation();api.post("/api/notify",{toRole:GATE_ROLE[w.gate]||"brand_lead",campaignId:c.id,kind:"Reminder — running late",body:(humanizeToken(c.product)||c.name||"An asset")+" is waiting on "+w.label.toLowerCase()+". A nudge from "+((me&&me.name)||"the project manager")+" — please take a look when you can."}).catch(()=>{});setReminded(true);}}style={{fontSize:10.5,fontWeight:800,color:"#B45309",background:"#fff",border:"1px solid #FCD34D",borderRadius:999,padding:"2px 9px",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:3}}><ClockIcon size={10}/>Remind</button>)}
   </div>;
 }
 // categories a brand_team writer owns, from the category-rules mapping
@@ -857,6 +864,19 @@ Campaign creative types and their go-to copy shapes:
 - Treats ("TREAT THEM RIGHT"): "TREAT THEM RIGHT with real superfoods!" / "…with high protein!" / "…with 0 artificial preservatives!" — dog treats from Rs.XX, cat treats from Rs.XX [confirm].
 - New Store Opening (NSO): "NOW OPEN — your pet's second home! New HUFT Store & Spa, <city>"; or a hype angle, "Come see what the hype is about."
 - Retail & Spa: flyers, vouchers, stall & wall branding, billboards — store-experience led, no app/web links.
+
+▌ BUSINESS TERMS & ABBREVIATIONS
+Briefs may use shorthand. Interpret it correctly — and in customer-facing copy NEVER print the raw abbreviation or internal jargon; translate it into plain, warm benefit language (brief "MOV ₹1499, GWP" → copy "Spend ₹1,499 and get a free gift"). Always format money with ₹ and thousands separators (₹1,499).
+- MOV — Minimum Order Value (the spend needed to unlock an offer or free shipping)
+- AOV — Average Order Value
+- GWP — Gift With Purchase (a free gift when a spend/order condition is met)
+- BOGO — Buy One Get One (check the brief for free vs half-price)
+- COD — Cash on Delivery
+- FTB — First-Time Buyer · RPT — Repeat Buyer
+- LTV / CLV — Customer Lifetime Value
+- RTB — Reason To Believe (the proof that makes a claim credible)
+- Winback / Lapsed — a customer who was active but has gone quiet; re-engage warmly, acknowledge the gap without guilt-tripping
+- CRM, D2C, SKU, CTA carry their standard retail meanings
 `.trim();
 
 /* ===== Reasons-to-believe (RTBs) by product/category ==================== */
@@ -977,7 +997,7 @@ const BRIEF_STEPS = [
     },
   },
   {
-    key:"trigger", question:"What's the trigger — the moment that prompts this?",
+    key:"trigger", question:"What's the lifestage — the moment that prompts this?",
     hint:"The 'why now'. e.g. ran out 60+ days ago, vet flagged digestion, second cat just adopted, payday, post-grooming. Pick one or write your own.",
     options:[
       "Ran out / replenishment due","Lapsed 60–90 days","New pet just adopted",
@@ -2262,7 +2282,7 @@ function ReviewModal({c,me,kind,action,tab,onApprove,onSendBackDone,onEdit,onClo
           <div style={{fontSize:10,fontWeight:800,color:C.coral,textTransform:"uppercase",letterSpacing:.5,marginBottom:6}}>The brief — at a glance</div>
           <Field label="Objective">{c.objective||brief.objective}</Field>
           <Field label="Single-minded idea">{asText(brief.idea)}</Field>
-          {brief.trigger&&<Field label="Trigger">{asText(brief.trigger)}</Field>}<Field label="Insight">{asText(brief.strategicInsight)}</Field>
+          {brief.trigger&&<Field label="Lifestage">{asText(brief.trigger)}</Field>}<Field label="Insight">{asText(brief.strategicInsight)}</Field>
           <Field label="Audience">{c.audience_label||c.segment}</Field>
           <Field label="Offer">{c.offer}</Field>
           {Array.isArray(brief.proofPoints)&&brief.proofPoints.length>0&&<Field label="Proof points">{brief.proofPoints.slice(0,3).join(" · ")}</Field>}
@@ -3520,7 +3540,7 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns:
           </div>
           {/* Collapsible sections */}
           <div style={{background:"#fff",borderRadius:12,border:`1px solid ${C.line}`,overflow:"hidden",marginBottom:8}}>
-            {brief.trigger&&<BriefSection label="Trigger" content={brief.trigger}/>}<BriefSection label="Strategic insight" content={brief.strategicInsight}/>
+            {brief.trigger&&<BriefSection label="Lifestage" content={brief.trigger}/>}<BriefSection label="Strategic insight" content={brief.strategicInsight}/>
             <BriefSection label="Copy direction" content={brief.copyDirection}/>
             <BriefSection label="Channel note" content={brief.whatsappNote}/>
             {brief.proofPoints&&brief.proofPoints.length>0&&
