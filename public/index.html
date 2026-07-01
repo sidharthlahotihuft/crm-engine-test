@@ -582,6 +582,15 @@ const CollapsibleSection=({title,count,color=C.purple,icon,children,extra,defaul
 /* ===== TAT + Calendar helpers =========================================== */
 const TAT_HOURS={brief:24,content:48,design:48}; // target hours per stage
 const fmtDate=(d)=>{if(!d)return"";const dt=new Date(d);return dt.toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"});};
+function BriefDates({c,style}){
+  const cr=c&&(c.created_at||c.createdAt);
+  const gl=c&&c.go_live_date;
+  if(!cr&&!gl)return null;
+  return<div style={{display:"flex",flexWrap:"wrap",gap:8,fontSize:11,color:C.sub,marginTop:2,alignItems:"center",...style}}>
+    {cr&&<span>Brief <b style={{color:C.ink,fontWeight:700}}>{fmtDate(cr)}</b></span>}
+    {gl&&<span>Go-live <b style={{color:C.ink,fontWeight:700}}>{fmtDate(gl)}</b></span>}
+  </div>;
+}
 const fmtTime=(ts)=>{if(!ts)return"";const d=new Date(ts);return d.toLocaleDateString("en-IN",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"});};
 const hoursAgo=(ts)=>ts?Math.round((Date.now()-new Date(ts).getTime())/36e5):null;
 const tatStatus=(startedAt,dueAt,done)=>{
@@ -1888,7 +1897,7 @@ function App(){
         <div style={{width:34,height:34,borderRadius:9,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={18}color="#fff"/></div>
         <div style={{lineHeight:1.15,minWidth:0}}>
           <div style={{fontWeight:800,fontSize:15,letterSpacing:-.3}}>CRM Engine</div>
-          <div title="Frontend build loaded" style={{fontSize:9,fontWeight:600,color:"rgba(255,255,255,.32)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{BUILD}</div>
+          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>{(BUILD.split(" - ")[0]||"").replace(/^v/,"V")} · locked for launch</div>
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"12px 10px",display:"flex",flexDirection:"column",gap:3}}>
@@ -2303,6 +2312,7 @@ function ApprovalsTab({campaigns,onOpen,me,team,reload}){
               {categoryOf(c)&&<span style={{fontSize:10.5,color:C.sub,background:C.paper,border:`1px solid ${C.line}`,padding:"1px 7px",borderRadius:999}}>{categoryOf(c)}</span>}
             </div>
             <div style={{fontSize:11.5,color:s.col,fontWeight:700,marginTop:2}}>{s.t}{c.copy_author?" · writer "+c.copy_author:""}</div>
+            <BriefDates c={c}/>
             <WhoChips c={c}me={me}team={team}/>
           </div>
           {u&&<span style={{fontSize:10.5,fontWeight:800,color:u.col,background:u.bg,padding:"2px 8px",borderRadius:999,flexShrink:0}}>{u.t}</span>}
@@ -2343,6 +2353,7 @@ function MyTasksTab({campaigns,onOpen,me,team}){
         {categoryOf(c)&&<span style={{fontSize:10.5,color:C.sub,background:C.paper,border:`1px solid ${C.line}`,padding:"1px 7px",borderRadius:999}}>{categoryOf(c)}</span>}
       </div>
       {dueForCampaign(c)&&<div style={{fontSize:11.5,color:C.sub,marginTop:2}}>Due {fmtDate(dueForCampaign(c))}</div>}
+      <BriefDates c={c}/>
       <WhoChips c={c}me={me}team={team}/>
     </div>
     {u&&<span style={{fontSize:10.5,fontWeight:800,color:u.col,background:u.bg,padding:"2px 8px",borderRadius:999,flexShrink:0}}>{u.t}</span>}
@@ -2471,6 +2482,7 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
         {(c.audience_label||c.segment)&&<span>· {c.audience_label||c.segment}</span>}
         {c.objective&&<span>· {c.objective}</span>}
         {c.created_at&&<span style={{marginLeft:4,fontSize:11,color:C.sub,background:"#F3F4F6",padding:"1px 6px",borderRadius:4}}>Brief {fmtDate(c.created_at)}</span>}
+        {c.go_live_date&&<span style={{fontSize:11,color:C.ink,fontWeight:700,background:"#FEF3C7",padding:"1px 6px",borderRadius:4}}>Live {fmtDate(c.go_live_date)}</span>}
         {(c.stage==="done"||c.went_live_at)&&<span style={{fontSize:11,color:C.green,background:C.green+"18",padding:"1px 6px",borderRadius:4}}>Ready {fmtDate(c.went_live_at||c.updated_at)}</span>}
       </div>
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:6,alignItems:"center"}}>
@@ -2558,6 +2570,7 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
           <span style={{fontSize:12,color:C.sub}}>· {normCrmType(c.crm_type)} · {c.channel||"WhatsApp"}</span>
           <span style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
             {c.created_at&&<span style={{fontSize:11,color:C.sub}}>Brief <b style={{color:C.ink,fontWeight:700}}>{fmtDate(c.created_at)}</b></span>}
+            {c.go_live_date&&<span style={{fontSize:11,color:C.sub}}>Live <b style={{color:C.ink,fontWeight:700}}>{fmtDate(c.go_live_date)}</b></span>}
             {(c.went_live_at||c.updated_at)&&<span style={{fontSize:11,color:C.green}}>Ready <b style={{fontWeight:700}}>{fmtDate(c.went_live_at||c.updated_at)}</b></span>}
             <ChevronRight size={16}color={C.sub}/>
           </span>
@@ -3415,7 +3428,8 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns:
           </div>
           {/* Line 2: Date (created) + audience */}
           <div style={{fontSize:12,color:C.sub,display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
-            {c.created_at&&<span>{fmtDate(c.created_at)}</span>}
+            {c.created_at&&<span>Brief {fmtDate(c.created_at)}</span>}
+            {c.go_live_date&&<span style={{fontWeight:700,color:C.ink}}>· Live {fmtDate(c.go_live_date)}</span>}
             {c.audience_label&&<span>· {c.audience_label}</span>}
           </div>
           {/* Line 3: Idea */}
@@ -4612,7 +4626,8 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
           </div>
           {/* Line 2: Date (created) + audience */}
           <div style={{fontSize:12,color:C.sub,display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
-            {c.created_at&&<span>{fmtDate(c.created_at)}</span>}
+            {c.created_at&&<span>Brief {fmtDate(c.created_at)}</span>}
+            {c.go_live_date&&<span style={{fontWeight:700,color:C.ink}}>· Live {fmtDate(c.go_live_date)}</span>}
             {c.audience_label&&<span>· {c.audience_label}</span>}
           </div>
           {/* Line 3: Idea */}
