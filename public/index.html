@@ -140,6 +140,7 @@ const inferCategory=(c)=>{
   return null;
 };
 const categoryOf=(c)=>(c&&c.category)||inferCategory(c)||null;
+const normCat=(x)=>(x==null?"":String(x)).trim().toLowerCase(); // category key normaliser — case/space-proof matching
 // Researched WhatsApp/CRM copy best practices — injected into every copy generation.
 const COPY_BEST_PRACTICES=`HIGH-ENGAGEMENT COPY RULES — these are HARD RULES, NOT soft suggestions. Apply EVERY one to EVERY option, on EVERY channel, EVERY time. They are non-negotiable:
 - ACTION-LED ALWAYS: every piece of copy must drive an action — give the reader a clear thing to do (tap, switch, try, shop, book, learn, save, come back). Even awareness or brand-building copy must move the reader toward an action, never just inform. Lead with the action, or the pull straight toward it.
@@ -532,7 +533,8 @@ function WhoChips({c,me,team}){
 // categories a brand_team writer owns, from the category-rules mapping
 const myCategories=(me,catRules)=>{
   if(!me||!Array.isArray(catRules))return [];
-  return catRules.filter(r=>r.user_id===me.id||r.user_email===me.email).map(r=>r.category);
+  const uid=me.id==null?null:String(me.id), em=(me.email||"").trim().toLowerCase();
+  return catRules.filter(r=>(uid!=null&&String(r.user_id)===uid)||(!!em&&(r.user_email||"").trim().toLowerCase()===em)).map(r=>normCat(r.category)).filter(Boolean);
 };
 // Sub-brand scoping: a user with sub_brands set only sees campaigns whose product matches one of them.
 const userSubBrands=(me)=>(me&&Array.isArray(me.sub_brands)?me.sub_brands.filter(Boolean):[]);
@@ -4418,7 +4420,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
   const allCopyAll=isBusiness(me)
     ? allCopyRaw.filter(c=>c.data?.selfMade)
     : isBrandTeam(me)
-      ? allCopyRaw.filter(c=>!c.data?.selfMade).filter(c=>{if(!(_myCats.length>0))return true;const cat=categoryOf(c);return !cat||_myCats.includes(cat);})
+      ? allCopyRaw.filter(c=>!c.data?.selfMade).filter(c=>{if(!(_myCats.length>0))return true;const cat=normCat(categoryOf(c));return !cat||_myCats.includes(cat);})
       : allCopyRaw;
   const[tf,setTf]=useState({date:"",crm:"",channel:""});
   const allCopy=applyTileFilters(allCopyAll,tf);
@@ -7943,9 +7945,9 @@ function CategoryRulesDrawer({onClose,me}){
       .then(([us,rs])=>{setUsers(us||[]);setRules(rs||[]);});
   },[]);
   const writers=(users||[]).filter(u=>["brand_team","content"].includes(normRole(u.role)));
-  const has=(cat,uid)=>rules.some(r=>r.category===cat&&r.user_id===uid);
+  const has=(cat,uid)=>rules.some(r=>normCat(r.category)===normCat(cat)&&String(r.user_id)===String(uid));
   const toggle=(cat,u)=>{
-    setRules(rs=>has(cat,u.id)?rs.filter(r=>!(r.category===cat&&r.user_id===u.id)):[...rs,{category:cat,user_id:u.id,user_email:u.email}]);
+    setRules(rs=>has(cat,u.id)?rs.filter(r=>!(normCat(r.category)===normCat(cat)&&String(r.user_id)===String(u.id))):[...rs,{category:cat,user_id:u.id,user_email:u.email}]);
   };
   const save=async()=>{setBusy(true);setMsg("");
     try{const saved=await api.put("/api/category-rules",{rules});setRules(saved||rules);setMsg("Saved ✓");}
