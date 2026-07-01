@@ -1678,7 +1678,7 @@ function normalizeCampaigns(cs){
     }
     if(isPushChannel(c.channel)&&c.stage!=="done"&&c.stage!=="brief"
        &&c.data?.selectedCopyIdx!=null){
-      return{...c,stage:"done",design_approver:null,
+      return{...c,stage:"done",design_approver:c.design_approver,
         went_live_at:c.went_live_at||c.updated_at||new Date().toISOString()};
     }
     return c;
@@ -4085,7 +4085,7 @@ function BrandReviewTab({campaigns,patch,me,toast,onOpen,setTab}){
       const r=await api.post(`/api/campaigns/${c.id}/brand-approve`,{});
       // Server moves it to 'design'. For push, no design needed → mark done.
       if(isPushChannel(c.channel)){
-        await api.put(`/api/campaigns/${c.id}`,{stage:"done",design_approver:me.name,went_live_at:new Date().toISOString()});
+        await api.put(`/api/campaigns/${c.id}`,{stage:"done",brand_approver:me.name,design_approver:me.name,went_live_at:new Date().toISOString()});
       }
       patch(c.id,{}); // trigger a refresh via parent reload pattern
       if(toast)toast("Copy approved ✓ — released"+(isPushChannel(c.channel)?" to Done":" to Design"),"success");
@@ -4431,7 +4431,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
   const allCopyAll=isBusiness(me)
     ? allCopyRaw.filter(c=>c.data?.selfMade)
     : isBrandTeam(me)
-      ? allCopyRaw.filter(c=>!c.data?.selfMade).filter(c=>{if(!(_myCats.length>0))return true;const cat=normCat(categoryOf(c));return _myCats.includes(cat);})
+      ? allCopyRaw.filter(c=>!c.data?.selfMade).filter(c=>{if(!(_myCats.length>0))return true;if(normCrmType(c.crm_type)==="Retail")return true;const cat=normCat(categoryOf(c));return _myCats.includes(cat);})
       : allCopyRaw;
   const[tf,setTf]=useState({date:"",crm:"",channel:""});
   const[copySort,setCopySort]=useState("golive_asc");
@@ -4483,7 +4483,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       try{
         await api.post(`/api/campaigns/${c.id}/brand-approve`,{});
         if(isPushChannel(c.channel)){
-          await api.put(`/api/campaigns/${c.id}`,{stage:"done",design_approver:me.name,went_live_at:new Date().toISOString()});
+          await api.put(`/api/campaigns/${c.id}`,{stage:"done",brand_approver:me.name,design_approver:me.name,went_live_at:new Date().toISOString()});
         }
         if(toast)toast("Brand approved ✓ — released to "+(isPushChannel(c.channel)?"Done":"Design"),"success");
         if(reload)await reload();setBusy(false);
@@ -4859,7 +4859,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       </div>
     </div>
     {view==="list"&&<ListBar period={period} setPeriod={setPeriod} stages={["needs_copy","content","brand_review"]}/>}
-    {view==="list"&&<TileFilters items={allCopyAll} f={tf} setF={setTf}/>}{view==="list"&&<SortBar value={copySort}onChange={setCopySort}/>}{isBrandTeam(me)&&<div style={{marginBottom:12,fontSize:11.5,fontWeight:600,padding:"7px 11px",borderRadius:8,background:_myCats.length?"#EEF2FF":"#FEF3C7",color:_myCats.length?"#3730A3":"#92400E",border:_myCats.length?"1px solid #C7D2FE":"1px solid #FDE68A"}}>{_myCats.length?"Category routing on · showing your categories: "+_myCats.join(", "):"No categories assigned to you yet — showing all copy. Ask an admin to set you under Category routing. ("+(Array.isArray(catRules)?catRules.length:0)+" routing rules loaded)"}</div>}
+    {view==="list"&&<TileFilters items={allCopyAll} f={tf} setF={setTf}/>}{view==="list"&&<SortBar value={copySort}onChange={setCopySort}/>}{isBrandTeam(me)&&<div style={{marginBottom:12,fontSize:11.5,fontWeight:600,padding:"7px 11px",borderRadius:8,background:_myCats.length?"#EEF2FF":"#FEF3C7",color:_myCats.length?"#3730A3":"#92400E",border:_myCats.length?"1px solid #C7D2FE":"1px solid #FDE68A"}}>{_myCats.length?"Category routing on · your D2C categories: "+_myCats.join(", ")+" · plus all Retail":"No categories assigned to you yet — showing all copy. Ask an admin to set you under Category routing. ("+(Array.isArray(catRules)?catRules.length:0)+" routing rules loaded)"}</div>}
     {view==="calendar"
       ?<CalendarView campaigns={allCopy}onOpen={onOpen}/>
       :allCopy.length===0
