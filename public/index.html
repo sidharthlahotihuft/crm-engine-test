@@ -69,7 +69,7 @@ const normRole=(r)=>ROLE_ALIAS[r]||r||"brand_team";
 const ROLE_META={
   super_admin:{label:"Super-Admin",color:"#E8632A",tab:"dashboard"},
   cxo:{label:"CXO",color:"#0EA5E9",tab:"dashboard"},
-  head_marketing:{label:"Head of Marketing",color:"#0284C7",tab:"dashboard"},
+  head_marketing:{label:"Head of Marketing",color:"#0284C7",tab:"done"},
   brand_lead:{label:"Brand Lead",color:"#C026D3",tab:"dashboard"},
   brand_team:{label:"Brand Team · Copy",color:"#9333EA",tab:"content"},
   design_lead:{label:"Design Lead",color:"#0F766E",tab:"design"},
@@ -105,8 +105,8 @@ const TAB_VIS={
   brand_lead:["dashboard","mytasks","approvals","brief","content","design","library","done","analytics","archive"],
   design_lead:["dashboard","mytasks","approvals","brief","content","design","library","done","analytics","archive"],
   cxo:["dashboard","approvals","done"],
-  head_marketing:["dashboard","approvals","done"],
-  brand_team:["dashboard","mytasks","brief","content","library","done","analytics"],
+  head_marketing:["done","analytics"],
+  brand_team:["dashboard","mytasks","approvals","brief","content","library","done","analytics"],
   design_team:["dashboard","mytasks","design","library","done","analytics"],
   business:["dashboard","mytasks","brief","done","analytics","archive"],
   project_manager:["dashboard","brief","content","design","done","analytics","archive"],
@@ -389,8 +389,9 @@ const computeApprovals=(campaigns,me)=>{
   const out=[];
   if(mySlots.includes("copy"))(campaigns||[]).filter(c=>c.stage==="brand_review"&&!c.data?.selfMade&&!isArchived(c)).forEach(c=>out.push({c,kind:"Copy",tab:"content",action:"copy"}));
   if(mySlots.includes("design"))(campaigns||[]).filter(c=>c.stage==="design"&&c.data?.design?.pendingApproval&&!c.data?.selfMade&&!isArchived(c)).forEach(c=>out.push({c,kind:"Design",tab:"design",action:"design"}));
-  if(mySlots.includes("asset"))(campaigns||[]).filter(c=>c.stage==="design"&&c.data?.design?.assetReview&&!c.data?.selfMade&&!isArchived(c)).forEach(c=>out.push({c,kind:"Full asset",tab:"design",action:"asset"}));
-  if(mySlots.includes("final"))(campaigns||[]).filter(c=>c.stage==="design"&&c.data?.design?.finalReview&&!c.data?.selfMade&&!isArchived(c)).forEach(c=>out.push({c,kind:"Final sign-off",tab:"done",action:"final"}));
+  (campaigns||[]).filter(c=>c.stage==="design"&&c.data?.design?.assetReview&&!c.data?.selfMade&&!isArchived(c)).forEach(c=>{if(isSuper(me)||(c.copy_author?c.copy_author===(me&&me.name):canBrandApprove(me)))out.push({c,kind:"Your review",tab:"design",action:"asset"});});
+  (campaigns||[]).filter(c=>c.stage==="design"&&c.data?.design?.brandReview&&!c.data?.selfMade&&!isArchived(c)).forEach(c=>{if(canBrandApprove(me))out.push({c,kind:"Full asset",tab:"design",action:"brand"});});
+  (campaigns||[]).filter(c=>c.stage==="design"&&c.data?.design?.finalReview&&!c.data?.selfMade&&!isArchived(c)).forEach(c=>{if(isSuper(me)||_r(me)==="head_marketing"||mySlots.includes("final"))out.push({c,kind:"Final sign-off",tab:"done",action:"final"});});
   return out;
 };
 const computeMyTasks=(campaigns,me)=>{
@@ -430,7 +431,7 @@ const myAction=(c,me)=>{
 // ── Who's involved + what it's waiting on (for clearer row identifiers) ──
 const _first=(n)=>((n||"").trim().split(/\s+/)[0]||"");
 const slotHolders=(team,slot)=>(team||[]).filter(u=>Array.isArray(u.approval_slots)&&u.approval_slots.includes(slot)).map(u=>u.name);
-const SLOT_FALLBACK={copy:"brand lead",design:"design lead",asset:"brand lead",final:"Head of Marketing"};
+const SLOT_FALLBACK={copy:"brand lead",design:"design lead",asset:"the copy author",brand:"brand lead",final:"Head of Marketing"};
 // HUFT Canva brand templates. Both teams open the suggested one, paste the approved copy into the
 // pre-branded text layers (fonts/layout already set), then upload the export / share link for review.
 const CANVA_TEMPLATES=[
@@ -493,11 +494,12 @@ const waitingOn=(c,team)=>{
   if(c.stage==="brand_review")return{gate:"copy",label:"Waiting for copy approval",by:named("copy",c.copy_approver||SLOT_FALLBACK.copy)};
   const d=c.data&&c.data.design;
   if(c.stage==="design"&&d&&d.pendingApproval)return{gate:"design",label:"Waiting for design approval",by:named("design",SLOT_FALLBACK.design)};
-  if(c.stage==="design"&&d&&d.assetReview)return{gate:"asset",label:"Waiting for full-asset approval",by:named("asset",SLOT_FALLBACK.asset)};
+  if(c.stage==="design"&&d&&d.assetReview)return{gate:"asset",label:"Waiting for writer's asset review",by:c.copy_author||SLOT_FALLBACK.asset};
+  if(c.stage==="design"&&d&&d.brandReview)return{gate:"brand",label:"Waiting for full-asset approval",by:named("copy",SLOT_FALLBACK.brand)};
   if(c.stage==="design"&&d&&d.finalReview)return{gate:"final",label:"Waiting for final sign-off",by:named("final",SLOT_FALLBACK.final)};
   return null;
 };
-const GATE_ROLE={copy:"brand_lead",design:"design_lead",asset:"brand_lead",final:"head_marketing"};
+const GATE_ROLE={copy:"brand_lead",design:"design_lead",asset:"brand_team",brand:"brand_lead",final:"head_marketing"};
 function WhoChips({c,me,team}){
   const[reminded,setReminded]=useState(false);
   if(!c)return null;
@@ -2260,6 +2262,10 @@ function ReviewModal({c,me,kind,action,tab,onApprove,onSendBackDone,onEdit,onClo
       }else if(action==="design"){
         // Same feedback loop as copy↔brand: send the design back to the design team with the reason.
         await api.post(`/api/campaigns/${c.id}/design-reject`,{reason:r});
+      }else if(action==="asset"||action==="brand"){
+        await api.post(`/api/campaigns/${c.id}/design-reject`,{reason:r});
+      }else if(action==="final"){
+        await api.post(`/api/campaigns/${c.id}/final-reject`,{reason:r});
       }else{
         await api.post(`/api/campaigns/${c.id}/comments`,{body:"Sent back: "+(r||"please revise"),context:ctx}).catch(()=>{});
       }
@@ -2332,11 +2338,11 @@ function ApprovalsTab({campaigns,onOpen,me,team,reload}){
   const approvals=computeApprovals(campaigns,me);
   const mySlots=isSuper(me)?["copy","design","asset","final"]:((me&&me.approval_slots)||[]);
   const approveGate=async(c,action)=>{
-    const ep=action==="copy"?"brand-approve":action==="design"?"design-approve":action==="asset"?"asset-approve":"final-approve";
+    const ep=action==="copy"?"brand-approve":action==="design"?"design-approve":action==="asset"?"asset-approve":action==="brand"?"brand-asset-approve":"final-approve";
     await api.post("/api/campaigns/"+c.id+"/"+ep,{});
     if(reload)await reload();
   };
-  const slotLabel={copy:"Copy",design:"Design",asset:"Full asset",final:"Final sign-off"};
+  const slotLabel={copy:"Copy",design:"Design",asset:"Your review",brand:"Full asset",final:"Final sign-off"};
   return<div>
     <div style={{marginBottom:16}}><Eyebrow>Approvals</Eyebrow><h1 style={{margin:"4px 0 0",fontSize:24,fontWeight:800}}>Pending your approval</h1>
       <div style={{fontSize:13.5,color:C.sub,marginTop:4}}>Everything waiting on your sign-off, across the gates you hold{mySlots.length?": "+mySlots.map(s=>slotLabel[s]||s).join(", "):""}.</div></div>
@@ -2371,7 +2377,7 @@ function MyTasksTab({campaigns,onOpen,me,team}){
   const lead=seesAll(me);
   const all=computeMyTasks(campaigns,me); // seesAll → whole pipeline; team/business → only their actionable items
   // Personal = what THIS person must act on. Leads/super → their pending approvals; teams/business → their action items.
-  const APPROVE_LABEL={copy:"Approve copy",design:"Approve design",asset:"Approve full asset",final:"Final sign-off"};
+  const APPROVE_LABEL={copy:"Approve copy",design:"Approve design",asset:"Your asset review",brand:"Approve full asset",final:"Final sign-off"};
   const mine=lead
     ?computeApprovals(campaigns,me).map(a=>({c:a.c,label:APPROVE_LABEL[a.action]||"Review",col:"#9333EA",tab:a.tab}))
     :all.map(c=>{const m=myAction(c,me);return{c,label:(m&&m.label)||"Open",col:(m&&m.col)||C.coral,tab:stageTab(c)};});
@@ -2450,7 +2456,7 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
   const periodLabel=period==="all"?"all time":period==="custom"?((cFrom||"…")+" → "+(cTo||"…")):period==="7d"?"last 7 days":period==="30d"?"last 30 days":"last 90 days";
   const approveGate=async(c,action)=>{setApproving(c.id+action);
     try{
-      const ep=action==="copy"?"brand-approve":action==="design"?"design-approve":action==="asset"?"asset-approve":"final-approve";
+      const ep=action==="copy"?"brand-approve":action==="design"?"design-approve":action==="asset"?"asset-approve":action==="brand"?"brand-asset-approve":"final-approve";
       await api.post("/api/campaigns/"+c.id+"/"+ep,{});
       if(reload)await reload();
       setApproving("");
@@ -2484,8 +2490,9 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
   const approvals=[];
   if(mySlots.includes("copy"))campaigns.filter(c=>c.stage==="brand_review"&&!isArchived(c)).forEach(c=>approvals.push({c,kind:"Copy",tab:"content",action:"copy"}));
   if(mySlots.includes("design"))campaigns.filter(c=>c.stage==="design"&&c.data?.design?.pendingApproval&&!isArchived(c)).forEach(c=>approvals.push({c,kind:"Design",tab:"design",action:"design"}));
-  if(mySlots.includes("asset"))campaigns.filter(c=>c.stage==="design"&&c.data?.design?.assetReview&&!isArchived(c)).forEach(c=>approvals.push({c,kind:"Full asset",tab:"design",action:"asset"}));
-  if(mySlots.includes("final"))campaigns.filter(c=>c.stage==="design"&&c.data?.design?.finalReview&&!isArchived(c)).forEach(c=>approvals.push({c,kind:"Final sign-off",tab:"done",action:"final"}));
+  campaigns.filter(c=>c.stage==="design"&&c.data?.design?.assetReview&&!isArchived(c)).forEach(c=>{if(isSuper(me)||(c.copy_author?c.copy_author===(me&&me.name):canBrandApprove(me)))approvals.push({c,kind:"Your review",tab:"design",action:"asset"});});
+  campaigns.filter(c=>c.stage==="design"&&c.data?.design?.brandReview&&!isArchived(c)).forEach(c=>{if(canBrandApprove(me))approvals.push({c,kind:"Full asset",tab:"design",action:"brand"});});
+  campaigns.filter(c=>c.stage==="design"&&c.data?.design?.finalReview&&!isArchived(c)).forEach(c=>{if(isSuper(me)||_r(me)==="head_marketing"||mySlots.includes("final"))approvals.push({c,kind:"Final sign-off",tab:"done",action:"final"});});
   // My tasks — role-scoped in-progress work, overdue/today first
   const inProg=campaigns.filter(c=>c.stage!=="done"&&!isArchived(c));
   let myTasks;
@@ -7398,6 +7405,9 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate}){
   const allDoneAll=(campaigns||[]).filter(c=>c.stage==="done"&&!isArchived(c)).sort((a,b)=>new Date(b.updated_at||b.created_at)-new Date(a.updated_at||a.created_at));
   const[tf,setTf]=useState({date:"",crm:"",channel:""});
   const allDone=applyTileFilters(allDoneAll,tf);
+  const pendingFinal=(campaigns||[]).filter(c=>c.stage==="design"&&c.data?.design?.finalReview&&!isArchived(c));
+  const canFinal=isSuper(me)||_r(me)==="head_marketing"||((me&&me.approval_slots)||[]).includes("final");
+  const[finalReviewing,setFinalReviewing]=useState(null);
   const[view,setView]=useState("list");
   const[reactivating,setReactivating]=useState(null);
   const reactivate=(c)=>{
@@ -7550,6 +7560,17 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate}){
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
       <div><Eyebrow color={C.green}>Done</Eyebrow><h1 style={{margin:"4px 0 0",fontSize:24,fontWeight:800}}>Done & ready</h1></div>
     </div>
+    {canFinal&&pendingFinal.length>0&&<Card style={{padding:0,overflow:"hidden",marginBottom:16,border:`1.5px solid #9333EA`}}>
+      <div style={{padding:"11px 16px",background:"#F5F3FF",borderBottom:`1px solid ${C.line}`,fontWeight:800,fontSize:13,color:"#6D28D9"}}>Pending your final sign-off · {pendingFinal.length}</div>
+      {pendingFinal.map(c=><div key={c.id}style={{display:"flex",alignItems:"center",gap:10,padding:"12px 16px",borderBottom:`1px solid ${C.line}`}}>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontWeight:800,fontSize:14}}>{humanizeToken(c.product)||c.name}<span style={{fontSize:11.5,color:C.sub,fontWeight:600}}> · {normCrmType(c.crm_type)} · {c.channel||"WhatsApp"}</span></div>
+          <div style={{fontSize:11,color:C.sub}}>{c.copy_author?"Copy "+c.copy_author+"  ":""}{c.design_approver?"· Design "+c.design_approver:""}</div>
+        </div>
+        <button onClick={()=>setFinalReviewing(c)}style={{fontSize:12,fontWeight:800,color:"#fff",background:"#9333EA",border:"none",borderRadius:7,padding:"6px 14px",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}><Eye size={13}/>Review</button>
+      </div>)}
+    </Card>}
+    {finalReviewing&&<ReviewModal c={finalReviewing}me={me}kind="Final sign-off"action="final"tab="done"onApprove={async()=>{await api.post("/api/campaigns/"+finalReviewing.id+"/final-approve",{});window.location.reload();}}onSendBackDone={()=>window.location.reload()}onEdit={()=>onOpen(finalReviewing.id,"done")}onClose={()=>setFinalReviewing(null)}/>}
     {allDoneAll.length>0&&<TileFilters items={allDoneAll} f={tf} setF={setTf}/>}
     {allDone.length===0
       ?<Card><Empty icon={<CheckCircle2 size={26}color={C.sub}/>}title="Nothing done yet"sub="Completed, ready-to-go-live assets appear here. Archived assets live in the Archive tab."/></Card>
