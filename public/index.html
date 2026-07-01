@@ -174,13 +174,13 @@ REAL HUFT COPY THAT PERFORMED WELL — these are TONE ANCHORS only. Match this w
 Push (headline → preview):
 • "You say 'Garmi!' ☀️🐶" → "We say 'Gravy!' Hearty Gravy — the tastiest way to keep your dog hydrated this season."
 • "No more puppy eyes 🥺" → "Because this ice cream is made specially for your dog! 🍨"
-• "You don't want to miss this 👀" → "Payday deals are live only till Sunday! ⏰"
+• "You don't want to miss this 👀" → "PawDay deals are live only till Sunday! ⏰"
 • "Hot days, cooler styles 😎" → "Summer-ready looks designed for your dog ☀️"
 • "Veggies for your dog 🥕🥬" → "Easy to chew, hard to resist — Yum Nums soft treats."
 • "Two favourites: 🥭 & 🍗" → "Sara's Mango dehydrated treats your dog will love."
 WhatsApp (image-copy overlay → message body):
 • Overlay: "A season of adventure awaits" → Body: "Ready to refresh your dog's summer style? 🏖️ Discover the Summer '26 edit — breezy tees, comfy beds and walk gear for every outing."
-• Overlay: "Payday Sale · Ends Sunday" → Body: "Stop thinking, start adding your pet's favourites to the cart 🛒 The Payday Sale ends Sunday ⏰ — up to 10% off HUFT food and more."
+• Overlay: "PawDay Sale · Ends Sunday" → Body: "Stop thinking, start adding your pet's favourites to the cart 🛒 The PawDay Sale ends Sunday ⏰ — up to 10% off HUFT food and more."
 THE PATTERN: a short, playful hook that sparks curiosity or delight, then a warm payoff that lands it and points to the action. Bring exactly this wit and warmth to the brief in front of you — make it the best copy a HUFT writer could write.`;
 // IMAGE COPY (on-creative overlay): one short, COHERENT, self-contained line — not stacked fragments. Injected into every copy generation (image channels).
 const HUFT_IMAGE_COPY=`HUFT IMAGE COPY — the copy that goes ON the creative (WhatsApp / Email / Meta image only; a PUSH has NO image, skip this). It comes in up to THREE parts that work together yet each stands on its own:
@@ -1057,7 +1057,7 @@ const BRIEF_STEPS = [
   {
     key:"hook", question:"Any specific angle or creative hook to explore?",
     hint:"Optional — leave blank and the engine derives one. Or steer it: 'the dinner-bowl routine', 'first monsoon walk', 'made in India angle', 'vet-trusted proof'.",
-    options:["No specific angle — derive from brief"],
+    options:["No specific angle — derive from brief","PawDay Sale"],
     freeText:true,
     placeholder:"Or type a specific direction…",
     optional:true,
@@ -3878,7 +3878,7 @@ function RefLinks({links}){
         const href=/^https?:\/\//i.test(l)?l:("https://"+l);
         return<a key={i}href={href}target="_blank"rel="noopener noreferrer"
           style={{display:"flex",alignItems:"center",gap:7,fontSize:12.5,color:C.teal,textDecoration:"none",background:"#F0FDFA",border:`1px solid #CCFBF1`,borderRadius:8,padding:"6px 10px",overflow:"hidden"}}>
-          <LinkIcon size={12}style={{flexShrink:0}}/><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l}</span>
+          <LinkIcon size={12}style={{flexShrink:0}}/><span style={{wordBreak:"break-all",lineHeight:1.4}}>{href}</span>
         </a>;
       })}
     </div>}
@@ -3898,6 +3898,15 @@ function RefFiles({files}){
         <span style={{maxWidth:130,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.name}</span>
       </a>;})}
     </div>}
+  </div>;
+}
+function BriefLinksInline({brief}){
+  const links=((brief&&brief.references)||[]).filter(Boolean);
+  const files=((brief&&brief.referenceFiles)||[]).filter(Boolean);
+  if(!links.length&&!files.length)return null;
+  return<div style={{marginBottom:6,border:`1px solid ${C.line}`,borderRadius:10,overflow:"hidden",background:"#fff"}}>
+    {links.length>0&&<RefLinks links={links}/>}
+    {files.length>0&&<RefFiles files={files}/>}
   </div>;
 }
 function BriefSection({label,content}){
@@ -3967,6 +3976,8 @@ function BriefSummaryCard({active,activeBrief,copyRules,busy,refineFor,gen,opts,
         </button>
       </div>
     </Card>
+    {/* Reference links — always visible for the copy team */}
+    <BriefLinksInline brief={activeBrief}/>
     {/* Row 3: Expanded brief details */}
     {expanded&&<Card style={{padding:0,marginBottom:6,overflow:"hidden"}}>
       <BriefSection label="Strategic insight" content={activeBrief.strategicInsight}/>
@@ -4427,7 +4438,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
   const allCopyAll=isBusiness(me)
     ? allCopyRaw.filter(c=>c.data?.selfMade)
     : isBrandTeam(me)
-      ? allCopyRaw.filter(c=>!c.data?.selfMade).filter(c=>{if(!(_myCats.length>0))return true;if(normCrmType(c.crm_type)==="Retail")return true;const cat=normCat(categoryOf(c));return _myCats.includes(cat);})
+      ? allCopyRaw.filter(c=>!c.data?.selfMade).filter(c=>{if(!(_myCats.length>0))return true;const cat=normCat(categoryOf(c));return _myCats.includes(cat);})
       : allCopyRaw;
   const[tf,setTf]=useState({date:"",crm:"",channel:""});
   const[copySort,setCopySort]=useState("golive_asc");
@@ -4855,7 +4866,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       </div>
     </div>
     {view==="list"&&<ListBar period={period} setPeriod={setPeriod} stages={["needs_copy","content","brand_review"]}/>}
-    {view==="list"&&<TileFilters items={allCopyAll} f={tf} setF={setTf}/>}{view==="list"&&<SortBar value={copySort}onChange={setCopySort}/>}{isBrandTeam(me)&&<div style={{marginBottom:12,fontSize:11.5,fontWeight:600,padding:"7px 11px",borderRadius:8,background:_myCats.length?"#EEF2FF":"#FEF3C7",color:_myCats.length?"#3730A3":"#92400E",border:_myCats.length?"1px solid #C7D2FE":"1px solid #FDE68A"}}>{_myCats.length?"Category routing on · your D2C categories: "+_myCats.join(", ")+" · plus all Retail":"No categories assigned to you yet — showing all copy. Ask an admin to set you under Category routing. ("+(Array.isArray(catRules)?catRules.length:0)+" routing rules loaded)"}</div>}
+    {view==="list"&&<TileFilters items={allCopyAll} f={tf} setF={setTf}/>}{view==="list"&&<SortBar value={copySort}onChange={setCopySort}/>}{isBrandTeam(me)&&<div style={{marginBottom:12,fontSize:11.5,fontWeight:600,padding:"7px 11px",borderRadius:8,background:_myCats.length?"#EEF2FF":"#FEF3C7",color:_myCats.length?"#3730A3":"#92400E",border:_myCats.length?"1px solid #C7D2FE":"1px solid #FDE68A"}}>{_myCats.length?"Category routing on · showing your categories: "+_myCats.join(", "):"No categories assigned to you yet — showing all copy. Ask an admin to set you under Category routing. ("+(Array.isArray(catRules)?catRules.length:0)+" routing rules loaded)"}</div>}
     {view==="calendar"
       ?<CalendarView campaigns={allCopy}onOpen={onOpen}/>
       :allCopy.length===0
@@ -7265,6 +7276,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
           :null)}
         {/* Brief in short — context for the design team */}
         <BriefInShort c={c}/>
+        {c.data?.brief&&<BriefLinksInline brief={c.data.brief}/>}
         <DesignNote c={c}readOnly/>
         {/* Selected copy context */}
         <ApprovedCopyCard copy={copy}channel={c.channel}product={c.product}image={d.generatedImage||(d.finalFile&&d.finalFile.dataUrl)||null}/>
