@@ -1283,7 +1283,8 @@ app.post("/api/campaigns/:id/asset-approve", authMiddleware, async (req, res) =>
     const cur = await db(`SELECT * FROM campaigns WHERE id=$1`, [req.params.id]);
     if (!cur.length) return res.status(404).json({ error: "Not found" });
     const isAuthor = cur[0].copy_author && cur[0].copy_author === req.user.name;
-    if (!(isAuthor || (await userHoldsSlot(req.user, "asset")))) return res.status(403).json({ error: "Only the copy author can approve this review." });
+    const canSupersede = ["super_admin","brand_lead","brand","admin"].includes(req.user.role); // brand lead supersedes the writer's asset review
+    if (!(isAuthor || canSupersede || (await userHoldsSlot(req.user, "asset")))) return res.status(403).json({ error: "Only the copy author or brand lead can approve this review." });
     const { data } = mergeGates(cur[0], { asset: { by: req.user.name, at: new Date().toISOString() } });
     const d2 = { ...data, design: { ...(data.design || {}), assetReview: false, brandReview: true, finalReview: false } };
     const rows = await db(`UPDATE campaigns SET data=$1 WHERE id=$2 RETURNING *`, [JSON.stringify(d2), req.params.id]);
