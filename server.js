@@ -216,7 +216,7 @@ async function reviewCopy(text, ruleStr) {
   } catch (e) { console.error("[review] skipped:", e.message); }
   return JSON.stringify(Array.isArray(parsed) ? arr : arr[0]);
 }
-const SERVER_BUILD = "v29.85s - Adds POST /api/campaigns/:id/request-distribution: for a retail-WhatsApp finalized asset, creates an in-app task + email to Rahul Bharadwaj and Shubham Gandhi (the distribution owners) and flags data.distributionRequested. Pairs with index v33.3 (Request-for-distribution button + dashboard Ready-for-distribution + draft briefs). Builds on v29.83s - Seeds a Sara's Wholesome brand style (navy #102242 / cream #E8C09B / accents) from the Brand Manual into brand_styles on startup (idempotent), so the Composer auto-applies it. Pairs with index v32.9 (BRAND_CONTEXT gains a Visual Identity & Creative reference from the brand books, surfaced on the Brand styling page). Builds on v29.82s.";
+const SERVER_BUILD = "v29.85s - add project_manager role (view-only PM)";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -568,7 +568,7 @@ app.get("/api/users", authMiddleware, roles("admin"), async (req, res) => {
 app.post("/api/users", authMiddleware, roles("admin"), async (req, res) => {
   const { name, email, password, role, approval_slots, sub_brands } = req.body;
   if (!name || !email || !password) return res.status(400).json({ error: "name, email, password required" });
-  const validRoles = ["super_admin","cxo","head_marketing","brand_lead","brand_team","design_lead","design_team","business","admin","brand","content","design"];
+  const validRoles = ["super_admin","cxo","head_marketing","brand_lead","brand_team","design_lead","design_team","business","project_manager","admin","brand","content","design"];
   const userRole = validRoles.includes(role) ? role : "brand_team";
   const VALID_SLOTS = ["copy","design","asset","final"];
   const slots = Array.isArray(approval_slots) ? approval_slots.filter(s => VALID_SLOTS.includes(s)) : [];
@@ -589,7 +589,7 @@ app.post("/api/users", authMiddleware, roles("admin"), async (req, res) => {
 
 app.put("/api/users/:id", authMiddleware, roles("admin"), async (req, res) => {
   const { name, role, password, approval_slots, sub_brands } = req.body;
-  const validRoles = ["super_admin","cxo","head_marketing","brand_lead","brand_team","design_lead","design_team","business","admin","brand","content","design"];
+  const validRoles = ["super_admin","cxo","head_marketing","brand_lead","brand_team","design_lead","design_team","business","project_manager","admin","brand","content","design"];
   const VALID_SLOTS = ["copy","design","asset","final"];
   try {
     if (password) await db("UPDATE users SET password=$1 WHERE id=$2", [await bcrypt.hash(password, 10), req.params.id]);
