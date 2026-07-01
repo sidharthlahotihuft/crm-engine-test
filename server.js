@@ -216,7 +216,7 @@ async function reviewCopy(text, ruleStr) {
   } catch (e) { console.error("[review] skipped:", e.message); }
   return JSON.stringify(Array.isArray(parsed) ? arr : arr[0]);
 }
-const SERVER_BUILD = "v29.85s - add project_manager role (view-only PM)";
+const SERVER_BUILD = "v29.85s - email is digest-only (morning+evening); digest now covers writer asset review, Ilena brand sign-off & HOM final";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -1064,7 +1064,7 @@ async function notify({ toRole, toUserIds, campaignId, kind, body, url }) {
     if (emails.length) {
       const baseUrl = (process.env.APP_URL || "https://crm-engine-test.vercel.app").replace(/\/+$/, "");
       const link = campaignId ? `\n\nReview / open this asset:\n${baseUrl}/?asset=${campaignId}` : (url ? `\n\n${url}` : "");
-      await sendEmail(emails.join(","), "[HUFT CRM] " + (kind || "Update"), (body || "") + link);
+      /* Email is digest-only now (morning + evening). Per-event notifications stay in-app; the twice-daily digest rolls them up. */
     }
   } catch (e) { console.error("notify failed:", e.message); }
   return made;
@@ -1166,12 +1166,13 @@ app.get("/api/cron/daily-digest", async (req, res) => {
     if (secret && req.get("x-cron-secret") !== secret && req.query.key !== secret && bearer !== secret)
       return res.status(401).json({ error: "unauthorized" });
     if (!getMailer()) return res.json({ ok: true, sent: 0, note: "SMTP not configured — no emails sent" });
+    const slot = req.query.slot === "evening" ? "Evening" : req.query.slot === "morning" ? "Morning" : "";
 
     const users = await db(`SELECT id,name,email,role,approval_slots FROM users WHERE email IS NOT NULL AND email <> ''`);
-    const rawCamps = await db(`SELECT id,name,product,stage,data,tat_brief_due,tat_content_due,tat_design_due FROM campaigns`);
+    const rawCamps = await db(`SELECT id,name,product,stage,data,copy_author,tat_brief_due,tat_content_due,tat_design_due FROM campaigns`);
     const camps = rawCamps.map(c => {
       const d = c.data ? (typeof c.data === "string" ? JSON.parse(c.data) : c.data) : {};
-      return { label: c.product || c.name || "Untitled", stage: c.stage, d,
+      return { label: c.product || c.name || "Untitled", stage: c.stage, d, copy_author: c.copy_author,
                tat_brief_due: c.tat_brief_due, tat_content_due: c.tat_content_due, tat_design_due: c.tat_design_due };
     }).filter(c => c.stage !== "done" && !c.d.archived);
 
@@ -1202,8 +1203,9 @@ app.get("/api/cron/daily-digest", async (req, res) => {
       if (role === "design_team" || role === "design_lead") camps.filter(c => c.stage === "design" && !(c.d.design && (c.d.design.approvedPromptIdx != null || c.d.design.libraryPick || c.d.design.pendingApproval))).forEach(c => add("Build the design", c, "tat_design_due"));
       if (holds("copy")) camps.filter(c => c.stage === "brand_review").forEach(c => add("Approve copy", c, "tat_content_due"));
       if (holds("design")) camps.filter(c => c.stage === "design" && c.d.design && c.d.design.pendingApproval).forEach(c => add("Approve design", c, "tat_design_due"));
-      if (holds("asset")) camps.filter(c => c.stage === "design" && c.d.design && c.d.design.assetReview).forEach(c => add("Approve full asset", c, "tat_design_due"));
-      if (holds("final")) camps.filter(c => c.stage === "design" && c.d.design && c.d.design.finalReview).forEach(c => add("Final sign-off", c, "tat_design_due"));
+      camps.filter(c => c.stage === "design" && c.d.design && c.d.design.assetReview && (c.copy_author === u.name || holds("asset"))).forEach(c => add("Review the full asset", c, "tat_design_due"));
+      if (role === "brand_lead" || isAdmin) camps.filter(c => c.stage === "design" && c.d.design && c.d.design.brandReview).forEach(c => add("Sign off the full asset", c, "tat_design_due"));
+      if (holds("final") || role === "head_marketing") camps.filter(c => c.stage === "design" && c.d.design && c.d.design.finalReview).forEach(c => add("Final sign-off", c, "tat_design_due"));
 
       const seen = new Set();
       const uniq = tasks.filter(t => (seen.has(t.text) ? false : (seen.add(t.text), true))).sort((a, b) => a.rank - b.rank);
@@ -1214,7 +1216,7 @@ app.get("/api/cron/daily-digest", async (req, res) => {
       const extra = uniq.length - shown.length;
       const head = (overdue || today) ? ("You have " + (overdue ? overdue + " overdue" : "") + (overdue && today ? " and " : "") + (today ? today + " due today" : "") + ".\n\n") : "";
       const body = "Hi " + (u.name || "there") + ",\n\n" + head + "Here's what's waiting on you in the HUFT Creative Engine:\n\n• " + shown.join("\n• ") + (extra > 0 ? "\n• …and " + extra + " more" : "") + "\n\nOpen the CRM: " + APP + "\n\n— HUFT Creative Engine";
-      try { await sendEmail(u.email, "[HUFT CRM] Your tasks today (" + uniq.length + (overdue ? ", " + overdue + " overdue" : "") + ")", body); sent++; }
+      try { await sendEmail(u.email, "[HUFT CRM] " + (slot ? slot + " digest" : "Your tasks") + " (" + uniq.length + (overdue ? ", " + overdue + " overdue" : "") + ")", body); sent++; }
       catch (e) { console.error("digest email failed for", u.email, e.message); }
     }
     res.json({ ok: true, users: users.length, sent });
