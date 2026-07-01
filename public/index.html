@@ -1842,8 +1842,8 @@ function App(){
           tat_design_due:new Date(now+(TAT_HOURS.brief+TAT_HOURS.content+TAT_HOURS.design)*36e5).toISOString(),
           brief_started_at:new Date(now).toISOString(),
           rtbs,references:refs,
-          data:{brief:{...j,rtbs,references:refs,source:"import"}},
-          stage:"content",
+          data:{brief:{...j,rtbs,references:refs,source:"import"},draft:true},
+          stage:"brief",
         });
         setCampaigns(cs=>[c,...cs]);
         created++;
@@ -2663,14 +2663,14 @@ function findAudience(name,audiences){
   const n=name.trim().toLowerCase();
   return audiences.find(a=>(a.name||"").trim().toLowerCase()===n)||null;
 }
-function BriefFastForm({campaignId,patch,onBriefReady,me,recentFeedback,product,audiences}){
-  const[answers,setAnswers]=useState({product:product||""});
+function BriefFastForm({campaignId,c,patch,onBriefReady,onDraftSaved,me,recentFeedback,product,audiences}){
+  const[answers,setAnswers]=useState(()=>((c&&c.data&&c.data.draftAnswers)?{product:product||"",...c.data.draftAnswers}:{product:product||""}));
   const[refFiles,setRefFiles]=useState([]);
   const[generating,setGenerating]=useState(false);
   const[err,setErr]=useState("");
   const[customRtb,setCustomRtb]=useState("");
   const[moreFor,setMoreFor]=useState({});
-  const[ideaDraft,setIdeaDraft]=useState("");
+  const[ideaDraft,setIdeaDraft]=useState((c&&c.data&&c.data.draftIdea)||"");
   const[ideaReady,setIdeaReady]=useState(false);
   const[synthIdea,setSynthIdea]=useState(false);
   const[linkInput,setLinkInput]=useState("");
@@ -2743,6 +2743,19 @@ function BriefFastForm({campaignId,patch,onBriefReady,me,recentFeedback,product,
     }catch(e){setErr("Couldn't draft the idea automatically — write it in yourself, then generate.");}
     setSynthIdea(false);
   };
+  const saveDraft=()=>{
+    const glDate=answers.go_live_date||null;
+    patch(campaignId,{
+      name:(answers.product?String(answers.product):"")||("Brief "+fmtDate(new Date())),
+      channel:answers.channel||null,product:answers.product||null,
+      audience_label:answers.audience||"",segment:answers.audience||"",
+      objective:answers.objective||"",offer:answers.offer||"",crm_type:answers.crmType||null,
+      go_live_date:glDate,campaign_week:glDate?weekOfMonth(glDate):null,campaign_month:glDate?monthLabel(glDate):null,
+      stage:"brief",
+      data:{...(c&&c.data?c.data:{}),draftAnswers:answers,draftIdea:(ideaDraft||"").trim()},
+    });
+    onDraftSaved&&onDraftSaved();
+  };
   const ideaSig=[answers.product||product||"",answers.audience||"",answers.trigger||"",answers.objective||"",answers.offer||"",answers.hook||"",(answers.rtbs||[]).join(",")].join("|");
   const lastIdeaSig=React.useRef("");
   useEffect(()=>{
@@ -2807,6 +2820,7 @@ function BriefFastForm({campaignId,patch,onBriefReady,me,recentFeedback,product,
           :missing.length>0
           ?<Btn disabled={true}><Sparkles size={15}/>Generate brief</Btn>
           :<Btn onClick={draftIdea}><Sparkles size={15}/>Draft the idea</Btn>}
+        {!generating&&<Btn variant="ghost"onClick={saveDraft}><FileText size={15}/>Save as draft</Btn>}
         {missing.length>0&&<span style={{fontSize:11.5,color:C.sub}}>Still needed: {missing.length} required field{missing.length>1?"s":""}</span>}
       </div>
     </div>
@@ -3405,7 +3419,7 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns:
     };
     const _tone=!brief?ROW_TONE.attention:(c.stage==="done"?ROW_TONE.done:ROW_TONE.approved);
     const isSel=selected.has(c.id);
-    const stageMeta=!brief?(c.data?.importDraft?{label:"Imported · add details",color:"#B45309",bg:"#FEF3C7"}:{label:"No brief yet",color:"#B91C1C",bg:"#FEF2F2"})
+    const stageMeta=!brief?(c.data?.importDraft?{label:"Imported · add details",color:"#B45309",bg:"#FEF3C7"}:{label:"Draft",color:"#B45309",bg:"#FEF3C7"})
       :c.data?.draft?{label:"Draft",color:"#B45309",bg:"#FEF3C7"}
       :c.stage==="content"?{label:"In copy",color:C.purple,bg:C.purple+"14"}
       :c.stage==="brand_review"?{label:"Brand review",color:"#9333EA",bg:"#F3E8FF"}
@@ -3421,9 +3435,9 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns:
         <div style={{flex:1,minWidth:0}}>
           {/* Line 1: Product · Channel · Format · Owner */}
           <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3,flexWrap:"wrap"}}>
-            <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{humanizeToken(c.product)||parseName(c.name).product||"—"}</span>
-            {c.channel?<span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel}</span>:<span style={{fontSize:11,fontWeight:700,color:C.coral}}>· set channel</span>}
-            <span style={{fontSize:11,fontWeight:700,color:C.coral}}>· {normCrmType(c.crm_type)}</span>
+            <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{humanizeToken(c.product)||parseName(c.name).product||(brief?"—":"Untitled draft")}</span>
+            {brief&&<React.Fragment>{c.channel?<span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel}</span>:<span style={{fontSize:11,fontWeight:700,color:C.coral}}>· set channel</span>}<span style={{fontSize:11,fontWeight:700,color:C.coral}}>· {normCrmType(c.crm_type)}</span></React.Fragment>}
+            {!brief&&c.channel&&c.data&&c.data.draftAnswers&&<span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel}</span>}
             {c.created_by_name&&<span style={{fontSize:11,fontWeight:600,color:C.sub}}>· {c.created_by_name}</span>}
           </div>
           {/* Line 2: Date (created) + audience */}
@@ -3462,7 +3476,7 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns:
             <button onClick={()=>setM(c.id,null)}style={{background:"transparent",border:"none",cursor:"pointer",color:"rgba(255,255,255,.6)",fontSize:12}}>← Back</button>
           </div>
           <div style={{padding:"0 16px 16px"}}>
-            <BriefFastForm campaignId={c.id}patch={patch}onBriefReady={onBriefReady}me={me}recentFeedback={recentFeedback}product={c.product}audiences={audiences}/>
+            <BriefFastForm campaignId={c.id}c={c}patch={patch}onBriefReady={onBriefReady}onDraftSaved={()=>setM(c.id,"view")}me={me}recentFeedback={recentFeedback}product={c.product}audiences={audiences}/>
           </div>
         </div>}
 
@@ -3507,7 +3521,7 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns:
               <div style={{fontSize:13,fontWeight:800,color:C.ink,marginBottom:3}}>{isSuper(me)?"How is this asset getting made?":"Hand this to the creative team"}</div>
               <div style={{fontSize:11.5,color:C.sub,marginBottom:11}}>{isSuper(me)?<>Templatized post? Build it yourself from a template. Bespoke creative? Hand it to the team. <button onClick={()=>setTab("library")}style={{background:"none",border:"none",color:C.teal,fontWeight:700,cursor:"pointer",padding:0,fontSize:11.5,textDecoration:"underline"}}>Browse the image library</button> first to reuse an unused image.</>:<>The creative team picks it up in <b>Copy</b> next and builds the asset for you.</>}</div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-                <Btn onClick={()=>{patch(c.id,{stage:"content",data:{...(c.data||{}),selfMade:false}});setTab("content");onOpen(c.id,"content");}}>Hand to the creative team <ArrowRight size={14}/></Btn>
+                {!c.data?.draft&&<Btn onClick={()=>{patch(c.id,{stage:"content",data:{...(c.data||{}),selfMade:false}});setTab("content");onOpen(c.id,"content");}}>Hand to the creative team <ArrowRight size={14}/></Btn>}
                 {isSuper(me)&&<Btn variant="ghost"onClick={()=>{patch(c.id,{stage:"content",data:{...(c.data||{}),selfMade:true}});setTab("content");onOpen(c.id,"content");}}><PenLine size={13}/>I'll make it myself</Btn>}
                 <Btn variant="ghost"onClick={()=>setM(c.id,"edit")}><PenLine size={13}/>Edit brief</Btn>
               </div>
@@ -3568,7 +3582,7 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns:
           <div style={{fontSize:12,color:C.sub,margin:"0 2px 8px"}}>Saved by the business team — the creative team can't see these until you publish.</div>
           {groupByDate(drafts).map(([date,items])=><div key={date}style={{marginBottom:10}}>
             <DateGroupHeader date={date}count={items.length}color="#B45309"/>
-            <Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><React.Fragment key={c.id}>{AssetRow({c})}<div style={{padding:"8px 18px",borderTop:`1px dashed ${C.line}`,background:"#FFFBF5",display:"flex",justifyContent:"flex-end",gap:8,alignItems:"center"}}><span style={{fontSize:11.5,color:C.sub,marginRight:"auto"}}>Draft — not visible to the creative team yet.</span><Btn small onClick={()=>publishDraft(c)}><Check size={14}/>Publish to creative team</Btn></div></React.Fragment>)}</Card>
+            <Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><React.Fragment key={c.id}>{AssetRow({c})}<div style={{padding:"8px 18px",borderTop:`1px dashed ${C.line}`,background:"#FFFBF5",display:"flex",justifyContent:"flex-end",gap:8,alignItems:"center"}}><span style={{fontSize:11.5,color:C.sub,marginRight:"auto"}}>Draft — not visible to the creative team yet.</span><Btn small onClick={()=>publishDraft(c)}><Check size={14}/>Approve brief \u2192</Btn></div></React.Fragment>)}</Card>
           </div>)}
         </CollapsibleSection>}
         {briefedElsewhere.length>0&&(()=>{
@@ -3604,7 +3618,7 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns:
               {importResult.errors&&importResult.errors.length>0&&<div style={{background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:9,padding:"10px 12px",marginBottom:14,maxHeight:160,overflowY:"auto"}}>
                 {importResult.errors.map((er,i)=><div key={i}style={{fontSize:12,color:"#B91C1C",lineHeight:1.5}}>{er}</div>)}
               </div>}
-              <div style={{fontSize:13,color:C.sub,marginBottom:14}}>{importResult.created>0?"Complete briefs are ready in the Copy tab. ":""}{importResult.drafts>0?"Rows missing info landed as drafts in the Brief tab — open each, add the audience, trigger and insight, then submit before the creative team can start.":""}</div>
+              <div style={{fontSize:13,color:C.sub,marginBottom:14}}>{importResult.created>0?"Complete briefs landed as drafts in the Brief tab \u2014 review each and click Approve brief to send it to the creative team. ":""}{importResult.drafts>0?"Rows missing info landed as drafts in the Brief tab — open each, add the audience, trigger and insight, then submit before the creative team can start.":""}</div>
               <div style={{display:"flex",gap:8}}>{importResult.created>0&&<Btn onClick={()=>{setImporting(false);setTab("content");}}>Go to Copy</Btn>}{importResult.drafts>0&&<Btn variant={importResult.created>0?"ghost":undefined}onClick={()=>{setImporting(false);setTab("brief");}}>Go to drafts</Btn>}<Btn variant="ghost"onClick={()=>setImporting(false)}>Close</Btn></div>
             </div>
           :importing==="working"
