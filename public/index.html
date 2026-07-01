@@ -391,7 +391,7 @@ const computeApprovals=(campaigns,me)=>{
   const out=[];
   if(mySlots.includes("copy"))(campaigns||[]).filter(c=>c.stage==="brand_review"&&!c.data?.selfMade&&!isArchived(c)).forEach(c=>out.push({c,kind:"Copy",tab:"content",action:"copy"}));
   if(mySlots.includes("design"))(campaigns||[]).filter(c=>c.stage==="design"&&c.data?.design?.pendingApproval&&!c.data?.selfMade&&!isArchived(c)).forEach(c=>out.push({c,kind:"Design",tab:"design",action:"design"}));
-  (campaigns||[]).filter(c=>c.stage==="design"&&c.data?.design?.assetReview&&!c.data?.selfMade&&!isArchived(c)).forEach(c=>{if(isSuper(me)||(c.copy_author?c.copy_author===(me&&me.name):canBrandApprove(me)))out.push({c,kind:"Your review",tab:"design",action:"asset"});});
+  (campaigns||[]).filter(c=>c.stage==="design"&&c.data?.design?.assetReview&&!c.data?.selfMade&&!isArchived(c)).forEach(c=>{if(isSuper(me)||canBrandApprove(me)||c.copy_author===(me&&me.name))out.push({c,kind:"Your review",tab:"design",action:"asset"});});
   (campaigns||[]).filter(c=>c.stage==="design"&&c.data?.design?.brandReview&&!c.data?.selfMade&&!isArchived(c)).forEach(c=>{if(canBrandApprove(me))out.push({c,kind:"Full asset",tab:"design",action:"brand"});});
   (campaigns||[]).filter(c=>c.stage==="design"&&c.data?.design?.finalReview&&!c.data?.selfMade&&!isArchived(c)).forEach(c=>{if(isSuper(me)||_r(me)==="head_marketing"||mySlots.includes("final"))out.push({c,kind:"Final sign-off",tab:"done",action:"final"});});
   return out;
@@ -519,13 +519,14 @@ function WhoChips({c,me,team}){
   const designLead=slotHolders(team,"design").join(", ");
   const designer=designerActual||designLead;
   const designerIsLead=!designerActual&&!!designLead;
+  const hasDesign=!!designerActual||!!(c.data&&c.data.design)||["design","done"].includes(c.stage); // no design yet (copy-only) → hide the Design chip
   const w=waitingOn(c,team);
   const chip=(bg,fg,icon,txt)=><span style={{display:"inline-flex",alignItems:"center",gap:3,fontSize:10.5,fontWeight:700,color:fg,background:bg,padding:"2px 8px",borderRadius:999,whiteSpace:"nowrap"}}>{icon}{txt}</span>;
   if(!briefPerson&&!copyPerson&&!designer&&!w)return null;
   return<div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginTop:4}}>
     {briefPerson&&chip("#F1F5F9","#475569",<Users size={10}/>,"Brief: "+briefPerson)}
     {copyPerson&&chip("#EDE9FE","#6D28D9",<PenLine size={10}/>,"Copy: "+copyPerson)}
-    {designer&&chip("#E0F2FE","#0369A1",<Palette size={10}/>,"Design: "+designer+(designerIsLead?" (lead)":""))}
+    {hasDesign&&designer&&chip("#E0F2FE","#0369A1",<Palette size={10}/>,"Design: "+designer+(designerIsLead?" (lead)":""))}
     {w&&chip("#FEF3C7","#92400E",<ClockIcon size={10}/>,w.label+(w.by?" · "+w.by:""))}
     {w&&canRemind(me)&&(reminded?<span style={{fontSize:10.5,fontWeight:800,color:"#16A34A"}}>Reminded ✓</span>:<button onClick={e=>{e.stopPropagation();api.post("/api/notify",{toRole:GATE_ROLE[w.gate]||"brand_lead",campaignId:c.id,kind:"Reminder — running late",body:(humanizeToken(c.product)||c.name||"An asset")+" is waiting on "+w.label.toLowerCase()+". A nudge from "+((me&&me.name)||"the project manager")+" — please take a look when you can."}).catch(()=>{});setReminded(true);}}style={{fontSize:10.5,fontWeight:800,color:"#B45309",background:"#fff",border:"1px solid #FCD34D",borderRadius:999,padding:"2px 9px",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:3}}><ClockIcon size={10}/>Remind</button>)}
   </div>;
@@ -1162,6 +1163,16 @@ const sortBriefs=(arr,mode)=>{
   else cp.sort((a,b)=>{const x=g(a),y=g(b);if(x==null&&y==null)return 0;if(x==null)return 1;if(y==null)return -1;return x-y;});
   return cp;
 };
+function SortBar({value,onChange}){
+  return<div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12}}>
+    <span style={{fontSize:11,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.5}}>Sort</span>
+    <select value={value}onChange={e=>onChange(e.target.value)}style={{fontSize:12,fontWeight:600,color:C.ink,border:`1px solid ${C.line}`,borderRadius:8,padding:"6px 9px",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>
+      <option value="golive_asc">Go-live: earliest first</option>
+      <option value="golive_desc">Go-live: latest first</option>
+      <option value="created_desc">Recently added</option>
+    </select>
+  </div>;
+}
 const isProperlyApproved=(c)=>{
   const g=(c&&c.data&&c.data.gates)||{};
   const sa=(c&&c.data&&c.data.design&&c.data.design.selfApprovals)||{};
@@ -2369,6 +2380,12 @@ function ApprovalsTab({campaigns,onOpen,me,team,reload}){
   const[approving,setApproving]=useState("");
   const[reviewing,setReviewing]=useState(null);
   const approvals=computeApprovals(campaigns,me);
+  const _canSup=isSuper(me)||canBrandApprove(me); // leads can supersede a writer's own asset review
+  const _isOthers=(a)=>_canSup&&a.action==="asset"&&a.c.copy_author&&a.c.copy_author!==(me&&me.name);
+  const mineApp=approvals.filter(a=>!_isOthers(a)), othersApp=approvals.filter(_isOthers);
+  const groups=[];
+  if(mineApp.length){groups.push({header:"My approvals",accent:"#9333EA",count:mineApp.length});mineApp.forEach(a=>groups.push(a));}
+  if(othersApp.length){groups.push({header:"Others' approvals",accent:"#0369A1",count:othersApp.length});othersApp.forEach(a=>groups.push(a));}
   const mySlots=isSuper(me)?["copy","design","asset","final"]:((me&&me.approval_slots)||[]);
   const approveGate=async(c,action)=>{
     const ep=action==="copy"?"brand-approve":action==="design"?"design-approve":action==="asset"?"asset-approve":action==="brand"?"brand-asset-approve":"final-approve";
@@ -2382,7 +2399,7 @@ function ApprovalsTab({campaigns,onOpen,me,team,reload}){
     {approvals.length===0
       ?<Card><Empty icon={<CheckCircle2 size={26}color={C.sub}/>}title="You're all caught up"sub="Nothing is waiting for your approval right now."/></Card>
       :<Card style={{padding:0,overflow:"hidden"}}>
-        {approvals.map(({c,kind,tab,action})=>{const s=stateOfCampaign(c),u=urgencyOf(c);return<div key={c.id+action}style={{display:"flex",alignItems:"center",gap:10,padding:"13px 18px",borderBottom:`1px solid ${C.line}`,background:"#fff"}}>
+        {groups.map((g,gi)=>{if(g.header)return<div key={"h"+gi}style={{display:"flex",alignItems:"center",gap:8,padding:"9px 14px",background:g.accent+"14",borderLeft:"3px solid "+g.accent,fontWeight:800,fontSize:11.5,color:g.accent,textTransform:"uppercase",letterSpacing:.4}}>{g.header}<span style={{fontSize:11,fontWeight:800,color:g.accent,background:"#fff",border:"1px solid "+g.accent+"55",borderRadius:999,padding:"0 7px"}}>{g.count}</span></div>;const {c,kind,tab,action}=g;const s=stateOfCampaign(c),u=urgencyOf(c);return<div key={c.id+action}style={{display:"flex",alignItems:"center",gap:10,padding:"13px 18px",borderBottom:`1px solid ${C.line}`,background:"#fff"}}>
           <span style={{fontSize:10.5,fontWeight:800,color:"#9333EA",background:"#9333EA18",padding:"2px 9px",borderRadius:999,flexShrink:0}}>{kind}</span>
           <div style={{minWidth:0,flex:1}}>
             <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
@@ -3645,14 +3662,6 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns:
             <button onClick={bulkDelete}style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:13,fontWeight:700,color:"#B91C1C",background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:9,padding:"7px 14px",cursor:"pointer"}}><Trash2 size={14}/>Delete</button>
             <button onClick={clearSel}style={{fontSize:13,fontWeight:700,color:C.sub,background:"none",border:"none",cursor:"pointer",padding:"7px 6px"}}>Clear</button></>}
         </div>}
-        {!isBusiness(me)&&(pendingCopy.length>0||bulkGen)&&<div style={{marginBottom:16,border:`1.5px solid ${C.coral}`,borderRadius:12,padding:"14px 16px",background:C.coralSoft,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-          <div style={{width:36,height:36,borderRadius:10,background:C.coral,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={19}/></div>
-          <div style={{flex:1,minWidth:160}}>
-            <div style={{fontWeight:800,fontSize:15,color:C.ink}}>{bulkGen?`Generating copy… ${bulkGen.done}/${bulkGen.total}`:`${pendingCopy.length} brief${pendingCopy.length>1?"s":""} ready for copy`}</div>
-            <div style={{fontSize:12.5,color:C.sub}}>{bulkGen?"The engine is writing copy for each brief — hang tight.":"Generate copy for the whole batch in one go, then review in the Copy tab."}</div>
-          </div>
-          {bulkGen?<Spin label=""/>:<Btn onClick={runBulkGenerate}><Sparkles size={15}/>Generate all copy</Btn>}
-        </div>}
         {awaiting.length>0&&<CollapsibleSection title="New assets · awaiting brief" count={awaiting.length} color={C.coral} icon={<Sparkles size={15}/>} extra={
           <label style={{display:"inline-flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:11.5}}>
             <input type="checkbox"checked={awaiting.length>0&&awaiting.every(c=>selected.has(c.id))}onChange={e=>selectMany(awaiting.map(c=>c.id),e.target.checked)}style={{width:15,height:15,cursor:"pointer",accentColor:C.coral}}/>
@@ -4423,7 +4432,8 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       ? allCopyRaw.filter(c=>!c.data?.selfMade).filter(c=>{if(!(_myCats.length>0))return true;const cat=normCat(categoryOf(c));return !cat||_myCats.includes(cat);})
       : allCopyRaw;
   const[tf,setTf]=useState({date:"",crm:"",channel:""});
-  const allCopy=applyTileFilters(allCopyAll,tf);
+  const[copySort,setCopySort]=useState("golive_asc");
+  const allCopy=sortBriefs(applyTileFilters(allCopyAll,tf),copySort);
   const[openId,setOpenId]=useState(null);
   const[busyMap,setBusyMap]=useState({});
   const[errMap,setErrMap]=useState({});
@@ -4847,7 +4857,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       </div>
     </div>
     {view==="list"&&<ListBar period={period} setPeriod={setPeriod} stages={["needs_copy","content","brand_review"]}/>}
-    {view==="list"&&<TileFilters items={allCopyAll} f={tf} setF={setTf}/>}
+    {view==="list"&&<TileFilters items={allCopyAll} f={tf} setF={setTf}/>}{view==="list"&&<SortBar value={copySort}onChange={setCopySort}/>}
     {view==="calendar"
       ?<CalendarView campaigns={allCopy}onOpen={onOpen}/>
       :allCopy.length===0
@@ -7061,7 +7071,8 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
   const allDesignRaw=(campaigns||[]).filter(c=>c.stage==="design"&&(c.channel!=="Push notification"||c.data?.selfMade)&&!isArchived(c));
   const allDesignAll=isBusiness(me)?allDesignRaw.filter(c=>c.data?.selfMade):isDesignTeam(me)?allDesignRaw.filter(c=>!c.data?.selfMade):allDesignRaw;
   const[tf,setTf]=useState({date:"",crm:"",channel:""});
-  const allDesign=applyTileFilters(allDesignAll,tf);
+  const[designSort,setDesignSort]=useState("golive_asc");
+  const allDesign=sortBriefs(applyTileFilters(allDesignAll,tf),designSort);
   const[openId,setOpenId]=useState(null);
   const[imageModes,setImageModes]=useState({});
   const[imageThreads,setImageThreads]=useState({}); // {campaignId: [{image,fix,at,by}]} — session only, never persisted (avoids bloating campaign data)
@@ -7408,7 +7419,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
       </div>
     </div>
     {view==="list"&&<ListBar period={period} setPeriod={setPeriod} stages={["design","brand_review"]}/>}
-    {view==="list"&&<TileFilters items={allDesignAll} f={tf} setF={setTf}/>}
+    {view==="list"&&<TileFilters items={allDesignAll} f={tf} setF={setTf}/>}{view==="list"&&<SortBar value={designSort}onChange={setDesignSort}/>}
     {view==="calendar"
       ?<CalendarView campaigns={allDesign}onOpen={onOpen}/>
       :allDesign.length===0
@@ -7439,7 +7450,8 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
 function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate}){
   const allDoneAll=(campaigns||[]).filter(c=>c.stage==="done"&&!isArchived(c)&&(!isBusiness(me)||isProperlyApproved(c))).sort((a,b)=>new Date(b.updated_at||b.created_at)-new Date(a.updated_at||a.created_at));
   const[tf,setTf]=useState({date:"",crm:"",channel:""});
-  const allDone=applyTileFilters(allDoneAll,tf);
+  const[doneSort,setDoneSort]=useState("created_desc");
+  const allDone=sortBriefs(applyTileFilters(allDoneAll,tf),doneSort);
   const pendingFinal=(campaigns||[]).filter(c=>c.stage==="design"&&c.data?.design?.finalReview&&!isArchived(c));
   const canFinal=isSuper(me)||_r(me)==="head_marketing"||((me&&me.approval_slots)||[]).includes("final");
   const[finalReviewing,setFinalReviewing]=useState(null);
@@ -7607,7 +7619,7 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate}){
       </div>)}
     </Card>}
     {finalReviewing&&<ReviewModal c={finalReviewing}me={me}kind="Final sign-off"action="final"tab="done"onApprove={async()=>{await api.post("/api/campaigns/"+finalReviewing.id+"/final-approve",{});window.location.reload();}}onSendBackDone={()=>window.location.reload()}onEdit={()=>onOpen(finalReviewing.id,"done")}onClose={()=>setFinalReviewing(null)}/>}
-    {allDoneAll.length>0&&<TileFilters items={allDoneAll} f={tf} setF={setTf}/>}
+    {allDoneAll.length>0&&<TileFilters items={allDoneAll} f={tf} setF={setTf}/>}{allDoneAll.length>0&&<SortBar value={doneSort}onChange={setDoneSort}/>}
     {allDone.length===0
       ?<Card><Empty icon={<CheckCircle2 size={26}color={C.sub}/>}title="Nothing done yet"sub="Completed, ready-to-go-live assets appear here. Archived assets live in the Archive tab."/></Card>
       :<Card style={{padding:0,overflow:"hidden"}}>
