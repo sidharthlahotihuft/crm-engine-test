@@ -504,7 +504,7 @@ function WhoChips({c,me,team}){
   const[reminded,setReminded]=useState(false);
   if(!c)return null;
   const raised=c.created_by_name;
-  const writer=c.copy_author;
+  const writer=c.copy_author||c.copy_approver;
   // A brand_team writer (or designer) who created/split this asset is NOT the brief raiser —
   // show them under Copy/Design, and don't mislabel them as "Brief".
   const _creator=(team||[]).find(u=>(u.name||"")===(raised||""));
@@ -1151,6 +1151,22 @@ function inPeriod(c,period){
   return d>=f;
 }
 // Combined colour key + date filter bar for the list pages.
+const sortBriefs=(arr,mode)=>{
+  const g=(c)=>c&&c.go_live_date?new Date(c.go_live_date).getTime():null;
+  const cp=[...(arr||[])];
+  if(mode==="golive_desc")cp.sort((a,b)=>{const x=g(a),y=g(b);if(x==null&&y==null)return 0;if(x==null)return 1;if(y==null)return -1;return y-x;});
+  else if(mode==="created_desc")cp.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+  else cp.sort((a,b)=>{const x=g(a),y=g(b);if(x==null&&y==null)return 0;if(x==null)return 1;if(y==null)return -1;return x-y;});
+  return cp;
+};
+const isProperlyApproved=(c)=>{
+  const g=(c&&c.data&&c.data.gates)||{};
+  const sa=(c&&c.data&&c.data.design&&c.data.design.selfApprovals)||{};
+  if(g.final&&g.final.by)return true;                         // HOM final sign-off (full-asset chain)
+  if(sa.design&&sa.brand)return true;                         // self-made: both leads signed off
+  if(isPushChannel(c&&c.channel)&&c&&c.brand_approver)return true; // push: copy approved (its only gate)
+  return false;
+};
 const applyTileFilters=(items,f)=>{if(!f)return items||[];return (items||[]).filter(c=>{
   if(f.date&&String(c.go_live_date||"")!==f.date)return false;
   if(f.crm&&normCrmType(c.crm_type)!==f.crm)return false;
@@ -1793,12 +1809,12 @@ function App(){
     const sorted=[...indices].sort((a,b)=>a-b);
     const first=sorted[0], rest=sorted.slice(1);
     try{
-      await api.put("/api/campaigns/"+src.id,{data:{...(src.data||{}),selectedCopyIdx:first},stage:"brand_review",copy_approver:me.name});
+      await api.put("/api/campaigns/"+src.id,{data:{...(src.data||{}),selectedCopyIdx:first},stage:"brand_review",copy_approver:me.name,copy_author:me.name});
       const made=[];
       for(const idx of rest){
         const nc=await api.post("/api/campaigns",{...base,stage:"brand_review",data:{...(src.data||{}),copyOptions:[opts[idx]],selectedCopyIdx:0,splitFrom:src.id}});
-        await api.put("/api/campaigns/"+nc.id,{copy_approver:me.name}).catch(()=>{});
-        made.push({...nc,copy_approver:me.name});
+        await api.put("/api/campaigns/"+nc.id,{copy_approver:me.name,copy_author:me.name}).catch(()=>{});
+        made.push({...nc,copy_approver:me.name,copy_author:me.name});
       }
       if(archiveRest){
         const leftover=opts.map((o,i)=>i).filter(i=>!sorted.includes(i));
@@ -1807,7 +1823,7 @@ function App(){
           made.push(nc);
         }
       }
-      setCampaigns(cs=>[...made,...cs.map(x=>x.id===src.id?{...x,data:{...(x.data||{}),selectedCopyIdx:first},stage:"brand_review",copy_approver:me.name}:x)]);
+      setCampaigns(cs=>[...made,...cs.map(x=>x.id===src.id?{...x,data:{...(x.data||{}),selectedCopyIdx:first},stage:"brand_review",copy_approver:me.name,copy_author:me.name}:x)]);
       if(toast)toast("Split into "+sorted.length+" asset"+(sorted.length>1?"s":"")+(archiveRest?" · extras archived":"")+" ✓","success");
       setTab("content");
     }catch(e){if(toast)toast("Split failed: "+(e.message||"error"),"error");}
@@ -3337,6 +3353,7 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns:
   const[importResult,setImportResult]=useState(null);
   const[importErr,setImportErr]=useState("");
   const[bulkGen,setBulkGen]=useState(null); // null | {done,total}
+  const[briefSort,setBriefSort]=useState("golive_asc");
   const pendingCopy=(campaigns||[]).filter(c=>!isArchived(c)&&c.data&&c.data.brief&&c.stage==="content"&&!c.data.copyOptions);
   const runBulkGenerate=async()=>{
     if(!onBulkGenerate||!pendingCopy.length)return;
@@ -3346,10 +3363,10 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns:
     setTab("content");
   };
   const allBriefs=(campaigns||[]).filter(c=>c.stage==="brief"&&!isArchived(c));
-  const awaiting=allBriefs.filter(c=>!(c.data&&c.data.brief));
-  const drafts=allBriefs.filter(c=>c.data&&c.data.brief);
+  const awaiting=sortBriefs(allBriefs.filter(c=>!(c.data&&c.data.brief)),briefSort);
+  const drafts=sortBriefs(allBriefs.filter(c=>c.data&&c.data.brief),briefSort);
   const publishDraft=(c)=>patch(c.id,{stage:"content",data:{...(c.data||{}),draft:false}});
-  const briefedElsewhere=(campaigns||[]).filter(c=>c.stage!=="brief"&&!isArchived(c)&&c.data?.brief).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+  const briefedElsewhere=sortBriefs((campaigns||[]).filter(c=>c.stage!=="brief"&&!isArchived(c)&&c.data?.brief),briefSort);
   const briefArchived=(campaigns||[]).filter(c=>isArchived(c)&&c.data?.brief).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
   const done=(campaigns||[]).filter(c=>c.stage!=="brief"&&c.data?.brief);
   const[openId,setOpenId]=useState(null);
@@ -3596,6 +3613,7 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns:
       </div>
     </div>
     {view==="list"&&<ListBar period={period} setPeriod={setPeriod} stages={["needs_brief","content","design","done"]}/>}
+    {view==="list"&&<div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12}}><span style={{fontSize:11,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.5}}>Sort</span><select value={briefSort}onChange={e=>setBriefSort(e.target.value)}style={{fontSize:12,fontWeight:600,color:C.ink,border:`1px solid ${C.line}`,borderRadius:8,padding:"6px 9px",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}><option value="golive_asc">Go-live: earliest first</option><option value="golive_desc">Go-live: latest first</option><option value="created_desc">Recently added</option></select></div>}
     {view==="calendar"
       ?<CalendarView campaigns={(campaigns||[]).filter(c=>!isArchived(c))}onOpen={onOpen}/>
       :(allBriefs.length===0&&briefedElsewhere.length===0&&briefArchived.length===0)
@@ -3873,7 +3891,7 @@ function BriefSection({label,content}){
 }
 
 /* ===== Brief Summary Card (used in Copy + Design tabs) ================== */
-function BriefSummaryCard({active,activeBrief,copyRules,busy,refineFor,gen,opts,patch}){
+function BriefSummaryCard({active,activeBrief,copyRules,busy,refineFor,gen,opts,patch,me}){
   const[expanded,setExpanded]=useState(false);
   const[editDir,setEditDir]=useState(false);
   const[dirDraft,setDirDraft]=useState("");
@@ -3904,7 +3922,7 @@ function BriefSummaryCard({active,activeBrief,copyRules,busy,refineFor,gen,opts,
         {busy&&!refineFor?<Spin label="Generating…"/>:<Btn onClick={e=>{e.stopPropagation();gen();}}style={{background:C.coral}}>{opts?<><RefreshCw size={14}/>Regenerate</>:<><Sparkles size={14}/>Generate {copyOptionCount(active?.channel)} options</>}</Btn>}
       </div>
     </div>
-    {!editBrief&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:6,padding:"8px 14px",background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:9}}><span style={{fontSize:12,color:"#92400E",fontWeight:600,display:"flex",alignItems:"center",gap:6}}><AlertCircle size={13}/>Check the brief is right before you generate \u2014 edit it if anything is off.</span><button onClick={()=>setEditBrief(true)}style={{background:"#fff",border:"1px solid #FCD34D",borderRadius:7,padding:"4px 11px",fontSize:12,fontWeight:700,color:"#92400E",cursor:"pointer",display:"flex",alignItems:"center",gap:4,flexShrink:0}}><PenLine size={12}/>Edit brief</button></div>}
+    {!editBrief&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:6,padding:"8px 14px",background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:9}}><span style={{fontSize:12,color:"#92400E",fontWeight:600,display:"flex",alignItems:"center",gap:6}}><AlertCircle size={13}/>Check the brief is right before you generate \u2014 edit it if anything is off.</span><button onClick={()=>{if(isBrandTeam(me)){setExpanded(true);setEditDir(true);setDirDraft(activeBrief.copyDirection||"");}else{setEditBrief(true);}}}style={{background:"#fff",border:"1px solid #FCD34D",borderRadius:7,padding:"4px 11px",fontSize:12,fontWeight:700,color:"#92400E",cursor:"pointer",display:"flex",alignItems:"center",gap:4,flexShrink:0}}><PenLine size={12}/>{isBrandTeam(me)?"Edit copy direction":"Edit brief"}</button></div>}
     {editBrief
       ?<Card style={{padding:"14px 16px",marginBottom:6}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}><div style={{fontWeight:700,fontSize:13.5,display:"flex",alignItems:"center",gap:6}}><PenLine size={14}color={C.coral}/>Edit the brief</div><Btn small variant="ghost"onClick={()=>setEditBrief(false)}>Close</Btn></div><EditBriefForm brief={activeBrief}active={active}patch={patch}onDone={()=>setEditBrief(false)}/></Card>
       :<React.Fragment>
@@ -4737,7 +4755,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
             </div>}
           </div>
         </div>}
-        <BriefSummaryCard active={c}activeBrief={activeBrief}copyRules={copyRules}busy={busy}refineFor={refineFor}gen={gen}opts={opts}patch={patch}/>
+        <BriefSummaryCard active={c}activeBrief={activeBrief}copyRules={copyRules}busy={busy}refineFor={refineFor}gen={gen}opts={opts}patch={patch}me={me}/>
         {c.copy_approver&&<div style={{marginBottom:10,display:"flex",alignItems:"center",gap:8}}><ApproverChip name={`Copy approved · ${c.copy_approver}`}at={c.copy_approved_at}color={C.purple}/>{sel!=null&&<span style={{fontSize:12,color:C.sub}}>· {opts[sel]?.direction}</span>}</div>}
         {err&&<div style={{color:C.coral,fontSize:13,marginBottom:8}}>{err}</div>}
         {!isBusiness(me)&&<div style={{display:"flex",justifyContent:"flex-end",gap:8,marginBottom:8}}>
@@ -7402,7 +7420,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
 
 
 function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate}){
-  const allDoneAll=(campaigns||[]).filter(c=>c.stage==="done"&&!isArchived(c)).sort((a,b)=>new Date(b.updated_at||b.created_at)-new Date(a.updated_at||a.created_at));
+  const allDoneAll=(campaigns||[]).filter(c=>c.stage==="done"&&!isArchived(c)&&(!isBusiness(me)||isProperlyApproved(c))).sort((a,b)=>new Date(b.updated_at||b.created_at)-new Date(a.updated_at||a.created_at));
   const[tf,setTf]=useState({date:"",crm:"",channel:""});
   const allDone=applyTileFilters(allDoneAll,tf);
   const pendingFinal=(campaigns||[]).filter(c=>c.stage==="design"&&c.data?.design?.finalReview&&!isArchived(c));
