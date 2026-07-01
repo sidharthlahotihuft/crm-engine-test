@@ -1249,12 +1249,11 @@ app.post("/api/campaigns/:id/design-approve", authMiddleware, async (req, res) =
     const rows = await db(`UPDATE campaigns SET data=$1, design_approver=$2, design_approved_at=NOW() WHERE id=$3 RETURNING *`,
       [JSON.stringify(d2), req.user.name, req.params.id]);
     const prod = cur[0].product || cur[0].name || "An asset";
-    notify({ toRole: "brand_lead", campaignId: req.params.id, kind: "Full asset needs review",
-      body: prod + " — design approved by " + req.user.name + ". Ready for full-asset sign-off." });
-    notify({ toRole: "head_marketing", campaignId: req.params.id, kind: "Asset in approval (oversight)",
-      body: prod + " — design approved by " + req.user.name + "; Ilena is finalising the full asset. For your oversight." });
-    notify({ toRole: "cxo", campaignId: req.params.id, kind: "Asset in approval (oversight)",
-      body: prod + " — design approved; full-asset sign-off in progress. For your oversight." });
+    const au = cur[0].copy_author ? await db(`SELECT id FROM users WHERE name=$1`, [cur[0].copy_author]) : [];
+    if (au.length) notify({ toUserIds: au.map(x=>x.id), campaignId: req.params.id, kind: "Your asset needs review",
+      body: prod + " — design approved by " + req.user.name + ". Please review the full asset (your copy on the design)." });
+    else notify({ toRole: "brand_team", campaignId: req.params.id, kind: "Asset needs writer review",
+      body: prod + " — design approved by " + req.user.name + ". The copy author should review the full asset." });
     res.json(rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1279,26 +1278,38 @@ app.post("/api/campaigns/:id/design-reject", authMiddleware, async (req, res) =>
 // Full-asset gate — Ilena (asset slot). Her approval is the final gate → live. HoM/CXO are oversight only.
 app.post("/api/campaigns/:id/asset-approve", authMiddleware, async (req, res) => {
   try {
-    if (!(await userHoldsSlot(req.user, "asset"))) return res.status(403).json({ error: "You don't hold the full-asset-approval slot." });
     const cur = await db(`SELECT * FROM campaigns WHERE id=$1`, [req.params.id]);
     if (!cur.length) return res.status(404).json({ error: "Not found" });
+    const isAuthor = cur[0].copy_author && cur[0].copy_author === req.user.name;
+    if (!(isAuthor || (await userHoldsSlot(req.user, "asset")))) return res.status(403).json({ error: "Only the copy author can approve this review." });
     const { data } = mergeGates(cur[0], { asset: { by: req.user.name, at: new Date().toISOString() } });
-    const d2 = { ...data, design: { ...(data.design || {}), assetReview: false, finalReview: false } };
-    const rows = await db(`UPDATE campaigns SET data=$1, stage='done', went_live_at=NOW() WHERE id=$2 RETURNING *`, [JSON.stringify(d2), req.params.id]);
+    const d2 = { ...data, design: { ...(data.design || {}), assetReview: false, brandReview: true, finalReview: false } };
+    const rows = await db(`UPDATE campaigns SET data=$1 WHERE id=$2 RETURNING *`, [JSON.stringify(d2), req.params.id]);
     const prod = cur[0].product || cur[0].name || "An asset";
-    notify({ toRole: "head_marketing", campaignId: req.params.id, kind: "Asset live (oversight)",
-      body: prod + " — full asset approved by " + req.user.name + " and now live. For your oversight." });
-    notify({ toRole: "cxo", campaignId: req.params.id, kind: "Asset live (oversight)",
-      body: prod + " — approved by " + req.user.name + " and now live. For your oversight." });
-    notify({ toRole: "business", campaignId: req.params.id, kind: "Asset finalized",
-      body: prod + " — finalized and ready." });
+    notify({ toRole: "brand_lead", campaignId: req.params.id, kind: "Full asset needs approval",
+      body: prod + " — reviewed by " + req.user.name + ". Ready for your full-asset approval." });
+    res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Brand full-asset gate — Ilena (brand lead). brandReview → final sign-off (HoM).
+app.post("/api/campaigns/:id/brand-asset-approve", authMiddleware, roles("brand", "admin"), async (req, res) => {
+  try {
+    const cur = await db(`SELECT * FROM campaigns WHERE id=$1`, [req.params.id]);
+    if (!cur.length) return res.status(404).json({ error: "Not found" });
+    const { data } = mergeGates(cur[0], { brand: { by: req.user.name, at: new Date().toISOString() } });
+    const d2 = { ...data, design: { ...(data.design || {}), brandReview: false, finalReview: true } };
+    const rows = await db(`UPDATE campaigns SET data=$1 WHERE id=$2 RETURNING *`, [JSON.stringify(d2), req.params.id]);
+    const prod = cur[0].product || cur[0].name || "An asset";
+    notify({ toRole: "head_marketing", campaignId: req.params.id, kind: "Final sign-off needed",
+      body: prod + " — full asset approved by " + req.user.name + ". Ready for your final sign-off." });
     res.json(rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 // Final gate — HoM / CXO (final slot). → done.
 app.post("/api/campaigns/:id/final-approve", authMiddleware, async (req, res) => {
   try {
-    if (!(await userHoldsSlot(req.user, "final"))) return res.status(403).json({ error: "You don't hold the final-sign-off slot." });
+    const isHOM = normRole(req.user.role) === "head_marketing";
+    if (!(isHOM || (await userHoldsSlot(req.user, "final")))) return res.status(403).json({ error: "Only the Head of Marketing can give final sign-off." });
     const cur = await db(`SELECT * FROM campaigns WHERE id=$1`, [req.params.id]);
     if (!cur.length) return res.status(404).json({ error: "Not found" });
     const { data } = mergeGates(cur[0], { final: { by: req.user.name, at: new Date().toISOString() } });
@@ -1306,10 +1317,37 @@ app.post("/api/campaigns/:id/final-approve", authMiddleware, async (req, res) =>
     const rows = await db(`UPDATE campaigns SET data=$1, stage='done', went_live_at=NOW() WHERE id=$2 RETURNING *`,
       [JSON.stringify(d2), req.params.id]);
     const prod = cur[0].product || cur[0].name || "An asset";
+    const _nm = [cur[0].copy_author, cur[0].design_approver].filter(Boolean);
+    const _team = _nm.length ? await db(`SELECT id FROM users WHERE name=ANY($1)`, [_nm]) : [];
     notify({ toRole: "brand_lead", campaignId: req.params.id, kind: "Asset finalized",
       body: prod + " — final sign-off by " + req.user.name + ". Now live/finalized." });
+    if (_team.length) notify({ toUserIds: _team.map(x=>x.id), campaignId: req.params.id, kind: "Asset finalized",
+      body: prod + " — final sign-off complete by " + req.user.name + ". Your asset is live." });
     notify({ toRole: "business", campaignId: req.params.id, kind: "Asset finalized",
       body: prod + " — finalized and ready." });
+    res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Final feedback — HoM sends the full asset back with notes; returns to Ilena, notifies the team who worked on it (incl. Anmol).
+app.post("/api/campaigns/:id/final-reject", authMiddleware, async (req, res) => {
+  try {
+    const isHOM = normRole(req.user.role) === "head_marketing";
+    if (!(isHOM || (await userHoldsSlot(req.user, "final")))) return res.status(403).json({ error: "Only the Head of Marketing can send final feedback." });
+    const reason = (req.body.reason && req.body.reason.trim()) ? req.body.reason.trim() : "";
+    const cur = await db(`SELECT * FROM campaigns WHERE id=$1`, [req.params.id]);
+    if (!cur.length) return res.status(404).json({ error: "Not found" });
+    const data = (typeof cur[0].data === "string" ? safeJson(cur[0].data) : cur[0].data) || {};
+    const d2 = { ...data, design: { ...(data.design || {}), finalReview: false, brandReview: true, finalFeedback: reason, finalFeedbackBy: req.user.name || "", finalFeedbackAt: new Date().toISOString() } };
+    const rows = await db(`UPDATE campaigns SET data=$1 WHERE id=$2 AND stage='design' RETURNING *`, [JSON.stringify(d2), req.params.id]);
+    if (!rows.length) return res.status(409).json({ error: "Asset is not awaiting final sign-off." });
+    const prod = cur[0].product || cur[0].name || "An asset";
+    const fb = reason ? (" Feedback: " + reason) : "";
+    const _nm = [cur[0].copy_author, cur[0].design_approver].filter(Boolean);
+    const _team = _nm.length ? await db(`SELECT id FROM users WHERE name=ANY($1)`, [_nm]) : [];
+    notify({ toRole: "brand_lead", campaignId: req.params.id, kind: "Final feedback from Head of Marketing",
+      body: prod + " — " + req.user.name + " sent feedback on the full asset." + fb });
+    if (_team.length) notify({ toUserIds: _team.map(x=>x.id), campaignId: req.params.id, kind: "Final feedback from Head of Marketing",
+      body: prod + " — feedback from " + req.user.name + " on your asset." + fb });
     res.json(rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
