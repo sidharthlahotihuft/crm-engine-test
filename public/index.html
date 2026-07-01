@@ -287,6 +287,7 @@ const stripForbidden=(s)=>{
   out=out.replace(/[^.!?\n]*\breply\s+stop\b[^.!?\n]*[.!?]?/gi,"");                  // "reply STOP" boilerplate
   out=out.replace(/[ \t]{2,}/g," ").replace(/ +([,.!?])/g,"$1").replace(/\s+([,.])/g,"$1").replace(/^[\s,;:]+/gm,"").replace(/\n{3,}/g,"\n\n").trim();
   out=out.replace(/\u0001NAME\u0001/g,"{{Name}}"); // restore sanctioned personalisation token
+  out=out.replace(/\b(?:Rs\.?|INR)\s?(?=\d)/gi,"₹"); // Rs / Rs. / INR before a number → ₹ (applies everywhere copy is shown)
   return out;
 };
 // HUFT rulebook mechanical fixes — always-correct, deterministic normalisations of the most-flagged review mistakes.
