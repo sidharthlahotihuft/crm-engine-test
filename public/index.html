@@ -4792,7 +4792,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
           </div>
         </div>}
         <BriefSummaryCard active={c}activeBrief={activeBrief}copyRules={copyRules}busy={busy}refineFor={refineFor}gen={gen}opts={opts}patch={patch}me={me}/>
-        {c.copy_approver&&<div style={{marginBottom:10,display:"flex",alignItems:"center",gap:8}}><ApproverChip name={`Copy approved · ${c.copy_approver}`}at={c.copy_approved_at}color={C.purple}/>{sel!=null&&<span style={{fontSize:12,color:C.sub}}>· {opts[sel]?.direction}</span>}</div>}
+        {c.copy_approver&&<div style={{marginBottom:10,display:"flex",alignItems:"center",gap:8}}><ApproverChip name={c.brand_approver?`Copy approved · ${c.brand_approver}`:`Sent for approval · ${c.copy_approver}`}at={c.copy_approved_at}color={C.purple}/>{sel!=null&&<span style={{fontSize:12,color:C.sub}}>· {opts[sel]?.direction}</span>}</div>}
         {err&&<div style={{color:C.coral,fontSize:13,marginBottom:8}}>{err}</div>}
         {!isBusiness(me)&&<div style={{display:"flex",justifyContent:"flex-end",gap:8,marginBottom:8}}>
           {isSuper(me)&&(busy?<Spin label="Comparing…"/>:<Btn small variant="ghost"onClick={genCompare}><Sparkles size={12}/>Compare models</Btn>)}
@@ -4839,9 +4839,9 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
           <div style={{fontSize:12,fontWeight:700,color:"#15803D",textTransform:"uppercase",letterSpacing:.5,marginBottom:10,display:"flex",alignItems:"center",gap:6}}><CheckCircle2 size={13}/>Copy approved — next steps</div>
           {isPushChannel(c.channel)
             ?<><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                <Btn variant="green"onClick={()=>{setTab("done");onOpen(c.id,"done");}}><CheckCircle2 size={14}/>View in Done</Btn>
+                <Btn variant="green"onClick={()=>{setTab("content");}}><CheckCircle2 size={14}/>Back to Copy</Btn>
               </div>
-              <div style={{marginTop:10,fontSize:12,color:"#166534"}}>Push notifications need no design asset — this is marked done and ready to schedule.</div></>
+              <div style={{marginTop:10,fontSize:12,color:"#166534"}}>Push needs no design — this copy is now sent to Ilena for approval. It appears in Finalized only once she approves it.</div></>
             :<><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                 <Btn variant="teal"onClick={()=>{patch(c.id,{stage:"design"});setTab("design");onOpen(c.id,"design");}}><Palette size={14}/>Go to Design</Btn>
               </div>
