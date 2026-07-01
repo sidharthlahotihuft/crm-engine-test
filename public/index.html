@@ -431,7 +431,7 @@ const myAction=(c,me)=>{
 };
 // ── Who's involved + what it's waiting on (for clearer row identifiers) ──
 const _first=(n)=>((n||"").trim().split(/\s+/)[0]||"");
-const slotHolders=(team,slot)=>(team||[]).filter(u=>Array.isArray(u.approval_slots)&&u.approval_slots.includes(slot)).map(u=>u.name);
+const slotHolders=(team,slot)=>(team||[]).filter(u=>Array.isArray(u.approval_slots)&&u.approval_slots.includes(slot)&&normRole(u.role)!=="super_admin"&&u.role!=="admin").map(u=>u.name);
 const SLOT_FALLBACK={copy:"brand lead",design:"design lead",asset:"the copy author",brand:"brand lead",final:"Head of Marketing"};
 // HUFT Canva brand templates. Both teams open the suggested one, paste the approved copy into the
 // pre-branded text layers (fonts/layout already set), then upload the export / share link for review.
