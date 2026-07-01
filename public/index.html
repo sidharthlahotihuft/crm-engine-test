@@ -582,6 +582,7 @@ const CollapsibleSection=({title,count,color=C.purple,icon,children,extra,defaul
 /* ===== TAT + Calendar helpers =========================================== */
 const TAT_HOURS={brief:24,content:48,design:48}; // target hours per stage
 const fmtDate=(d)=>{if(!d)return"";const dt=new Date(d);return dt.toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"});};
+const asText=(v)=>{if(v==null)return"";if(typeof v==="string")return v;if(typeof v==="number"||typeof v==="boolean")return String(v);if(Array.isArray(v))return v.map(asText).filter(Boolean).join(" · ");if(typeof v==="object")return String(v.body||v.text||v.value||v.whatsapp||v.copy||v.idea||Object.values(v).filter(x=>typeof x==="string").join(" · ")||"");return String(v);};
 function BriefDates({c,style}){
   const cr=c&&(c.created_at||c.createdAt);
   const gl=c&&c.go_live_date;
@@ -1128,6 +1129,25 @@ function inPeriod(c,period){
   return d>=f;
 }
 // Combined colour key + date filter bar for the list pages.
+const applyTileFilters=(items,f)=>{if(!f)return items||[];return (items||[]).filter(c=>{
+  if(f.date&&String(c.go_live_date||"")!==f.date)return false;
+  if(f.crm&&normCrmType(c.crm_type)!==f.crm)return false;
+  if(f.channel&&String(c.channel||"")!==f.channel)return false;
+  return true;
+});};
+function TileFilters({items,f,setF}){
+  const dates=[...new Set((items||[]).map(c=>c.go_live_date).filter(Boolean))].sort();
+  const channels=[...new Set((items||[]).map(c=>c.channel).filter(Boolean))].sort();
+  const on=f.date||f.crm||f.channel;
+  const sx={fontSize:12,fontWeight:600,color:C.ink,border:`1px solid ${C.line}`,borderRadius:8,padding:"6px 9px",background:"#fff",cursor:"pointer",fontFamily:"inherit"};
+  return<div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginBottom:12}}>
+    <span style={{fontSize:11,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.5}}>Filter</span>
+    <select value={f.date}onChange={e=>setF({...f,date:e.target.value})}style={sx}><option value="">All go-live dates</option>{dates.map(d=><option key={d}value={d}>{fmtDate(d)}</option>)}</select>
+    <select value={f.crm}onChange={e=>setF({...f,crm:e.target.value})}style={sx}><option value="">D2C / Retail</option><option value="D2C">D2C</option><option value="Retail">Retail</option></select>
+    <select value={f.channel}onChange={e=>setF({...f,channel:e.target.value})}style={sx}><option value="">All channels</option>{channels.map(ch=><option key={ch}value={ch}>{ch}</option>)}</select>
+    {on&&<button onClick={()=>setF({date:"",crm:"",channel:""})}style={{...sx,color:C.coral,fontWeight:700,border:`1px solid ${C.coral}`}}>Clear</button>}
+  </div>;
+}
 function ListBar({stages,period,setPeriod}){
   const list=(stages||["brief","content","brand_review","design","done"]).map(s=>LEGEND_ITEMS[s]||STAGE_COLORS[s]).filter(Boolean);
   return<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",padding:"5px 10px",background:"#fff",border:"1px solid #EAE6E1",borderRadius:9,marginBottom:12}}>
@@ -2241,8 +2261,8 @@ function ReviewModal({c,me,kind,action,tab,onApprove,onSendBackDone,onEdit,onClo
         <div style={{background:"#FAFAFB",border:`1px solid ${C.line}`,borderRadius:10,padding:"11px 13px",marginBottom:13}}>
           <div style={{fontSize:10,fontWeight:800,color:C.coral,textTransform:"uppercase",letterSpacing:.5,marginBottom:6}}>The brief — at a glance</div>
           <Field label="Objective">{c.objective||brief.objective}</Field>
-          <Field label="Single-minded idea">{brief.idea}</Field>
-          {brief.trigger&&<Field label="Trigger">{brief.trigger}</Field>}<Field label="Insight">{brief.strategicInsight}</Field>
+          <Field label="Single-minded idea">{asText(brief.idea)}</Field>
+          {brief.trigger&&<Field label="Trigger">{asText(brief.trigger)}</Field>}<Field label="Insight">{asText(brief.strategicInsight)}</Field>
           <Field label="Audience">{c.audience_label||c.segment}</Field>
           <Field label="Offer">{c.offer}</Field>
           {Array.isArray(brief.proofPoints)&&brief.proofPoints.length>0&&<Field label="Proof points">{brief.proofPoints.slice(0,3).join(" · ")}</Field>}
@@ -2663,7 +2683,7 @@ function findAudience(name,audiences){
   const n=name.trim().toLowerCase();
   return audiences.find(a=>(a.name||"").trim().toLowerCase()===n)||null;
 }
-function BriefFastForm({campaignId,c,patch,onBriefReady,onDraftSaved,me,recentFeedback,product,audiences}){
+function BriefFastForm({campaignId,c,patch,onBriefReady,onDraftSaved,me,recentFeedback,product,audiences,knownProducts}){
   const[answers,setAnswers]=useState(()=>((c&&c.data&&c.data.draftAnswers)?{product:product||"",...c.data.draftAnswers}:{product:product||""}));
   const[refFiles,setRefFiles]=useState([]);
   const[generating,setGenerating]=useState(false);
@@ -2686,6 +2706,7 @@ function BriefFastForm({campaignId,c,patch,onBriefReady,onDraftSaved,me,recentFe
     if(s.key==="trigger"){const a=findAudience(answers.audience,audiences);if(a&&a.trigger_event)return[a.trigger_event,...(s.options||[])];}
     if(s.filterByProduct){const f=s.filterByProduct(answers.product);return f||s.options||[];}
     if(s.filterByAudience){const f=s.filterByAudience(answers.audience);return f||s.options||[];}
+    if(s.key==="product"){const base=s.options||[];const extra=(knownProducts||[]).filter(p=>p&&!base.includes(p));return[...extra,...base];}
     return s.options||[];
   };
   const required=["crmType","channel","product","audience","objective","go_live_date"];
@@ -3278,6 +3299,7 @@ const AlertCircle=p=><Svg{...p}><circle cx="12"cy="12"r="10"/><path d="M12 8v4M1
 
 /* ===== Brief Tab ======================================================== */
 function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns:_allCampaigns,onOpen,onDelete,onNew,onBulkImport,onBulkGenerate,toast,audiences}){
+  const _knownProducts=[...new Set((_allCampaigns||[]).map(x=>(x&&x.product||"").trim()).filter(Boolean))];
   const[period,setPeriod]=useState("all");
   const campaigns=(_allCampaigns||[]).filter(c=>inPeriod(c,period));
   const[view,setView]=useState("list");
@@ -3416,6 +3438,7 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns:
     const onBriefReady=()=>{
       setM(c.id,"view");
       patch(c.id,{stage:"content"});
+      toast&&toast("Brief added ✓","success");
     };
     const _tone=!brief?ROW_TONE.attention:(c.stage==="done"?ROW_TONE.done:ROW_TONE.approved);
     const isSel=selected.has(c.id);
@@ -3447,7 +3470,7 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns:
             {c.audience_label&&<span>· {c.audience_label}</span>}
           </div>
           {/* Line 3: Idea */}
-          {brief?.idea&&<div title={brief.idea} style={{fontSize:11.5,color:C.sub,marginTop:3,fontStyle:"italic",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{brief.idea}</div>}
+          {brief?.idea&&<div title={asText(brief.idea)} style={{fontSize:11.5,color:C.sub,marginTop:3,fontStyle:"italic",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{asText(brief.idea)}</div>}
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
           <span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,fontWeight:800,color:stageMeta.color,background:stageMeta.bg,padding:"4px 11px",borderRadius:999,border:`1px solid ${stageMeta.color}33`}}>{brief&&c.stage==="done"&&<CheckCircle2 size={12}/>}{stageMeta.label}</span>
@@ -3476,12 +3499,12 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns:
             <button onClick={()=>setM(c.id,null)}style={{background:"transparent",border:"none",cursor:"pointer",color:"rgba(255,255,255,.6)",fontSize:12}}>← Back</button>
           </div>
           <div style={{padding:"0 16px 16px"}}>
-            <BriefFastForm campaignId={c.id}c={c}patch={patch}onBriefReady={onBriefReady}onDraftSaved={()=>setM(c.id,"view")}me={me}recentFeedback={recentFeedback}product={c.product}audiences={audiences}/>
+            <BriefFastForm campaignId={c.id}c={c}patch={patch}onBriefReady={onBriefReady}onDraftSaved={()=>{setM(c.id,"view");toast&&toast("Brief draft saved ✓","success");}}me={me}recentFeedback={recentFeedback}product={c.product}audiences={audiences}knownProducts={_knownProducts}/>
           </div>
         </div>}
 
         {m==="self"&&!brief&&<div style={{background:"#fff",borderRadius:12,padding:14,border:`1px solid ${C.line}`,marginBottom:14}}>
-          <SelfBriefForm active={c}patch={patch}audiences={audiences}onDone={()=>setM(c.id,"view")}onBack={()=>setM(c.id,null)}/>
+          <SelfBriefForm active={c}patch={patch}audiences={audiences}onDone={()=>{setM(c.id,"view");toast&&toast("Brief added ✓","success");}}onBack={()=>setM(c.id,null)}/>
         </div>}
 
         {m==="edit"&&brief&&<div style={{background:"#fff",borderRadius:12,padding:14,border:`1px solid ${C.line}`,marginBottom:14}}>
@@ -3493,7 +3516,7 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns:
           {/* Idea */}
           <div style={{background:"#fff",borderRadius:12,padding:"12px 14px",border:`1px solid ${C.line}`,borderLeft:`3px solid ${C.coral}`,marginBottom:8}}>
             <div style={{fontSize:10.5,fontWeight:700,color:C.coral,textTransform:"uppercase",letterSpacing:.5,marginBottom:3}}>The idea</div>
-            <div style={{fontSize:14,fontWeight:700,lineHeight:1.5}}>{brief.idea}</div>
+            <div style={{fontSize:14,fontWeight:700,lineHeight:1.5,whiteSpace:"pre-line"}}>{asText(brief.idea)}</div>
           </div>
           {/* Collapsible sections */}
           <div style={{background:"#fff",borderRadius:12,border:`1px solid ${C.line}`,overflow:"hidden",marginBottom:8}}>
@@ -3514,7 +3537,7 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns:
               <div style={{fontSize:13,fontWeight:800,color:C.ink,marginBottom:3}}>{self?"You're making this one in-house":"Handed to the creative team"}</div>
               <div style={{fontSize:11.5,color:C.sub,marginBottom:11}}>{self?"Write the copy and build the design — then send it for the dual sign-off (Anmol & Ilena).":"The creative team picks it up in Copy next."}</div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-                <Btn onClick={()=>{setTab("content");onOpen(c.id,"content");}}>Continue to Copy <ArrowRight size={14}/></Btn>
+                {(self||!isBusiness(me))&&<Btn onClick={()=>{setTab("content");onOpen(c.id,"content");}}>Continue to Copy <ArrowRight size={14}/></Btn>}
                 <Btn variant="ghost"onClick={()=>setM(c.id,"edit")}><PenLine size={13}/>Edit brief</Btn>
               </div>
             </>:<>
@@ -3560,7 +3583,7 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns:
             <button onClick={bulkDelete}style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:13,fontWeight:700,color:"#B91C1C",background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:9,padding:"7px 14px",cursor:"pointer"}}><Trash2 size={14}/>Delete</button>
             <button onClick={clearSel}style={{fontSize:13,fontWeight:700,color:C.sub,background:"none",border:"none",cursor:"pointer",padding:"7px 6px"}}>Clear</button></>}
         </div>}
-        {(pendingCopy.length>0||bulkGen)&&<div style={{marginBottom:16,border:`1.5px solid ${C.coral}`,borderRadius:12,padding:"14px 16px",background:C.coralSoft,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+        {!isBusiness(me)&&(pendingCopy.length>0||bulkGen)&&<div style={{marginBottom:16,border:`1.5px solid ${C.coral}`,borderRadius:12,padding:"14px 16px",background:C.coralSoft,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
           <div style={{width:36,height:36,borderRadius:10,background:C.coral,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={19}/></div>
           <div style={{flex:1,minWidth:160}}>
             <div style={{fontWeight:800,fontSize:15,color:C.ink}}>{bulkGen?`Generating copy… ${bulkGen.done}/${bulkGen.total}`:`${pendingCopy.length} brief${pendingCopy.length>1?"s":""} ready for copy`}</div>
@@ -3810,14 +3833,15 @@ function RefFiles({files}){
 }
 function BriefSection({label,content}){
   const[open,setOpen]=useState(true);
-  if(!content)return null;
+  const _txt=asText(content);
+  if(!_txt)return null;
   return<div style={{borderBottom:`1px solid ${C.line}`}}>
     <button onClick={()=>setOpen(v=>!v)}
       style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:"none",border:"none",cursor:"pointer",textAlign:"left"}}>
       <span style={{fontSize:10.5,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5}}>{label}</span>
       {open?<ChevronDown size={13}color={C.sub}/>:<ChevronRight size={13}color={C.sub}/>}
     </button>
-    {open&&<div style={{padding:"0 14px 12px",fontSize:13.5,lineHeight:1.55,color:C.ink}}>{content}</div>}
+    {open&&<div style={{padding:"0 14px 12px",fontSize:13.5,lineHeight:1.55,color:C.ink,whiteSpace:"pre-line"}}>{_txt}</div>}
   </div>;
 }
 
@@ -3862,7 +3886,7 @@ function BriefSummaryCard({active,activeBrief,copyRules,busy,refineFor,gen,opts,
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
         <div style={{flex:1}}>
           <div style={{fontSize:10.5,fontWeight:700,color:C.coral,textTransform:"uppercase",letterSpacing:.5,marginBottom:3}}>The idea</div>
-          <div style={{fontSize:14.5,fontWeight:700,color:C.ink,lineHeight:1.5}}>{activeBrief.idea}</div>
+          <div style={{fontSize:14.5,fontWeight:700,color:C.ink,lineHeight:1.5}}>{asText(activeBrief.idea)}</div>
           <div style={{fontSize:12,color:C.sub,marginTop:5,display:"flex",gap:8,flexWrap:"wrap"}}>
             {active.objective&&<span>{active.objective}</span>}
             {active.audience_label&&<span>· {active.audience_label}</span>}
@@ -4331,11 +4355,13 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
   const _myCats=myCategories(me,catRules);
   const allCopyRaw=(campaigns||[]).filter(c=>!isArchived(c)&&(c.stage==="content"||(c.data?.copyOptions&&c.data?.selectedCopyIdx!=null)));
   // Hard route: a brand_team writer with assigned categories sees their categories — plus anything not yet categorised (so nothing is ever fully hidden).
-  const allCopy=isBusiness(me)
+  const allCopyAll=isBusiness(me)
     ? allCopyRaw.filter(c=>c.data?.selfMade)
     : isBrandTeam(me)
       ? allCopyRaw.filter(c=>!c.data?.selfMade).filter(c=>{if(!(_myCats.length>0))return true;const cat=categoryOf(c);return !cat||_myCats.includes(cat);})
       : allCopyRaw;
+  const[tf,setTf]=useState({date:"",crm:"",channel:""});
+  const allCopy=applyTileFilters(allCopyAll,tf);
   const[openId,setOpenId]=useState(null);
   const[busyMap,setBusyMap]=useState({});
   const[errMap,setErrMap]=useState({});
@@ -4759,6 +4785,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       </div>
     </div>
     {view==="list"&&<ListBar period={period} setPeriod={setPeriod} stages={["needs_copy","content","brand_review"]}/>}
+    {view==="list"&&<TileFilters items={allCopyAll} f={tf} setF={setTf}/>}
     {view==="calendar"
       ?<CalendarView campaigns={allCopy}onOpen={onOpen}/>
       :allCopy.length===0
@@ -6970,7 +6997,9 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
   const[period,setPeriod]=useState("all");
   const campaigns=(_allCampaigns||[]).filter(c=>inPeriod(c,period));
   const allDesignRaw=(campaigns||[]).filter(c=>c.stage==="design"&&(c.channel!=="Push notification"||c.data?.selfMade)&&!isArchived(c));
-  const allDesign=isBusiness(me)?allDesignRaw.filter(c=>c.data?.selfMade):isDesignTeam(me)?allDesignRaw.filter(c=>!c.data?.selfMade):allDesignRaw;
+  const allDesignAll=isBusiness(me)?allDesignRaw.filter(c=>c.data?.selfMade):isDesignTeam(me)?allDesignRaw.filter(c=>!c.data?.selfMade):allDesignRaw;
+  const[tf,setTf]=useState({date:"",crm:"",channel:""});
+  const allDesign=applyTileFilters(allDesignAll,tf);
   const[openId,setOpenId]=useState(null);
   const[imageModes,setImageModes]=useState({});
   const[imageThreads,setImageThreads]=useState({}); // {campaignId: [{image,fix,at,by}]} — session only, never persisted (avoids bloating campaign data)
@@ -7317,6 +7346,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
       </div>
     </div>
     {view==="list"&&<ListBar period={period} setPeriod={setPeriod} stages={["design","brand_review"]}/>}
+    {view==="list"&&<TileFilters items={allDesignAll} f={tf} setF={setTf}/>}
     {view==="calendar"
       ?<CalendarView campaigns={allDesign}onOpen={onOpen}/>
       :allDesign.length===0
@@ -7345,7 +7375,9 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
 
 
 function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate}){
-  const allDone=(campaigns||[]).filter(c=>c.stage==="done"&&!isArchived(c)).sort((a,b)=>new Date(b.updated_at||b.created_at)-new Date(a.updated_at||a.created_at));
+  const allDoneAll=(campaigns||[]).filter(c=>c.stage==="done"&&!isArchived(c)).sort((a,b)=>new Date(b.updated_at||b.created_at)-new Date(a.updated_at||a.created_at));
+  const[tf,setTf]=useState({date:"",crm:"",channel:""});
+  const allDone=applyTileFilters(allDoneAll,tf);
   const[view,setView]=useState("list");
   const[reactivating,setReactivating]=useState(null);
   const reactivate=(c)=>{
@@ -7434,7 +7466,7 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate}){
       </div>
       {/* Expanded detail */}
       {isOpen&&<div style={{padding:"0 18px 16px"}}>
-        {brief&&<div style={{fontSize:12.5,color:C.ink,marginBottom:8,lineHeight:1.5,fontWeight:600}}>{brief.idea}</div>}
+        {brief&&<div style={{fontSize:12.5,color:C.ink,marginBottom:8,lineHeight:1.5,fontWeight:600}}>{asText(brief.idea)}</div>}
         {copy&&<ApprovedCopyCard copy={copy}channel={c.channel}product={c.product}image={c.data?.design?.generatedImage||c.data?.design?.finalFile||null}hideImageCopy={/whatsapp/i.test(c.channel||"")}/>}
         {approvedPrompt&&!/whatsapp/i.test(c.channel||"")&&<div style={{marginBottom:8,background:"#fff",borderRadius:8,padding:"10px 13px",borderLeft:"3px solid "+C.teal,border:`1px solid ${C.line}`}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
@@ -7498,6 +7530,7 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate}){
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
       <div><Eyebrow color={C.green}>Done</Eyebrow><h1 style={{margin:"4px 0 0",fontSize:24,fontWeight:800}}>Done & ready</h1></div>
     </div>
+    {allDoneAll.length>0&&<TileFilters items={allDoneAll} f={tf} setF={setTf}/>}
     {allDone.length===0
       ?<Card><Empty icon={<CheckCircle2 size={26}color={C.sub}/>}title="Nothing done yet"sub="Completed, ready-to-go-live assets appear here. Archived assets live in the Archive tab."/></Card>
       :<Card style={{padding:0,overflow:"hidden"}}>
@@ -7670,7 +7703,7 @@ function ArchiveTab({campaigns,patch,onOpen,me,onDelete}){
                 {c.created_at&&<span style={{fontSize:11,color:C.sub,background:"#F3F4F6",padding:"2px 7px",borderRadius:5}}>{fmtDate(c.created_at)}</span>}
               </div>
               {(c.audience_label||c.segment)&&<div style={{fontSize:12,color:C.sub}}>{c.audience_label||c.segment}{c.objective?" · "+c.objective:""}</div>}
-              {brief&&<div style={{fontSize:12,color:C.sub,marginTop:3,lineHeight:1.4}}>{brief.idea}</div>}
+              {brief&&<div style={{fontSize:12,color:C.sub,marginTop:3,lineHeight:1.4}}>{asText(brief.idea)}</div>}
             </div>
             <div style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
               {canManage&&<button onClick={()=>restore(c)}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.ink,fontWeight:600,display:"flex",alignItems:"center",gap:4}}><RotateCcw size={12}/>Restore</button>}
