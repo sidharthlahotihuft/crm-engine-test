@@ -365,7 +365,7 @@ const copyLimits=(isPush,isEmail)=>isPush?{header:50,body:90,cta:25}:isEmail?{su
 // Shared shape/format spec for copy generation — used by BOTH the bulk generator and the per-card generator so they never drift.
 // header = the IMAGE COPY overlay: a HERO HOOK (an idea: tension/wordplay/question/belief-flip, often with one emphasised turn) + a RESOLVE line ('Switch to [Product]!' or the offer/answer), on its own line, read as ONE thought. Proof goes in rtbs (footer strip), NEVER in the header.
 const COPY_SHAPE=(isPush,isEmail)=>(isPush
-  ?"each: {direction,header,body,cta}. header=push TITLE (the FIRST line), max 40 chars (hard 50), one crisp flowing line that DRIVES AN ACTION — every push, even awareness, makes the reader want to act (tap, see, switch, save). body=the second line, max 70 chars — THIS IS A HARD LIMIT, never exceed 70 chars; at most TWO short complete sentences (one is better), natural flow not fragments, reinforcing the action. cta=2-3 words. Push has NO image — do not write image/overlay copy or rtbs. If the brief has an offer, put it in the title or body in plain words."
+  ?"each: {direction,header,body,cta}. header=push TITLE (the FIRST line), max 40 chars (hard 50), one crisp flowing line that DRIVES AN ACTION — every push, even awareness, makes the reader want to act (tap, see, switch, save). body=the second line, max 70 chars — THIS IS A HARD LIMIT, never exceed 70 chars; at most TWO short complete sentences (one is better), natural flow not fragments, reinforcing the action. cta=LEAVE EMPTY — a push has NO CTA button (the whole notification is tappable), so never write a CTA. Push has NO image — do not write image/overlay copy or rtbs. If the brief has an offer, put it in the title or body in plain words."
   :isEmail
   ?"each: {direction,subject,header,body,cta,rtbs}. subject=email subject line under 50 chars. header=IMAGE COPY / hero overlay — a HERO HOOK + a RESOLVE line that pays it off, as ONE coherent thought (put a real line break between them). HOOK = a self-contained idea you get at a glance (a tension, a witty wordplay, a question, or a belief-flip), often with one emphasised turn — NEVER the feature list or proof. RESOLVE = the payoff carrying the single most important thing: usually 'Switch to [Product]!' for a product play, or the offer, or the answer to the hook question. It MUST be a COMPLETE, natural phrase you could say aloud — keep the connecting words and the offer's qualifier ('now at just ₹999 for your first visit', NEVER a clipped 'now ₹999'; 'at just ₹65'; '₹200 off your first booking'). Completeness beats brevity — finishing the thought matters more than saving words. Keep each part tight but WHOLE (roughly 4–12 words), crisp and full of personality, never a truncated fragment. Proof NEVER goes in the header — it goes in rtbs (a separate footer strip). No emojis. Sentence/title case. body=short scannable email (~50-80 words): warm 1-line opener, core value/offer in 1-2 lines, 2-3 proof points, friendly sign-off. cta=action phrase."
   :"each: {direction,header,body,cta,rtbs}. header=IMAGE COPY / on-image overlay — a HERO HOOK + a RESOLVE line that pays it off, as ONE coherent thought (put a real line break between them). HOOK = a self-contained idea you get at a glance (a tension, a witty wordplay, a question, or a belief-flip), often with one emphasised turn — NEVER the feature list or proof. RESOLVE = the payoff carrying the single most important thing: usually 'Switch to [Product]!' for a product play, or the offer, or the answer to the hook question. It MUST be a COMPLETE, natural phrase you could say aloud — keep the connecting words and the offer's qualifier ('now at just ₹999 for your first visit', NEVER a clipped 'now ₹999'; 'at just ₹65'; '₹200 off your first booking'). Completeness beats brevity — finishing the thought matters more than saving words. Keep each part tight but WHOLE (roughly 4–12 words), crisp and full of personality, never a truncated fragment. Proof NEVER goes in the header — it goes in rtbs (a separate footer strip). No emojis. Sentence/title case. body=tight WhatsApp message (~40-55 words): a STRONG hook line that earns the 'read more' tap (NEVER a generic opener), payoff, 2-3 proof bullets, the switch/offer line. Do NOT put the store/app/website link or an opt-out line in the body. cta=the action phrase that goes in the CTA field (e.g. 'Shop now at huft.com' or 'Order on the HUFT app').")
@@ -2341,7 +2341,7 @@ function ReviewModal({c,me,kind,action,tab,onApprove,onSendBackDone,onEdit,onClo
           {copy.subject&&<div style={{marginBottom:5}}><div style={{fontSize:9,fontWeight:800,color:C.sub,textTransform:"uppercase"}}>Subject</div><div style={{fontSize:13,fontWeight:700,color:C.ink}}>{copy.subject}</div></div>}
           {copy.header&&<div style={{marginBottom:5}}><div style={{fontSize:9,fontWeight:800,color:C.sub,textTransform:"uppercase"}}>{isPushC?"Headline":"Image copy"}</div><div style={{fontSize:13,fontWeight:700,color:C.ink,whiteSpace:"pre-line"}}>{copy.header}</div></div>}
           {copy.body&&<div style={{marginBottom:5}}><div style={{fontSize:9,fontWeight:800,color:C.sub,textTransform:"uppercase"}}>{isPushC?"Subheadline":"Body copy"}</div><div style={{fontSize:12.5,color:"#374151",lineHeight:1.5,whiteSpace:"pre-line"}}>{copy.body}</div></div>}
-          {copy.cta&&<div style={{fontSize:12,fontWeight:700,color:C.purple}}>{copy.cta} →</div>}
+          {!isPushC&&copy.cta&&<div style={{fontSize:12,fontWeight:700,color:C.purple}}>{copy.cta} →</div>}
           <div style={{display:"flex",gap:7,marginTop:9,flexWrap:"wrap"}}>
             {isWA&&<button onClick={()=>setShowWA(true)}style={{fontSize:11.5,fontWeight:700,color:"#0b141a",background:"#25D36622",border:"1px solid #25D36655",borderRadius:7,padding:"5px 10px",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}><MessageSquare size={12}/>Preview on WhatsApp</button>}
             {isPushC&&<button onClick={()=>setShowPush(true)}style={{fontSize:11.5,fontWeight:700,color:C.navy,background:C.navy+"12",border:`1px solid ${C.navy}40`,borderRadius:7,padding:"5px 10px",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}><BellIcon size={12}/>Preview as notification</button>}
@@ -4134,7 +4134,7 @@ function BrandReviewTab({campaigns,patch,me,toast,onOpen,setTab}){
         {o?<div style={{border:`1px solid ${C.line}`,borderRadius:10,overflow:"hidden",marginBottom:12}}>
           {isEmail&&o.subject&&<div style={{background:"#EEF2FF",padding:"9px 13px",borderBottom:`1px solid ${C.line}`}}><div style={{fontSize:9.5,fontWeight:700,color:"#4F46E5",textTransform:"uppercase",letterSpacing:.5,marginBottom:3}}>Subject line</div><div style={{fontWeight:700,fontSize:13.5,color:"#1E1B4B"}}>{o.subject}</div></div>}
           <div style={{background:"#1a2940",padding:"9px 13px"}}><div style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,.4)",textTransform:"uppercase",letterSpacing:.5,marginBottom:3}}>Image copy</div><div style={{fontWeight:800,whiteSpace:"pre-line",color:"#fff",fontSize:13.5}}>{o.header}</div></div>
-          <div style={{background:"#F8FAFC",padding:"9px 13px"}}><div style={{fontSize:9.5,fontWeight:700,color:"#475569",textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Body copy</div><div style={{whiteSpace:"pre-line",color:"#1f2937",fontSize:12.5,lineHeight:1.5}}>{o.body}</div>{o.cta&&<div style={{marginTop:8,display:"inline-block",background:C.navy,color:"#fff",fontSize:11,fontWeight:700,padding:"4px 11px",borderRadius:7}}>{o.cta}</div>}</div>
+          <div style={{background:"#F8FAFC",padding:"9px 13px"}}><div style={{fontSize:9.5,fontWeight:700,color:"#475569",textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Body copy</div><div style={{whiteSpace:"pre-line",color:"#1f2937",fontSize:12.5,lineHeight:1.5}}>{o.body}</div>{!isPush&&o.cta&&<div style={{marginTop:8,display:"inline-block",background:C.navy,color:"#fff",fontSize:11,fontWeight:700,padding:"4px 11px",borderRadius:7}}>{o.cta}</div>}</div>
         </div>:<div style={{fontSize:13,color:C.sub,marginBottom:12}}>No selected copy found.</div>}
 
         {!reviewedRow&&canBrandApprove(me)&&<div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:6}}>
@@ -4690,7 +4690,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
             {o.direction&&<div style={{fontSize:10,fontWeight:700,color:C.purple,textTransform:"uppercase",letterSpacing:.5,marginBottom:5}}>{o.direction}</div>}
             <div style={{fontWeight:700,fontSize:13.5,color:C.ink,whiteSpace:"pre-line",marginBottom:4}}>{o.header}</div>
             <div style={{fontSize:12.5,color:"#374151",lineHeight:1.5,whiteSpace:"pre-line"}}>{o.body}</div>
-            {o.cta&&<div style={{marginTop:7,display:"inline-block",background:C.navy,color:"#fff",fontSize:11.5,fontWeight:700,padding:"4px 11px",borderRadius:7}}>{o.cta}</div>}
+            {!isPush&&o.cta&&<div style={{marginTop:7,display:"inline-block",background:C.navy,color:"#fff",fontSize:11.5,fontWeight:700,padding:"4px 11px",borderRadius:7}}>{o.cta}</div>}
             {isPush&&<div style={{marginTop:8,display:"flex",gap:10,fontSize:10,color:C.sub}}><span style={{color:(o.header||"").length>50?"#DC2626":C.sub}}>Title {(o.header||"").length}/50</span><span style={{color:(o.body||"").length>70?"#DC2626":C.sub}}>Body {(o.body||"").length}/70</span></div>}
           </div>}
           {o&&Array.isArray(o._warn)&&o._warn.length>0&&(()=>{
@@ -4911,7 +4911,7 @@ function ManualCopyForm({initial,channel,onSave,onCancel}){
   const[gc,setGc]=useState(null); // grammar-check result {hasIssues,issues,corrected}
   const[gcErr,setGcErr]=useState("");
 
-  const buildOpt=(over={})=>({direction:dir.trim()||"Team-written",header:(over.header??h).trim(),body:(over.body??b).trim(),cta:(over.cta??cta).trim(),...(isEmail?{subject:(over.subject??subj).trim()}:{})});
+  const buildOpt=(over={})=>({direction:dir.trim()||"Team-written",header:(over.header??h).trim(),body:(over.body??b).trim(),cta:isPush?"":(over.cta??cta).trim(),...(isEmail?{subject:(over.subject??subj).trim()}:{})});
 
   // Step 1: run British-English grammar check before saving
   const runCheck=async()=>{
@@ -4948,7 +4948,7 @@ function ManualCopyForm({initial,channel,onSave,onCancel}){
     {isPush?<Field label="Title (keep under 50 chars)"value={h}onChange={setH}textarea rows={2}/>:<FmtField label="Image copy"value={h}onChange={setH}rows={2}/>}
     {isPush?<Field label="Body (keep under 70 chars — hard limit)"value={b}onChange={setB}textarea rows={2}/>:<FmtField label="Body copy"value={b}onChange={setB}rows={5}/>}
     {isPush&&<div style={{display:"flex",gap:10,fontSize:10.5,color:C.sub,marginTop:-6,marginBottom:10}}><span style={{color:h.length>50?"#DC2626":C.sub}}>Title {h.length}/50</span><span style={{color:b.length>70?"#DC2626":C.sub}}>Body {b.length}/70</span></div>}
-    <Field label="CTA"value={cta}onChange={setCta}placeholder="e.g. Shop now"/>
+    {!isPush&&<Field label="CTA"value={cta}onChange={setCta}placeholder="e.g. Shop now"/>}
 
     {/* Grammar-check results panel */}
     {gc&&gc.hasIssues&&<div style={{border:`1.5px solid #F59E0B`,background:"#FFFBEB",borderRadius:10,padding:"11px 13px",marginBottom:10}}>
@@ -5011,7 +5011,7 @@ function ApprovedCopyCard({copy,channel,product,image,hideImageCopy}){
       <div style={{fontSize:9,fontWeight:800,color:"#0F766E",textTransform:"uppercase",letterSpacing:.6,marginBottom:3}}>{isPush?"Subheadline":"Body copy"}</div>
       <div style={{fontSize:12,color:"#4C1D95",lineHeight:1.5,whiteSpace:"pre-line"}}>{copy.body}</div>
     </div>}
-    {copy.cta&&<div style={{marginTop:8,fontSize:11,fontWeight:700,color:"#5B21B6"}}>{copy.cta} →</div>}
+    {!isPush&&copy.cta&&<div style={{marginTop:8,fontSize:11,fontWeight:700,color:"#5B21B6"}}>{copy.cta} →</div>}
     {showMock&&<WhatsAppMockup o={copy}image={image}product={product}imageHasCopy={!!image}onClose={()=>setShowMock(false)}/>}
     {showPush&&<PushMockup o={copy}image={image}product={product}onClose={()=>setShowPush(false)}/>}
   </div>;
