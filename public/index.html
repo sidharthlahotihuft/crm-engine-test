@@ -967,10 +967,10 @@ const BRIEF_STEPS = [
     question:"Which product, sub-brand, or category?",
     hint:"Tap a quick option or type any brand/category/SKU from headsupfortails.com. Each HUFT sub-brand has a different tone — Sara's is warm and home-style, Meowsi is witty and feline-first, Hearty is bold and energetic.",
     options:[
-      "Sara's Wholesome Food","Hearty","Meowsi","NutriMeow","NutriWag","Yakies","DashDog",
+      "Sara's Wholesome Food","Hearty","Meowsi","Meowsi Food","Meowsi Treats","NutriMeow","NutriMeow Wet Food","NutriMeow Dry Food","NutriWag","Yakies","DashDog",
       "HUFT Originals (Accessories)","HUFT Spa / Grooming","HUFT Foundation","HUFT Stores / Retail",
       "Dog Food","Cat Food","Treats & Chews","Toys","Beds & Furniture","Collars & Leashes","Apparel & Raincoats","Cat Litter & Hygiene","Bowls & Feeders","Health & Supplements",
-      "Royal Canin","Pedigree","Farmina","Sheba","Whiskas","Drools","Orijen","Trixie","KONG","Himalaya",
+      "All 3P Cat Food","All 3P Dog Food","Royal Canin","Pedigree","Farmina","Sheba","Whiskas","Drools","Orijen","Trixie","KONG","Himalaya",
     ],
     freeText:true,
     placeholder:"Or type a specific SKU / variant e.g. Sara's Chicken & Rice 150g…",
@@ -4857,7 +4857,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       </div>
     </div>
     {view==="list"&&<ListBar period={period} setPeriod={setPeriod} stages={["needs_copy","content","brand_review"]}/>}
-    {view==="list"&&<TileFilters items={allCopyAll} f={tf} setF={setTf}/>}{view==="list"&&<SortBar value={copySort}onChange={setCopySort}/>}
+    {view==="list"&&<TileFilters items={allCopyAll} f={tf} setF={setTf}/>}{view==="list"&&<SortBar value={copySort}onChange={setCopySort}/>}{isBrandTeam(me)&&<div style={{marginBottom:12,fontSize:11.5,fontWeight:600,padding:"7px 11px",borderRadius:8,background:_myCats.length?"#EEF2FF":"#FEF3C7",color:_myCats.length?"#3730A3":"#92400E",border:_myCats.length?"1px solid #C7D2FE":"1px solid #FDE68A"}}>{_myCats.length?"Category routing on · showing your categories: "+_myCats.join(", "):"No categories assigned to you yet — showing all copy. Ask an admin to set you under Category routing. ("+(Array.isArray(catRules)?catRules.length:0)+" routing rules loaded)"}</div>}
     {view==="calendar"
       ?<CalendarView campaigns={allCopy}onOpen={onOpen}/>
       :allCopy.length===0
