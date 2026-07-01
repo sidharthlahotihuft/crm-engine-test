@@ -132,12 +132,14 @@ const CRM_CATEGORIES=["cat edibles","dog edibles","lifestyle & spa","litter"];
 const inferCategory=(c)=>{
   const s=(((c&&c.product)||"")+" "+((c&&c.name)||"")+" "+((c&&c.data&&c.data.brief&&c.data.brief.idea)||"")).toLowerCase();
   if(/litter|cat sand|clump/.test(s))return "litter";
+  if(/meowsi|nutrimeow/.test(s))return "cat edibles";
+  if(/hearty|nutriwag|\bswf\b|sara'?s|dashdog|yakies/.test(s)&&!/\bcat\b|feline|kitten/.test(s))return "dog edibles";
   if(/meowsi|nutrimeow|kitten|\bcat\b|feline/.test(s)&&/food|edible|treat|chew|kibble|meal|gravy|wet|fresh|nutri/.test(s))return "cat edibles";
   if(/spa|groom|shampoo|\bwalk\b|leash|harness|collar|\btoy|cloth|apparel|\bbed\b|accessor|raincoat/.test(s))return "lifestyle & spa";
   if(/swf|hearty|\bdog\b|\bpup/.test(s)&&/food|edible|treat|chew|kibble|meal|gravy|wet|fresh/.test(s))return "dog edibles";
   if(/food|edible|treat|chew|kibble|meal|gravy/.test(s))return "dog edibles";
   if(/meowsi|nutrimeow|kitten|\bcat\b|feline/.test(s))return "cat edibles";
-  return null;
+  return "lifestyle & spa"; // non-food, non-litter → HUFT catch-all (spa, grooming, apparel, accessories, toys, beds, bowls, retail, app)
 };
 const categoryOf=(c)=>(c&&c.category)||inferCategory(c)||null;
 const normCat=(x)=>(x==null?"":String(x)).trim().toLowerCase(); // category key normaliser — case/space-proof matching
@@ -4429,7 +4431,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
   const allCopyAll=isBusiness(me)
     ? allCopyRaw.filter(c=>c.data?.selfMade)
     : isBrandTeam(me)
-      ? allCopyRaw.filter(c=>!c.data?.selfMade).filter(c=>{if(!(_myCats.length>0))return true;const cat=normCat(categoryOf(c));return !cat||_myCats.includes(cat);})
+      ? allCopyRaw.filter(c=>!c.data?.selfMade).filter(c=>{if(!(_myCats.length>0))return true;const cat=normCat(categoryOf(c));return _myCats.includes(cat);})
       : allCopyRaw;
   const[tf,setTf]=useState({date:"",crm:"",channel:""});
   const[copySort,setCopySort]=useState("golive_asc");
