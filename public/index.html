@@ -1486,6 +1486,20 @@ const ROW_TONE={
   archived: {bar:C.sub,    bg:"#FAFAFA",  name:C.sub},
 };
 function Field({label,value,onChange,placeholder,textarea,rows=2}){return<label style={{display:"block",marginBottom:12}}><div style={{fontSize:12.5,fontWeight:600,color:C.sub,marginBottom:5}}>{label}</div>{textarea?<textarea value={value}onChange={e=>onChange(e.target.value)}placeholder={placeholder}rows={rows}style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:10,padding:"9px 11px",fontSize:14,color:C.ink,resize:"vertical",boxSizing:"border-box"}}/>:<input value={value}onChange={e=>onChange(e.target.value)}placeholder={placeholder}style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:10,padding:"9px 11px",fontSize:14,color:C.ink,boxSizing:"border-box"}}/>}</label>;}
+function FmtField({label,value,onChange,rows=4}){
+  const ref=React.useRef(null);
+  const wrap=(mark)=>{const ta=ref.current;if(!ta)return;const st=ta.selectionStart,en=ta.selectionEnd;if(st===en)return;const v=value||"";const sel=v.slice(st,en);const next=v.slice(0,st)+mark+sel+mark+v.slice(en);onChange(next);requestAnimationFrame(()=>{try{ta.focus();ta.setSelectionRange(st,en+2*mark.length);}catch(_){}});};
+  const btn={fontSize:12,color:C.ink,border:`1px solid ${C.line}`,borderRadius:6,padding:"1px 9px",background:"#fff",cursor:"pointer",lineHeight:1.4};
+  return<label style={{display:"block",marginBottom:12}}>
+    <div style={{fontSize:12.5,fontWeight:600,color:C.ink,marginBottom:5,display:"flex",alignItems:"center",gap:8}}>{label}
+      <span style={{display:"inline-flex",gap:5}}>
+        <button type="button"onMouseDown={e=>e.preventDefault()}onClick={()=>wrap("*")}title="Bold — wraps the selected text in *…* (renders bold on WhatsApp)"style={{...btn,fontWeight:900}}>B</button>
+        <button type="button"onMouseDown={e=>e.preventDefault()}onClick={()=>wrap("_")}title="Italic — wraps the selected text in _…_ (renders italic on WhatsApp)"style={{...btn,fontStyle:"italic"}}>I</button>
+      </span>
+    </div>
+    <textarea ref={ref}value={value}onChange={e=>onChange(e.target.value)}rows={rows}style={{width:"100%",boxSizing:"border-box",border:`1px solid ${C.line}`,borderRadius:8,padding:"9px 11px",fontSize:13,fontFamily:"inherit",resize:"vertical"}}/>
+  </label>;
+}
 function Spin({label}){return<div style={{display:"flex",alignItems:"center",gap:9,color:C.sub,fontSize:14,padding:"10px 0"}}><Loader2 size={16}style={{animation:"spin 1s linear infinite"}}/>{label}</div>;}
 function Empty({icon,title,sub,action}){return<div style={{textAlign:"center",padding:"48px 20px",color:C.sub}}><div style={{display:"inline-flex",padding:16,borderRadius:999,background:C.paper,marginBottom:12}}>{icon}</div><div style={{fontWeight:700,color:C.ink,fontSize:16}}>{title}</div><div style={{fontSize:14,marginTop:4,maxWidth:380,marginInline:"auto"}}>{sub}</div>{action&&<div style={{marginTop:16,display:"flex",justifyContent:"center"}}>{action}</div>}</div>;}
 function Header({eyebrow,title,right}){return<div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:16}}><div><Eyebrow>{eyebrow}</Eyebrow><h1 style={{margin:"4px 0 0",fontSize:24,fontWeight:800}}>{title}</h1></div>{right}</div>;}
@@ -4909,8 +4923,8 @@ function ManualCopyForm({initial,channel,onSave,onCancel}){
     <Field label="Direction / label"value={dir}onChange={setDir}placeholder="e.g. Team-written, Warm reminder"/>
     {isEmail&&<><Field label="Subject line (under 50 chars)"value={subj}onChange={setSubj}placeholder="e.g. Your dog's dinner just got an upgrade"/>
     <div style={{display:"flex",gap:10,fontSize:10.5,color:C.sub,marginTop:-6,marginBottom:10}}><span style={{color:subj.length>50?"#DC2626":C.sub}}>Subject {subj.length}/50</span></div></>}
-    <Field label={isPush?"Title (keep under 50 chars)":"Image copy"}value={h}onChange={setH}textarea rows={2}/>
-    <Field label={isPush?"Body (keep under 70 chars — hard limit)":isEmail?"Body copy":"Body copy"}value={b}onChange={setB}textarea rows={isPush?2:5}/>
+    {isPush?<Field label="Title (keep under 50 chars)"value={h}onChange={setH}textarea rows={2}/>:<FmtField label="Image copy"value={h}onChange={setH}rows={2}/>}
+    {isPush?<Field label="Body (keep under 70 chars — hard limit)"value={b}onChange={setB}textarea rows={2}/>:<FmtField label="Body copy"value={b}onChange={setB}rows={5}/>}
     {isPush&&<div style={{display:"flex",gap:10,fontSize:10.5,color:C.sub,marginTop:-6,marginBottom:10}}><span style={{color:h.length>50?"#DC2626":C.sub}}>Title {h.length}/50</span><span style={{color:b.length>70?"#DC2626":C.sub}}>Body {b.length}/70</span></div>}
     <Field label="CTA"value={cta}onChange={setCta}placeholder="e.g. Shop now"/>
 
