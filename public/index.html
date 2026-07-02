@@ -4798,7 +4798,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         const isEmail=c.channel==="Email"||c.channel==="WhatsApp + Email";
         const channelRules=isPush?PUSH_RULES:isEmail?EMAIL_RULES:WHATSAPP_RULES;
         const sys="You refine ONE "+(c.channel||"WhatsApp")+" CRM copy for HUFT.\n"+BRAND_CONTEXT+"\n"+channelRules+"\n"+COPY_BEST_PRACTICES+"\n"+HUFT_VOICE+"\n"+HUFT_IMAGE_COPY+"\n"+HUFT_RULEBOOK+"\n"+FORBIDDEN_TOKENS_RULE+"\nRULEBOOK:\n"+ruleStr+(fb?"\nFeedback:\n"+fb:"")+(isPush?"\nPUSH: title max 40 (hard 50); body max 70 chars (HARD LIMIT — second line never exceeds 70), at most two short flowing lines.":"")+"\nThe header is the IMAGE COPY / overlay — a short, FUN, punchy headline with personality (a coherent line or short complete sentence), never long, flat, or broken-up fragments; the action goes in the CTA. Return ONLY JSON: {direction,header,body,cta}.";
-        const usr=briefBlock+"\n\nCurrent:\n"+JSON.stringify(opts[idx])+"\n\nSteer (one-time): "+refineText;
+        const usr=briefBlock+"\n\nCurrent:\n"+JSON.stringify(opts[idx])+"\n\nSteer (one-time): "+refineText+"\n\nApply the steer ONLY to what it explicitly asks for. Keep every OTHER field — especially the title/header — WORD-FOR-WORD identical to the current copy above. Do not reword or rewrite any field the steer does not mention.";
         const j=sanitizeOption(await callClaude(sys,usr,true,"copy",copyLimits(isPush,isEmail)));
         const wasSelected=sel===idx;
         const newData={...(c.data||{}),copyOptions:opts.map((o,i)=>i===idx?j:o),sentBack:false};
@@ -5173,11 +5173,14 @@ function ManualCopyForm({initial,channel,onSave,onCancel}){
 
   const acceptCorrection=()=>{
     const cor=gc.corrected||{};
-    if(cor.header!=null)setH(cor.header);
-    if(cor.body!=null)setB(cor.body);
-    if(cor.cta!=null)setCta(cor.cta);
-    if(isEmail&&cor.subject!=null)setSubj(cor.subject);
-    onSave(buildOpt(cor));
+    const issues=Array.isArray(gc.issues)?gc.issues:[];
+    const flagged=(orig)=>issues.some(it=>it&&it.wrong&&String(orig||"").includes(it.wrong)); // only touch a field that actually had a flagged issue
+    const next={};
+    if(cor.header!=null&&flagged(h)){setH(cor.header);next.header=cor.header;}
+    if(cor.body!=null&&flagged(b)){setB(cor.body);next.body=cor.body;}
+    if(cor.cta!=null&&flagged(cta)){setCta(cor.cta);next.cta=cor.cta;}
+    if(isEmail&&cor.subject!=null&&flagged(subj)){setSubj(cor.subject);next.subject=cor.subject;}
+    onSave(buildOpt(next));
   };
 
   return<div style={{border:`1.5px solid ${C.purple}`,borderRadius:12,padding:14,background:"#FBFAFF",marginTop:10,marginBottom:10}}>
