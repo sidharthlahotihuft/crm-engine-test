@@ -2884,8 +2884,8 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
         </span>
       </div>)}
     </Card>}
-    {/* ===== My tasks (role-scoped, overdue/today first, with state) ===== */}
-    {!isExec(me)&&<Card style={{padding:0,overflow:"hidden",marginBottom:18,border:`1.5px solid ${C.coral}`}}>
+    {/* ===== My tasks (personal feed — hidden for full-visibility users, who use the pipeline board above) ===== */}
+    {!isExec(me)&&!seesAll(me)&&<Card style={{padding:0,overflow:"hidden",marginBottom:18,border:`1.5px solid ${C.coral}`}}>
       <div style={{display:"flex",alignItems:"center",gap:12,padding:"15px 18px",background:C.coralSoft}}>
         <div style={{width:36,height:36,borderRadius:10,background:C.coral,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><ClockIcon size={19}/></div>
         <div style={{flex:1}}><div style={{fontWeight:800,fontSize:15.5,color:C.ink}}>{seesAll(me)?"Tasks in the pipeline":"Your tasks"} · {myTasks.length}</div><div style={{fontSize:12.5,color:C.sub}}>{myTasks.length?"Overdue and due-today first. Each shows its current state.":"Nothing on your plate right now."}</div></div>
