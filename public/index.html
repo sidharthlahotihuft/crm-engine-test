@@ -1393,8 +1393,8 @@ function TileFilters({items,f,setF}){
     {on&&<button onClick={()=>setF({date:"",crm:"",channel:""})}style={{...sx,color:C.coral,fontWeight:700,border:`1px solid ${C.coral}`}}>Clear</button>}
   </div>;
 }
-function ListBar({stages,period,setPeriod}){
-  const list=(stages||["brief","content","brand_review","design","done"]).map(s=>LEGEND_ITEMS[s]||STAGE_COLORS[s]).filter(Boolean);
+function ListBar({stages,period,setPeriod,legendItems}){
+  const list=legendItems||(stages||["brief","content","brand_review","design","done"]).map(s=>LEGEND_ITEMS[s]||STAGE_COLORS[s]).filter(Boolean);
   return<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",padding:"5px 10px",background:"#fff",border:"1px solid #EAE6E1",borderRadius:9,marginBottom:12}}>
     <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
       <span style={{fontSize:9.5,fontWeight:700,color:"#9CA3AF",textTransform:"uppercase",letterSpacing:.4}}>Key</span>
@@ -7672,7 +7672,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
         <button onClick={()=>setView("calendar")}style={{padding:"6px 14px",border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:view==="calendar"?C.navy:"#fff",color:view==="calendar"?"#fff":C.sub,display:"flex",alignItems:"center",gap:5}}><CalendarIcon size={13}/>Calendar</button>
       </div>
     </div>
-    {view==="list"&&<ListBar period={period} setPeriod={setPeriod} stages={["design","brand_review"]}/>}
+    {view==="list"&&<ListBar period={period} setPeriod={setPeriod} legendItems={[{label:"Needs attention",color:"#92400E"},{label:"Work in progress",color:C.teal},{label:"Sent for approval",color:"#9333EA"}]}/>}
     {view==="list"&&<TileFilters items={allDesignAll} f={tf} setF={setTf}/>}{view==="list"&&<SortBar value={designSort}onChange={setDesignSort}/>}
     {view==="calendar"
       ?<CalendarView campaigns={allDesign}onOpen={onOpen}/>
@@ -7682,14 +7682,19 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
         {(()=>{
           const selfDesign=allDesign.filter(c=>c.data?.selfMade);
           const teamDesign=allDesign.filter(c=>!c.data?.selfMade);
-          const needsDesign=teamDesign.filter(c=>!(c.data?.design?.approvedPromptIdx!=null||c.data?.design?.libraryPick));
-          const done=teamDesign.filter(c=>c.data?.design?.approvedPromptIdx!=null||c.data?.design?.libraryPick);
+          const dHasWork=(c)=>{const _d=c.data?.design||{};return !!(_d.generatedImage||_d.finalFile||_d.libraryPick||_d.imageSource);};
+          const sentApproval=teamDesign.filter(c=>c.data?.design?.pendingApproval);
+          const inProgress=teamDesign.filter(c=>!c.data?.design?.pendingApproval&&dHasWork(c));
+          const needsDesign=teamDesign.filter(c=>!c.data?.design?.pendingApproval&&!dHasWork(c));
           return<>
-            {needsDesign.length>0&&<CollapsibleSection title="Needs attention" count={needsDesign.length} color={C.coral} icon={<ClockIcon size={15}/>}>
-              {groupByDate(needsDesign).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.teal}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><DesignRow key={c.id}c={c}ctx={designRowCtx}/>)}</Card></div>)}
+            {needsDesign.length>0&&<CollapsibleSection title="Needs attention" count={needsDesign.length} color="#92400E" icon={<ClockIcon size={15}/>}>
+              {groupByDate(needsDesign).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color="#92400E"/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><DesignRow key={c.id}c={c}ctx={designRowCtx}/>)}</Card></div>)}
             </CollapsibleSection>}
-            {done.length>0&&<CollapsibleSection title="Image selected" count={done.length} color={C.teal} icon={<CheckCircle2 size={15}/>} defaultOpen={false}>
-              <div style={{opacity:.75}}>{groupByDate(done).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.teal}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><DesignRow key={c.id}c={c}ctx={designRowCtx}/>)}</Card></div>)}</div>
+            {inProgress.length>0&&<CollapsibleSection title="Work in progress" count={inProgress.length} color={C.teal} icon={<Palette size={15}/>}>
+              {groupByDate(inProgress).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.teal}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><DesignRow key={c.id}c={c}ctx={designRowCtx}/>)}</Card></div>)}
+            </CollapsibleSection>}
+            {sentApproval.length>0&&<CollapsibleSection title="Sent for approval" count={sentApproval.length} color="#9333EA" icon={<CheckCircle2 size={15}/>}>
+              {groupByDate(sentApproval).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color="#9333EA"/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><DesignRow key={c.id}c={c}ctx={designRowCtx}/>)}</Card></div>)}
             </CollapsibleSection>}
             {selfDesign.length>0&&<CollapsibleSection title="Made by business team" count={selfDesign.length} color="#0F766E" icon={<PenLine size={15}/>} defaultOpen={false}>
               {groupByDate(selfDesign).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={"#0F766E"}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><DesignRow key={c.id}c={c}ctx={designRowCtx}/>)}</Card></div>)}
