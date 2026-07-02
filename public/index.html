@@ -1328,6 +1328,12 @@ function rowAccent(c){
   if(!c)return "#6B7280";
   if(c.stage==="brief"&&!(c.data&&c.data.brief))return c.data&&c.data.importDraft?"#B45309":"#B91C1C";
   if(c.stage==="content"&&!(c.data&&c.data.copyOptions))return "#D97706";
+  if(c.stage==="design"){
+    const _d=(c.data&&c.data.design)||{};
+    if(_d.pendingApproval||_d.assetReview||_d.finalReview)return "#9333EA"; // sent for approval
+    if(_d.generatedImage||_d.finalFile||_d.libraryPick||_d.imageSource)return "#0E9488"; // work in progress
+    return "#92400E"; // needs design
+  }
   return stageColor(c.stage);
 }
 function StageLegend({stages,extra}){
@@ -7494,8 +7500,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
           {d.pendingApproval&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:800,color:"#9333EA",background:"#FAF5FF",border:"1px solid #E9D5FF",padding:"3px 9px",borderRadius:999}}><Eye size={11}/>Design review (Anmol)</span>}
           {d.assetReview&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:800,color:"#9333EA",background:"#FAF5FF",border:"1px solid #E9D5FF",padding:"3px 9px",borderRadius:999}}><Eye size={11}/>Full-asset review (Ilena)</span>}
           {d.finalReview&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:800,color:"#B45309",background:"#FEF3C7",border:"1px solid #FDE68A",padding:"3px 9px",borderRadius:999}}><Eye size={11}/>Final sign-off (HoM/CXO)</span>}
-          {approvedPrompt?<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#0F766E",background:"#CCFBF1",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>Copy approved</span>
-          :d.imagePrompts?<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#1D4ED8",background:"#DBEAFE",padding:"3px 9px",borderRadius:999}}>Prompts ready</span>
+          {(d.generatedImage||d.finalFile||d.libraryPick||d.imageSource)?<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#0F766E",background:"#CCFBF1",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>In progress</span>
           :<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#B91C1C",background:"#FEF2F2",padding:"3px 9px",borderRadius:999}}>Needs design</span>}
           {isOpen?<ChevronDown size={16}color={C.sub}/>:<ChevronRight size={16}color={C.sub}/>}
         </div>
