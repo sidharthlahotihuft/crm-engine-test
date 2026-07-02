@@ -2632,7 +2632,7 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
     <div style={{fontSize:12,color:C.sub,marginBottom:10,marginTop:-8}}>Showing assets created in the <b style={{color:C.ink}}>{periodLabel}</b> · {campaigns.length} of {allCampaigns.length}</div>
     {view==="list"&&<StageLegend/>}
     <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:18}}>
-      {stat.map(s=><Card key={s.k}style={{padding:16,position:"relative"}}onMouseEnter={()=>setHoverStat(s.k)}onMouseLeave={()=>setHoverStat(null)}><div style={{fontSize:30,fontWeight:800,color:s.color}}>{counts[s.k]||0}</div><div style={{fontSize:13,color:C.sub,fontWeight:600}}>{s.label}</div>{s.k==="brief"&&<div style={{fontSize:11,color:C.sub,marginTop:3}}>{allCampaigns.length} brief{allCampaigns.length===1?"":"s"} created total</div>}{hoverStat===s.k&&(statBreakdown[s.k]||[]).length>0&&<div style={{position:"absolute",top:"calc(100% + 6px)",[s.k==="done"?"right":"left"]:0,zIndex:40,minWidth:200,background:"#fff",border:`1px solid ${C.line}`,borderRadius:10,boxShadow:"0 10px 30px rgba(16,24,40,.16)",padding:"10px 12px"}}><div style={{fontSize:10,fontWeight:800,color:s.color,textTransform:"uppercase",letterSpacing:.5,marginBottom:6}}>{s.label} · breakdown</div>{(statBreakdown[s.k]||[]).map((r,i)=><div key={i}style={{display:"flex",justifyContent:"space-between",gap:18,fontSize:12.5,padding:r.strong?"0 0 5px":"3px 0",fontWeight:r.strong?800:600,color:r.strong?C.ink:C.sub,borderBottom:r.strong?`1px solid ${C.line}`:"none",marginBottom:r.strong?4:0}}><span>{r.label}</span><span style={{color:s.color,fontWeight:800}}>{r.value}</span></div>)}</div>}</Card>)}
+      {stat.map(s=><Card key={s.k}style={{padding:16,position:"relative",cursor:"pointer"}}onClick={()=>setHoverStat(hoverStat===s.k?null:s.k)}><ChevronDown size={16}color={s.color}style={{position:"absolute",top:14,right:14,transition:"transform .15s",transform:hoverStat===s.k?"rotate(180deg)":"none"}}/><div style={{fontSize:30,fontWeight:800,color:s.color}}>{counts[s.k]||0}</div><div style={{fontSize:13,color:C.sub,fontWeight:600}}>{s.label}</div>{s.k==="brief"&&<div style={{fontSize:11,color:C.sub,marginTop:3}}>{allCampaigns.length} brief{allCampaigns.length===1?"":"s"} created total</div>}{hoverStat===s.k&&(statBreakdown[s.k]||[]).length>0&&<div style={{position:"absolute",top:"calc(100% + 6px)",[s.k==="done"?"right":"left"]:0,zIndex:40,minWidth:200,background:"#fff",border:`1px solid ${C.line}`,borderRadius:10,boxShadow:"0 10px 30px rgba(16,24,40,.16)",padding:"10px 12px"}}><div style={{fontSize:10,fontWeight:800,color:s.color,textTransform:"uppercase",letterSpacing:.5,marginBottom:6}}>{s.label} · breakdown</div>{(statBreakdown[s.k]||[]).map((r,i)=><div key={i}style={{display:"flex",justifyContent:"space-between",gap:18,fontSize:12.5,padding:r.strong?"0 0 5px":"3px 0",fontWeight:r.strong?800:600,color:r.strong?C.ink:C.sub,borderBottom:r.strong?`1px solid ${C.line}`:"none",marginBottom:r.strong?4:0}}><span>{r.label}</span><span style={{color:s.color,fontWeight:800}}>{r.value}</span></div>)}</div>}</Card>)}
     </div>
     {/* ===== Approvals waiting on me (slot-aware) ===== */}
     {(mySlots.length>0||isSuper(me))&&<Card style={{padding:0,overflow:"hidden",marginBottom:18,border:`1.5px solid ${approvals.length?"#9333EA":C.line}`}}>
@@ -7493,6 +7493,15 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate}){
     onOpen(c.id,stage);
     setReactivating(null);
   };
+  const doUndoApprove=(c)=>{
+    if(!window.confirm("Undo the approval and send this back to the approval queue?"))return;
+    if(isPushChannel(c.channel)){
+      patch(c.id,{stage:"brand_review",brand_approver:null,went_live_at:null});
+    }else{
+      const d=(c.data&&c.data.design)||{}, gates=(c.data&&c.data.gates)||{};
+      patch(c.id,{stage:"design",went_live_at:null,data:{...(c.data||{}),design:{...d,finalReview:true,brandReview:false},gates:{...gates,final:null}}});
+    }
+  };
   const[openId,setOpenId]=useState(null);
   const DoneRow=({c})=>{
     const isOpen=openId===c.id;
@@ -7598,7 +7607,7 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate}){
           <span style={{fontSize:11,color:C.sub}}>Tasks &amp; emails Rahul Bharadwaj and Shubham Gandhi to send it out.</span>
         </div>}
         <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginTop:6}}>
-          {!isBusiness(me)&&<button onClick={()=>reactivate(c)}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.ink,fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}><RotateCcw size={12}/>Reactivate</button>}
+          {!isBusiness(me)&&<button onClick={()=>reactivate(c)}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.ink,fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}><RotateCcw size={12}/>Reactivate</button>}{(isSuper(me)||canBrandApprove(me))&&<button onClick={()=>doUndoApprove(c)}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:"1px solid #FCA5A5",background:"#fff",cursor:"pointer",color:"#B91C1C",fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}><RotateCcw size={12}/>Undo approval</button>}
           {["super_admin","design_lead","design_team"].includes(_r(me))&&onDuplicate&&<button onClick={()=>onDuplicate(c)}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.ink,fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}><Copy size={12}/>Duplicate</button>}
           {isSuper(me)&&<button onClick={()=>{if(window.confirm("Archive this asset? It moves to the Archive tab."))patch(c.id,{data:{archived:true}});}}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.sub,fontWeight:600}}>Archive</button>}
           {isSuper(me)&&<button onClick={()=>onDelete&&onDelete(c.id)}style={{fontSize:12,padding:"5px 10px",borderRadius:7,border:"1px solid #FECACA",background:"#FFF5F5",cursor:"pointer",color:"#B91C1C",fontWeight:600}}>Delete</button>}
