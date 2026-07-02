@@ -1878,6 +1878,22 @@ function normalizeCampaigns(cs){
   });
 }
 
+function MobileApprovals({me,campaigns,team,onOpen,reload,onLogout}){
+  return<div style={{minHeight:"100vh",background:C.paper}}>
+    <div style={{position:"sticky",top:0,zIndex:30,background:C.navy,color:"#fff",padding:"13px 15px",display:"flex",alignItems:"center",gap:10}}>
+      <div style={{width:30,height:30,borderRadius:8,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,flexShrink:0}}><Sparkles size={16}/></div>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:14,fontWeight:800,lineHeight:1.15}}>My approvals</div>
+        <div style={{fontSize:11,color:"rgba(255,255,255,.6)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{me.name}</div>
+      </div>
+      <button onClick={reload}style={{background:"rgba(255,255,255,.1)",border:"none",color:"#fff",borderRadius:8,padding:"7px 10px",fontSize:12,fontWeight:700,cursor:"pointer",marginRight:6}}>Refresh</button>
+      <button onClick={onLogout}style={{background:"rgba(255,255,255,.1)",border:"none",color:"#fff",borderRadius:8,padding:"7px 11px",fontSize:12,fontWeight:700,cursor:"pointer"}}>Log out</button>
+    </div>
+    <div style={{maxWidth:660,margin:"0 auto",padding:"16px 12px 70px"}}>
+      <ApprovalsTab campaigns={campaigns}onOpen={onOpen}me={me}team={team}reload={reload}/>
+    </div>
+  </div>;
+}
 function App(){
   const[me,setMe]=useState(null);
   const[checking,setChecking]=useState(true);
@@ -2171,6 +2187,8 @@ function App(){
 
   const sideBtn={display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:9,border:"none",cursor:"pointer",background:"transparent",color:"rgba(255,255,255,.7)",fontSize:13,fontWeight:600,width:"100%",textAlign:"left"};
 
+  const _mobileApprovals=(()=>{try{const q=new URLSearchParams(window.location.search);return q.get("view")==="approvals"||window.location.hash==="#approvals";}catch(e){return false;}})();
+  if(_mobileApprovals)return<MobileApprovals me={me}campaigns={scoped}team={team}onOpen={open}reload={loadAll}onLogout={logout}/>;
   return<div style={{minHeight:"100vh",background:C.paper,display:"flex"}}>
     {/* ===== LEFT SIDEBAR ===== */}
     <div style={{width:230,flexShrink:0,background:C.navy,color:"#fff",position:"sticky",top:0,height:"100vh",display:"flex",flexDirection:"column",boxShadow:"2px 0 14px rgba(0,0,0,.14)",zIndex:30}}>
