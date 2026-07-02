@@ -2478,6 +2478,7 @@ function MyTasksTab({campaigns,onOpen,me,team}){
 function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
   const[view,setView]=useState("list");
   const[approving,setApproving]=useState("");
+  const[hoverStat,setHoverStat]=useState(null);
   const[period,setPeriod]=useState("7d");
   const[cFrom,setCFrom]=useState("");
   const[cTo,setCTo]=useState("");
@@ -2511,6 +2512,14 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
     }catch(e){setApproving("");alert(e.message||"Approval failed");}
   };
   const counts={brief:0,content:0,design:0,done:0};campaigns.forEach(c=>{if(isArchived(c))return;counts[c.stage]=(counts[c.stage]||0)+1;});
+  const _na=campaigns.filter(c=>!isArchived(c)); const _cnt=(f)=>_na.filter(f).length;
+  const _inProg=_cnt(c=>c.stage!=="done"), _ready=_cnt(c=>c.stage==="done");
+  const statBreakdown={
+    brief:[{label:"Total assets",value:_inProg+_ready,strong:true},{label:"In progress",value:_inProg},{label:"Ready",value:_ready}],
+    content:[{label:"Copy not started",value:_cnt(c=>c.stage==="content"&&!(c.data&&c.data.copyOptions))},{label:"In progress",value:_cnt(c=>c.stage==="content"&&c.data&&c.data.copyOptions)},{label:"Pending approval",value:_cnt(c=>c.stage==="brand_review")}],
+    design:[{label:"Pending approval",value:_cnt(c=>c.stage==="design"&&c.data&&c.data.design&&c.data.design.pendingApproval)},{label:"In progress",value:_cnt(c=>c.stage==="design"&&!(c.data&&c.data.design&&c.data.design.pendingApproval))}],
+    done:[{label:"D2C",value:_cnt(c=>c.stage==="done"&&normCrmType(c.crm_type)!=="Retail")},{label:"Retail",value:_cnt(c=>c.stage==="done"&&normCrmType(c.crm_type)==="Retail")}],
+  };
   const stat=[{k:"brief",label:"In Brief",color:C.coral},{k:"content",label:"In Copy",color:C.purple},{k:"design",label:"In Design",color:C.teal},{k:"done",label:"Ready",color:C.green}];
   const pending=campaigns.filter(c=>c.stage!=="done"&&!isArchived(c)).sort((a,b)=>{const so={brief:0,content:1,design:2};return(so[a.stage]||0)-(so[b.stage]||0)||(b.updatedAt||0)-(a.updatedAt||0);});
   const done=campaigns.filter(c=>c.stage==="done"&&!isArchived(c)).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
@@ -2623,7 +2632,7 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
     <div style={{fontSize:12,color:C.sub,marginBottom:10,marginTop:-8}}>Showing assets created in the <b style={{color:C.ink}}>{periodLabel}</b> · {campaigns.length} of {allCampaigns.length}</div>
     {view==="list"&&<StageLegend/>}
     <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:18}}>
-      {stat.map(s=><Card key={s.k}style={{padding:16}}><div style={{fontSize:30,fontWeight:800,color:s.color}}>{counts[s.k]||0}</div><div style={{fontSize:13,color:C.sub,fontWeight:600}}>{s.label}</div>{s.k==="brief"&&<div style={{fontSize:11,color:C.sub,marginTop:3}}>{allCampaigns.length} brief{allCampaigns.length===1?"":"s"} created total</div>}</Card>)}
+      {stat.map(s=><Card key={s.k}style={{padding:16,position:"relative"}}onMouseEnter={()=>setHoverStat(s.k)}onMouseLeave={()=>setHoverStat(null)}><div style={{fontSize:30,fontWeight:800,color:s.color}}>{counts[s.k]||0}</div><div style={{fontSize:13,color:C.sub,fontWeight:600}}>{s.label}</div>{s.k==="brief"&&<div style={{fontSize:11,color:C.sub,marginTop:3}}>{allCampaigns.length} brief{allCampaigns.length===1?"":"s"} created total</div>}{hoverStat===s.k&&(statBreakdown[s.k]||[]).length>0&&<div style={{position:"absolute",top:"calc(100% + 6px)",[s.k==="done"?"right":"left"]:0,zIndex:40,minWidth:200,background:"#fff",border:`1px solid ${C.line}`,borderRadius:10,boxShadow:"0 10px 30px rgba(16,24,40,.16)",padding:"10px 12px"}}><div style={{fontSize:10,fontWeight:800,color:s.color,textTransform:"uppercase",letterSpacing:.5,marginBottom:6}}>{s.label} · breakdown</div>{(statBreakdown[s.k]||[]).map((r,i)=><div key={i}style={{display:"flex",justifyContent:"space-between",gap:18,fontSize:12.5,padding:r.strong?"0 0 5px":"3px 0",fontWeight:r.strong?800:600,color:r.strong?C.ink:C.sub,borderBottom:r.strong?`1px solid ${C.line}`:"none",marginBottom:r.strong?4:0}}><span>{r.label}</span><span style={{color:s.color,fontWeight:800}}>{r.value}</span></div>)}</div>}</Card>)}
     </div>
     {/* ===== Approvals waiting on me (slot-aware) ===== */}
     {(mySlots.length>0||isSuper(me))&&<Card style={{padding:0,overflow:"hidden",marginBottom:18,border:`1.5px solid ${approvals.length?"#9333EA":C.line}`}}>
