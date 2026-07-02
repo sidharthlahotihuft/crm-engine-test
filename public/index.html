@@ -1623,7 +1623,7 @@ function Btn({children,onClick,variant="primary",disabled,small,style}){
 }
 function Card({children,style,onClick}){return<div onClick={onClick}style={{background:C.white,border:`1px solid ${C.line}`,borderRadius:14,padding:18,boxShadow:"0 1px 2px rgba(16,24,40,.04)",...style}}>{children}</div>;}
 function Eyebrow({children,color=C.coral}){return<div style={{color,fontSize:12,fontWeight:700,letterSpacing:1,textTransform:"uppercase"}}>{children}</div>;}
-function StageBadge({stage}){const col={brief:C.coral,content:C.purple,design:C.teal,done:C.green}[stage]||C.sub;return<span style={{background:col+"1A",color:col,fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:999}}>{STAGE_LABEL[stage]}</span>;}
+function StageBadge({stage,c}){const st=c?stateOfCampaign(c):null;const label=st?st.t:(STAGE_LABEL[stage]||stage);const col=st?st.col:({brief:C.coral,content:C.purple,design:C.teal,done:C.green}[stage]||C.sub);return<span style={{background:col+"1A",color:col,fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:999}}>{label}</span>;}
 // Tolerant channel check: matches "Push notification", "Push Notification", "Push", "PN", etc.
 const isPushChannel=(ch)=>{const s=String(ch||"").trim();return /push/i.test(s)||/^pn$/i.test(s);};
 // Small colour-coded tile so rows are scannable by channel at a glance
@@ -2790,7 +2790,7 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
       </div>
     </div>
     <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
-      <span onClick={e=>{e.stopPropagation();onOpen(c.id,stageToTab(c.stage));}}style={{cursor:"pointer"}}title={`Open ${STAGE_LABEL[c.stage]}`}><StageBadge stage={c.stage}/></span>
+      <span onClick={e=>{e.stopPropagation();onOpen(c.id,stageToTab(c.stage));}}style={{cursor:"pointer"}}title={`Open ${STAGE_LABEL[c.stage]}`}><StageBadge stage={c.stage} c={c}/></span>
       {c.stage==="brief"&&c.data?.brief&&<button onClick={e=>{e.stopPropagation();onOpen(c.id,"brief");}}style={{border:`1px solid ${C.line}`,borderRadius:7,padding:"4px 9px",cursor:"pointer",background:"#fff",color:C.sub,fontSize:11.5,fontWeight:600,display:"flex",alignItems:"center",gap:4}}><PenLine size={11}/>Edit brief</button>}
       <ChevronRight size={18}color={C.sub}style={{cursor:"pointer"}}onClick={()=>onOpen(c.id)}/>
     </div>
@@ -4918,7 +4918,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
               if(c.data?.selfMade)return<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#0F766E",background:"#CCFBF1",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>{c.stage==="design"?"Designs generated":c.stage==="done"?"Asset ready":"Copies generated"}</span>;
               return<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#5B21B6",background:"#EDE9FE",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>Copy approved</span>;
             })()}
-            {c.stage!=="content"&&c.stage!=="brand_review"&&<StageBadge stage={c.stage}/>}
+            {c.stage!=="content"&&c.stage!=="brand_review"&&<StageBadge stage={c.stage} c={c}/>}
             {isOpen&&o?.direction&&<span style={{fontSize:11,color:C.sub,fontStyle:"italic"}}>{o.direction}</span>}
             {c.created_at&&<span style={{marginLeft:"auto",fontSize:11,color:C.sub,background:"#F3F4F6",padding:"2px 7px",borderRadius:5}}>Brief {fmtDate(c.created_at)}</span>}{c.go_live_date&&<span style={{fontSize:11,color:C.ink,fontWeight:700,background:"#FEF3C7",padding:"2px 7px",borderRadius:5}}>Live {fmtDate(c.go_live_date)}</span>}
           </div>
@@ -4997,7 +4997,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
           {sel!=null&&(c.data?.selfMade?<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#0F766E",background:"#CCFBF1",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>{c.stage==="design"?"Designs generated":c.stage==="done"?"Asset ready":"Copies generated"}</span>:<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#5B21B6",background:"#EDE9FE",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>Copy approved</span>)}
-          {sel!=null&&c.stage!=="content"&&<StageBadge stage={c.stage}/>}
+          {sel!=null&&c.stage!=="content"&&<StageBadge stage={c.stage} c={c}/>}
           {opts&&sel==null&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#92400E",background:"#FEF3C7",padding:"3px 9px",borderRadius:999}}>{opts.length} options — pick one</span>}
           {!opts&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#B91C1C",background:"#FEF2F2",padding:"3px 9px",borderRadius:999}}>Needs copy</span>}
           <div onClick={e=>e.stopPropagation()}><RowActions c={c}patch={patch}me={me}onDelete={onDelete}/></div>
@@ -8051,7 +8051,7 @@ function ArchiveTab({campaigns,patch,onOpen,me,onDelete}){
                 <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{c.product||p.product||"—"}</span>
                 <span style={{fontSize:11,fontWeight:700,color:C.coral}}>{normCrmType(c.crm_type)}</span>
                 {c.channel?<span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel}</span>:<span style={{fontSize:11,fontWeight:700,color:C.coral}}>· set channel</span>}
-                <StageBadge stage={c.stage}/>
+                <StageBadge stage={c.stage} c={c}/>
                 {c.created_at&&<span style={{fontSize:11,color:C.sub,background:"#F3F4F6",padding:"2px 7px",borderRadius:5}}>Brief {fmtDate(c.created_at)}</span>}{c.go_live_date&&<span style={{fontSize:11,color:C.ink,fontWeight:700,background:"#FEF3C7",padding:"2px 7px",borderRadius:5}}>Live {fmtDate(c.go_live_date)}</span>}
               </div>
               {(c.audience_label||c.segment)&&<div style={{fontSize:12,color:C.sub}}>{c.audience_label||c.segment}{c.objective?" · "+c.objective:""}</div>}
