@@ -109,7 +109,7 @@ const TAB_VIS={
   brand_team:["dashboard","mytasks","approvals","brief","content","library","done","analytics"],
   design_team:["dashboard","mytasks","design","library","done","analytics"],
   business:["dashboard","mytasks","brief","done","analytics","archive"],
-  project_manager:["dashboard","brief","content","design","done","analytics","archive"],
+  project_manager:["dashboard","done","analytics"], // Jyoti (PM): view-only Dashboard, Finalized Assets, Analytics
 };
 const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // Bump this whenever index.html changes so you can confirm the live site updated.
@@ -2859,7 +2859,7 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
                 ?<div style={{fontSize:11,color:C.sub,padding:"12px 4px",textAlign:"center"}}>—</div>
                 :col.items.map(c=><div key={c.id}onClick={()=>onOpen(c.id)}style={{padding:"7px 9px",border:`1px solid ${C.line}`,borderRadius:8,cursor:"pointer",background:C.paper}}>
                     <div style={{fontWeight:700,fontSize:12,color:C.ink,marginBottom:3,lineHeight:1.25}}>{humanizeToken(c.product)||parseName(c)||"Untitled"}</div>
-                    <div style={{fontSize:10,color:C.sub,display:"flex",gap:5,flexWrap:"wrap"}}><span>{c.channel}</span><span>·</span><span>{normCrmType(c.crm_type)}</span></div>
+                    <div style={{fontSize:10,color:C.sub,display:"flex",gap:5,flexWrap:"wrap"}}><span>{c.channel}</span><span>·</span><span>{normCrmType(c.crm_type)}</span>{c.go_live_date&&<><span>·</span><span style={{color:C.ink,fontWeight:700}}>Live {fmtDate(c.go_live_date)}</span></>}</div>
                   </div>)}
             </div>
           </div>)}
@@ -4920,7 +4920,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
             })()}
             {c.stage!=="content"&&c.stage!=="brand_review"&&<StageBadge stage={c.stage}/>}
             {isOpen&&o?.direction&&<span style={{fontSize:11,color:C.sub,fontStyle:"italic"}}>{o.direction}</span>}
-            {c.created_at&&<span style={{marginLeft:"auto",fontSize:11,color:C.sub,background:"#F3F4F6",padding:"2px 7px",borderRadius:5}}>{fmtDate(c.created_at)}</span>}
+            {c.created_at&&<span style={{marginLeft:"auto",fontSize:11,color:C.sub,background:"#F3F4F6",padding:"2px 7px",borderRadius:5}}>Brief {fmtDate(c.created_at)}</span>}{c.go_live_date&&<span style={{fontSize:11,color:C.ink,fontWeight:700,background:"#FEF3C7",padding:"2px 7px",borderRadius:5}}>Live {fmtDate(c.go_live_date)}</span>}
           </div>
           <div style={{flexShrink:0}} onClick={e=>e.stopPropagation()}><RowActions c={c}patch={patch}me={me}onDelete={onDelete}/></div>
         </div>
@@ -7784,7 +7784,7 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate}){
             <span style={{fontSize:11,fontWeight:700,color:C.coral}}>{normCrmType(c.crm_type)}</span>
             {c.channel?<span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel}</span>:<span style={{fontSize:11,fontWeight:700,color:C.coral}}>· set channel</span>}
             <span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:C.green,background:C.green+"18",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>Done</span>
-            {c.created_at&&<span style={{marginLeft:"auto",fontSize:11,color:C.sub,background:"#F3F4F6",padding:"2px 7px",borderRadius:5}}>{fmtDate(c.created_at)}</span>}
+            {c.created_at&&<span style={{marginLeft:"auto",fontSize:11,color:C.sub,background:"#F3F4F6",padding:"2px 7px",borderRadius:5}}>Brief {fmtDate(c.created_at)}</span>}{c.go_live_date&&<span style={{fontSize:11,color:C.ink,fontWeight:700,background:"#FEF3C7",padding:"2px 7px",borderRadius:5}}>Live {fmtDate(c.go_live_date)}</span>}
           </div>
           <div style={{fontSize:12,color:C.sub,display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
             {p.date&&<b style={{color:C.ink}}>{p.date}</b>}
@@ -8052,7 +8052,7 @@ function ArchiveTab({campaigns,patch,onOpen,me,onDelete}){
                 <span style={{fontSize:11,fontWeight:700,color:C.coral}}>{normCrmType(c.crm_type)}</span>
                 {c.channel?<span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel}</span>:<span style={{fontSize:11,fontWeight:700,color:C.coral}}>· set channel</span>}
                 <StageBadge stage={c.stage}/>
-                {c.created_at&&<span style={{fontSize:11,color:C.sub,background:"#F3F4F6",padding:"2px 7px",borderRadius:5}}>{fmtDate(c.created_at)}</span>}
+                {c.created_at&&<span style={{fontSize:11,color:C.sub,background:"#F3F4F6",padding:"2px 7px",borderRadius:5}}>Brief {fmtDate(c.created_at)}</span>}{c.go_live_date&&<span style={{fontSize:11,color:C.ink,fontWeight:700,background:"#FEF3C7",padding:"2px 7px",borderRadius:5}}>Live {fmtDate(c.go_live_date)}</span>}
               </div>
               {(c.audience_label||c.segment)&&<div style={{fontSize:12,color:C.sub}}>{c.audience_label||c.segment}{c.objective?" · "+c.objective:""}</div>}
               {brief&&<div style={{fontSize:12,color:C.sub,marginTop:3,lineHeight:1.4}}>{asText(brief.idea)}</div>}
