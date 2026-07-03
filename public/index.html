@@ -381,6 +381,7 @@ const isOverdueD=(x)=>{if(!x)return false;return new Date(x)<_today0();};
 const isDueTodayD=(x)=>{if(!x)return false;const y=new Date(x);y.setHours(0,0,0,0);return y.getTime()===_today0().getTime();};
 const urgencyOf=(c)=>{const d=dueForCampaign(c);return isOverdueD(d)?{t:"Overdue",col:"#B91C1C",bg:"#FEF2F2"}:isDueTodayD(d)?{t:"Due today",col:"#B45309",bg:"#FEF3C7"}:null;};
 const stateOfCampaign=(c)=>{
+  if(c.stage==="design"&&isPushChannel(c.channel)){const _pd=c.data?.design||{};if(_pd.finalReview)return{t:"Final sign-off",col:"#B45309"};if(_pd.assetReview||_pd.brandReview)return{t:"Full-asset review",col:"#9333EA"};return{t:"Ready for sign-off",col:C.teal};}
   if(c.stage==="brand_review")return{t:"Copy · pending approval",col:"#9333EA"};
   if(c.stage==="content")return c.data?.copyOptions?{t:"Copy in progress",col:C.purple}:{t:"Needs copy",col:"#D97706"};
   if(c.stage==="design"&&c.data?.design?.pendingApproval)return{t:"Design · pending approval",col:"#9333EA"};
@@ -391,12 +392,14 @@ const stateOfCampaign=(c)=>{
   if(c.stage==="done")return{t:"Finalized",col:C.green};
   return{t:(typeof STAGE_LABEL!=="undefined"&&STAGE_LABEL[c.stage])||c.stage,col:C.sub};
 };
+const _nameEq=(a,b)=>{a=String(a||"").trim().toLowerCase();b=String(b||"").trim().toLowerCase();return !!a&&a===b;};
+const canAssetReview=(c,me)=>isSuper(me)||canBrandApprove(me)||(me&&Array.isArray(me.approval_slots)&&me.approval_slots.includes("asset"))||_nameEq(c&&c.copy_author,me&&me.name);
 const computeApprovals=(campaigns,me)=>{
   const mySlots=isSuper(me)?["copy","design","asset","final"]:((me&&me.approval_slots)||[]);
   const out=[];
   if(mySlots.includes("copy"))(campaigns||[]).filter(c=>c.stage==="brand_review"&&!c.data?.selfMade&&!isArchived(c)).forEach(c=>out.push({c,kind:"Copy",tab:"content",action:"copy"}));
   if(mySlots.includes("design"))(campaigns||[]).filter(c=>c.stage==="design"&&c.data?.design?.pendingApproval&&!c.data?.selfMade&&!isArchived(c)).forEach(c=>out.push({c,kind:"Design",tab:"design",action:"design"}));
-  (campaigns||[]).filter(c=>c.stage==="design"&&c.data?.design?.assetReview&&!c.data?.selfMade&&!isArchived(c)).forEach(c=>{if(isSuper(me)||canBrandApprove(me)||c.copy_author===(me&&me.name))out.push({c,kind:"Your review",tab:"design",action:"asset"});});
+  (campaigns||[]).filter(c=>c.stage==="design"&&c.data?.design?.assetReview&&!c.data?.selfMade&&!isArchived(c)).forEach(c=>{if(canAssetReview(c,me))out.push({c,kind:"Your review",tab:"design",action:"asset"});});
   (campaigns||[]).filter(c=>c.stage==="design"&&c.data?.design?.brandReview&&!c.data?.selfMade&&!isArchived(c)).forEach(c=>{if(canBrandApprove(me))out.push({c,kind:"Full asset",tab:"design",action:"brand"});});
   (campaigns||[]).filter(c=>c.stage==="design"&&c.data?.design?.finalReview&&!c.data?.selfMade&&!isArchived(c)).forEach(c=>{if(isSuper(me)||_r(me)==="head_marketing"||mySlots.includes("final"))out.push({c,kind:"Final sign-off",tab:"done",action:"final"});});
   return out;
@@ -2650,7 +2653,7 @@ function MyTasksTab({campaigns,onOpen,me,team}){
   const mineIds=new Set(mine.map(m=>m.c.id));
   const oversight=lead?all.filter(c=>!mineIds.has(c.id)):[];
   // Group oversight by pipeline state (monday.com-style sections).
-  const ORDER=["Needs brief","Brief ready","Needs copy","Copy in progress","Copy \u00b7 pending approval","In design","Design \u00b7 pending approval","Full-asset review","Design ready","Final sign-off"];
+  const ORDER=["Needs brief","Brief ready","Needs copy","Copy in progress","Copy \u00b7 pending approval","Ready for sign-off","In design","Design \u00b7 pending approval","Full-asset review","Design ready","Final sign-off"];
   const groups={};
   oversight.forEach(c=>{const s=stateOfCampaign(c);(groups[s.t]||(groups[s.t]={col:s.col,items:[]})).items.push(c);});
   const ordered=Object.keys(groups).sort((x,y)=>{const ix=ORDER.indexOf(x),iy=ORDER.indexOf(y);return (ix<0?99:ix)-(iy<0?99:iy);});
@@ -2766,7 +2769,7 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
   const approvals=[];
   if(mySlots.includes("copy"))campaigns.filter(c=>c.stage==="brand_review"&&!isArchived(c)).forEach(c=>approvals.push({c,kind:"Copy",tab:"content",action:"copy"}));
   if(mySlots.includes("design"))campaigns.filter(c=>c.stage==="design"&&c.data?.design?.pendingApproval&&!isArchived(c)).forEach(c=>approvals.push({c,kind:"Design",tab:"design",action:"design"}));
-  campaigns.filter(c=>c.stage==="design"&&c.data?.design?.assetReview&&!isArchived(c)).forEach(c=>{if(isSuper(me)||(c.copy_author?c.copy_author===(me&&me.name):canBrandApprove(me)))approvals.push({c,kind:"Your review",tab:"design",action:"asset"});});
+  campaigns.filter(c=>c.stage==="design"&&c.data?.design?.assetReview&&!isArchived(c)).forEach(c=>{if(canAssetReview(c,me))approvals.push({c,kind:"Your review",tab:"design",action:"asset"});});
   campaigns.filter(c=>c.stage==="design"&&c.data?.design?.brandReview&&!isArchived(c)).forEach(c=>{if(canBrandApprove(me))approvals.push({c,kind:"Full asset",tab:"design",action:"brand"});});
   campaigns.filter(c=>c.stage==="design"&&c.data?.design?.finalReview&&!isArchived(c)).forEach(c=>{if(isSuper(me)||_r(me)==="head_marketing"||mySlots.includes("final"))approvals.push({c,kind:"Final sign-off",tab:"done",action:"final"});});
   // My tasks — role-scoped in-progress work, overdue/today first
@@ -3769,7 +3772,7 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns:
   };
 
   React.useEffect(()=>{
-    if(active?.id)setOpenId(active.id);
+    if(active?.id){setOpenId(active.id);setTimeout(()=>{const el=document.getElementById("crmrow-"+active.id);if(el)el.scrollIntoView({behavior:"smooth",block:"center"});},120);}
   },[active?.id]);
 
   const getMode=(c)=>mode[c.id]||(c.data?.brief?"view":null);
@@ -3795,7 +3798,7 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns:
       :{label:STAGE_LABEL[c.stage]||c.stage,color:C.sub,bg:"#F3F4F6"};
     return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`5px solid ${isSel?C.coral:rowAccent(c)}`}}>
       {/* Row header — always visible */}
-      <div onClick={()=>setOpenId(isOpen?null:c.id)}
+      <div id={"crmrow-"+c.id} onClick={()=>setOpenId(isOpen?null:c.id)}
         style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer",background:isSel?"#FFF4ED":(isOpen?rowAccent(c)+"18":rowAccent(c)+"12")}}>
         <input type="checkbox"checked={isSel}onClick={e=>e.stopPropagation()}onChange={()=>toggleSel(c.id)}title="Select"style={{width:16,height:16,flexShrink:0,cursor:"pointer",accentColor:C.coral}}/>
         <ChannelIcon channel={c.channel}/>
@@ -4384,7 +4387,7 @@ function BrandReviewTab({campaigns,patch,me,toast,onOpen,setTab}){
     const isOpen=openId===c.id;
     const isEmail=c.channel==="Email"||c.channel==="WhatsApp + Email";
     return<div style={{borderBottom:`1px solid ${C.line}`}}>
-      <div onClick={()=>setOpenId(isOpen?null:c.id)}style={{display:"flex",alignItems:"center",gap:12,padding:"13px 16px",cursor:"pointer"}}>
+      <div id={"crmrow-"+c.id} onClick={()=>setOpenId(isOpen?null:c.id)}style={{display:"flex",alignItems:"center",gap:12,padding:"13px 16px",cursor:"pointer"}}>
         <ChannelIcon channel={c.channel}/>
         <div style={{flex:1,minWidth:0}}>
           <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
@@ -4706,7 +4709,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
   const allCopyAll=isBusiness(me)
     ? allCopyRaw.filter(c=>c.data?.selfMade)
     : isBrandTeam(me)
-      ? allCopyRaw.filter(c=>!c.data?.selfMade).filter(c=>{if(!(_myCats.length>0))return true;const cat=normCat(categoryOf(c));return _myCats.includes(cat);})
+      ? allCopyRaw.filter(c=>!c.data?.selfMade).filter(c=>{if(!(_myCats.length>0))return _r(me)!=="brand_team";const cat=normCat(categoryOf(c));return _myCats.includes(cat);})
       : allCopyRaw;
   const[tf,setTf]=useState({date:"",crm:"",channel:""});
   const[copySort,setCopySort]=useState("golive_asc");
@@ -4714,7 +4717,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
   const[openId,setOpenId]=useState(null);
   const[busyMap,setBusyMap]=useState({});
   const[errMap,setErrMap]=useState({});
-  React.useEffect(()=>{if(active?.id)setOpenId(active.id);},[active?.id]);
+  React.useEffect(()=>{if(active?.id){setOpenId(active.id);setTimeout(()=>{const el=document.getElementById("crmrow-"+active.id);if(el)el.scrollIntoView({behavior:"smooth",block:"center"});},120);}},[active?.id]);
 
   const CopyRowRef=React.useRef(null);
   if(!CopyRowRef.current)CopyRowRef.current=({c,ctx})=>{
@@ -4928,7 +4931,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       const isPush=isPushChannel(c.channel);
       return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`5px solid ${rowAccent(c)}`,background:rowAccent(c)+"12"}}>
         {/* Collapsed header — always visible, click to expand */}
-        <div onClick={()=>setOpenId(isOpen?null:c.id)}style={{display:"flex",alignItems:"center",gap:12,padding:"12px 18px",cursor:"pointer",userSelect:"none"}}>
+        <div id={"crmrow-"+c.id} onClick={()=>setOpenId(isOpen?null:c.id)}style={{display:"flex",alignItems:"center",gap:12,padding:"12px 18px",cursor:"pointer",userSelect:"none"}}>
           <div style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
             <span style={{color:C.sub,display:"flex",alignItems:"center",flexShrink:0}}>{isOpen?<ChevronDown size={14}/>:<ChevronRight size={14}/>}</span>
             <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{humanizeToken(c.product)||"—"}</span>
@@ -5002,7 +5005,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
 
     return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`5px solid ${rowAccent(c)}`}}>
       {/* Row header */}
-      <div onClick={()=>setOpenId(isOpen?null:c.id)}
+      <div id={"crmrow-"+c.id} onClick={()=>setOpenId(isOpen?null:c.id)}
         style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer",background:isOpen?rowAccent(c)+"18":rowAccent(c)+"12"}}>
         <ChannelIcon channel={c.channel}/>
         <div style={{flex:1,minWidth:0}}>
@@ -7358,7 +7361,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
   const[imageThreads,setImageThreads]=useState({}); // {campaignId: [{image,fix,at,by}]} — session only, never persisted (avoids bloating campaign data)
   const[designBusyMap,setDesignBusyMap]=useState({});
   const[designErrMap,setDesignErrMap]=useState({});
-  React.useEffect(()=>{if(active?.id)setOpenId(active.id);},[active?.id]);
+  React.useEffect(()=>{if(active?.id){setOpenId(active.id);setTimeout(()=>{const el=document.getElementById("crmrow-"+active.id);if(el)el.scrollIntoView({behavior:"smooth",block:"center"});},120);}},[active?.id]);
   const getImageMode=(id,fallback)=>imageModes[id]!==undefined?imageModes[id]:fallback;
   const setImageModeFor=(id,m)=>setImageModes(x=>({...x,[id]:m}));
 
@@ -7504,7 +7507,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
     const _dtone=(d.sentBack&&!d.pendingApproval)?ROW_TONE.attention:(_imgReady?ROW_TONE.design:ROW_TONE.attention);
     return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`5px solid ${rowAccent(c)}`}}>
       {/* Row header */}
-      <div onClick={()=>setOpenId(isOpen?null:c.id)}
+      <div id={"crmrow-"+c.id} onClick={()=>setOpenId(isOpen?null:c.id)}
         style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer",background:isOpen?rowAccent(c)+"18":rowAccent(c)+"12"}}>
         <ChannelIcon channel={c.channel}/>
         <div style={{flex:1,minWidth:0}}>
@@ -7807,7 +7810,7 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate}){
     };
     return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`5px solid ${rowAccent(c)}`,background:rowAccent(c)+"12"}}>
       {/* Collapsed header — click to expand */}
-      <div onClick={()=>setOpenId(isOpen?null:c.id)}style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer"}}>
+      <div id={"crmrow-"+c.id} onClick={()=>setOpenId(isOpen?null:c.id)}style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer"}}>
         <div style={{flex:1,minWidth:0}}>
           <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3,flexWrap:"wrap"}}>
             <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{c.product||p.product||"—"}</span>
@@ -8331,7 +8334,7 @@ function TeamDrawer({onClose,me}){
   const setUserSlots=async(id,slots)=>{try{await api.put("/api/users/"+id,{approval_slots:slots});setUsers(await api.get("/api/users"));}catch(e){setErr(e.message);}};
   const setUserSubBrands=async(id,arr)=>{try{await api.put("/api/users/"+id,{sub_brands:arr});setUsers(await api.get("/api/users"));}catch(e){setErr(e.message);}};
   const parseSubs=(str)=>str.split(",").map(s=>s.trim()).filter(Boolean);
-  const SLOTS=[["copy","Copy approval","After copy is written"],["design","Design approval","After the design is created"],["asset","Full-asset approval","Copy + design, after design lead"],["final","Final sign-off","Last gate before Finalized"]];
+  const SLOTS=[["copy","Copy approval","After copy is written"],["design","Design approval","After the design is created"],["asset","Asset review","After design approval — the copy writer (and anyone assigned here) reviews copy + design"],["final","Final sign-off","Last gate before Finalized"]];
   const slotLabel=(k)=>(SLOTS.find(s=>s[0]===k)||[,k])[1];
   const toggleFormSlot=(k)=>setForm(f=>({...f,approval_slots:(f.approval_slots||[]).includes(k)?f.approval_slots.filter(x=>x!==k):[...(f.approval_slots||[]),k]}));
   const ROLES=ROLE_KEYS;
