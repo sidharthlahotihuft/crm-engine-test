@@ -128,7 +128,7 @@ RULES:
 - If the copy is already correct, return hasIssues:false and leave corrected identical to input.
 Return ONLY JSON: {"hasIssues":boolean,"issues":[{"wrong":"original phrase","right":"corrected phrase","why":"short reason"}],"corrected":{"subject":"","header":"","body":"","cta":""}}. Include only the fields that were provided in corrected.`;
   const usr=`Proofread these fields:\n${fields.subject!=null?`SUBJECT: ${fields.subject}\n`:""}HEADER: ${fields.header||""}\nBODY: ${fields.body||""}\nCTA: ${fields.cta||""}`;
-  return await callClaude(sys,usr,true,"copy");
+  return await callClaude(sys,usr,true,"grammar");
 }
 const normCrmType=(t)=>(t||"D2C").replace(" (Store-led)","").replace(" (store-led)","");
 const CRM_CATEGORIES=["cat edibles","dog edibles","lifestyle & spa","litter"];
@@ -7922,6 +7922,35 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate}){
 }
 
 
+function ApiSpendCard(){
+  const[data,setData]=React.useState(null);
+  const[err,setErr]=React.useState(false);
+  React.useEffect(()=>{let on=true;api.get("/api/usage").then(d=>{if(on)setData(d);}).catch(()=>{if(on)setErr(true);});return()=>{on=false;};},[]);
+  const usd=data?Number(data.total_usd||0):0;
+  const bd=(data&&Array.isArray(data.breakdown))?data.breakdown:[];
+  return<Card style={{padding:0,overflow:"hidden",marginBottom:16,border:`1.5px solid ${C.line}`}}>
+    <div style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",background:"#1F2734",color:"#fff"}}>
+      <div style={{width:34,height:34,borderRadius:9,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontWeight:800}}>$</div>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:14,fontWeight:800}}>API spend this month</div>
+        <div style={{fontSize:11,color:"rgba(255,255,255,.55)"}}>{data?data.month:"loading…"} · copy on Claude, everything else on Gemini</div>
+      </div>
+      <div style={{textAlign:"right"}}>
+        <div style={{fontSize:22,fontWeight:800}}>${usd.toFixed(2)}</div>
+        <div style={{fontSize:10.5,color:"rgba(255,255,255,.55)"}}>~₹{Math.round(usd*85).toLocaleString("en-IN")} · {data?data.calls:0} calls</div>
+      </div>
+    </div>
+    {bd.length>0&&<div style={{padding:"6px 10px 10px"}}>
+      {bd.map((r,i)=><div key={i}style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",fontSize:12,borderBottom:i<bd.length-1?`1px solid ${C.line}`:"none"}}>
+        <span style={{fontWeight:700,color:C.ink,flexShrink:0}}>{r.model||r.provider}</span>
+        <span style={{color:C.sub,fontSize:11}}>{r.kind||"—"}</span>
+        <span style={{marginLeft:"auto",color:C.sub,fontSize:11}}>{Number(r.in_tokens||0).toLocaleString()} in / {Number(r.out_tokens||0).toLocaleString()} out · {r.calls} calls</span>
+        <span style={{fontWeight:700,color:C.ink,minWidth:58,textAlign:"right"}}>${Number(r.cost||0).toFixed(3)}</span>
+      </div>)}
+    </div>}
+    {(err||(data&&data.note))&&<div style={{padding:"10px 14px",fontSize:12,color:C.sub}}>Usage tracking begins once the <b>api_usage</b> table exists (run the migration).</div>}
+  </Card>;
+}
 function AnalyticsTab({campaigns,patch,onOpen,me}){
   const[finalOnly,setFinalOnly]=useState(true);
   const[editId,setEditId]=useState(null);
@@ -7971,7 +8000,7 @@ function AnalyticsTab({campaigns,patch,onOpen,me}){
   };
   const num=(label,key,ph)=><div style={{flex:1,minWidth:120}}><div style={{fontSize:11,fontWeight:700,color:C.sub,marginBottom:4}}>{label}</div><input type="number"value={form[key]}onChange={e=>setForm(f=>({...f,[key]:e.target.value}))}placeholder={ph||"0"}style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:8,padding:"8px 10px",fontSize:14,boxSizing:"border-box"}}/></div>;
   const Stat=({label,val,sub})=><Card style={{padding:14}}><div style={{fontSize:11,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.4}}>{label}</div><div style={{fontSize:24,fontWeight:800,color:C.ink,marginTop:3}}>{val}</div>{sub&&<div style={{fontSize:11,color:C.sub,marginTop:2}}>{sub}</div>}</Card>;
-  return<div>
+  return<div>{isSuper(me)&&<ApiSpendCard/>}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:16}}>
       <div><Eyebrow color={C.coral}>Analytics</Eyebrow><h1 style={{margin:"4px 0 0",fontSize:24,fontWeight:800}}>Performance</h1>
         <div style={{fontSize:13,color:C.sub,marginTop:4}}>Log how each asset performed. Metrics mirror the CRM sheet: Sent, Delivered, Read — plus clicks, orders and revenue.</div></div>
