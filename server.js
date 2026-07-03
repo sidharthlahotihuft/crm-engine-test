@@ -202,7 +202,7 @@ async function reviewCopy(text, ruleStr) {
   const arr = Array.isArray(parsed) ? parsed : [parsed];
   try {
     const sys = REVIEW_SYS + (ruleStr ? "\n\nALLOWED BRAND RULES (never flag anything these permit):\n" + ruleStr : "");
-    const raw = await generate(sys, JSON.stringify(arr), "gemini", 0.2); // cheap Flash, cold — never Opus
+    const raw = await generate(sys, JSON.stringify(arr), "gemini", 0.2, "sanitize"); // cheap Flash, cold — never Opus
     const rev = parse(raw);
     const warns = Array.isArray(rev && rev.warnings) ? rev.warnings : (Array.isArray(rev) ? rev : []);
     arr.forEach((o, i) => {
@@ -267,6 +267,26 @@ const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 // gemini-3.1-flash-image (Nano Banana 2) via env when ready, no code change needed.
 const GEMINI_IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-image";
 const CLAUDE_MODEL = process.env.CLAUDE_MODEL || "claude-sonnet-4-6";
+// ---- LLM cost tracking (list $/Mtok; powers the admin monthly-spend counter) ----
+const LLM_PRICING = {
+  "claude-opus-4-8":       { in:5,    out:25,   cr:0.50, cw:6.25 },
+  "claude-opus-4-7":       { in:5,    out:25,   cr:0.50, cw:6.25 },
+  "claude-sonnet-4-6":     { in:3,    out:15,   cr:0.30, cw:3.75 },
+  "claude-haiku-4-5":      { in:1,    out:5,    cr:0.10, cw:1.25 },
+  "gemini-2.5-flash":      { in:0.30, out:2.50, cr:0.03, cw:0.30 },
+  "gemini-2.5-flash-lite": { in:0.10, out:0.40, cr:0.01, cw:0.10 },
+};
+const priceFor = (m) => LLM_PRICING[m] || { in:3, out:15, cr:0.30, cw:3.75 };
+async function recordUsage(provider, model, kind, u) {
+  try {
+    const p = priceFor(model);
+    const cost = (u.inTok||0)/1e6*p.in + (u.outTok||0)/1e6*p.out + (u.crTok||0)/1e6*p.cr + (u.cwTok||0)/1e6*p.cw;
+    await pool.query(
+      "INSERT INTO api_usage (id,provider,model,kind,in_tokens,out_tokens,cache_read_tokens,cache_write_tokens,cost_usd) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+      [uid(), provider, model, kind||"", u.inTok||0, u.outTok||0, u.crTok||0, u.cwTok||0, cost]
+    );
+  } catch (e) { /* usage logging must never break generation */ }
+}
 
 // Text-to-image via Gemini. Returns a data URL (data:image/png;base64,...).
 // aspectRatio is one of Gemini's supported ratios: 1:1, 4:5, 9:16, 16:9, 3:4, 4:3, etc.
@@ -311,7 +331,7 @@ function pickProvider(want){
   if (p === "gemini" && !GEMINI_KEY) p = CLAUDE_KEY ? "claude" : "mock";
   return p;
 }
-async function generate(system, prompt, providerOverride, temperature) {
+async function generate(system, prompt, providerOverride, temperature, kind) {
   const PV = pickProvider(providerOverride);
   if (PV === "gemini") {
     // Support both AIza (v1beta) and AQ. (newer) key formats
@@ -334,6 +354,7 @@ async function generate(system, prompt, providerOverride, temperature) {
       console.error("Gemini error:", JSON.stringify(data));
       throw new Error(data.error?.message || "Gemini API error " + r.status);
     }
+    const _um = data.usageMetadata || {}; await recordUsage("gemini", GEMINI_MODEL, kind, { inTok:_um.promptTokenCount, outTok:_um.candidatesTokenCount });
     return (data.candidates?.[0]?.content?.parts || []).map(p => p.text || "").join("").trim();
   }
   if (PV === "claude") {
@@ -357,6 +378,7 @@ async function generate(system, prompt, providerOverride, temperature) {
     // Proof line: shows which model ran + caching activity. cache_read>0 means the cached system prompt was reused.
     const u = data.usage || {};
     console.log(`[claude] model=${CLAUDE_MODEL} in=${u.input_tokens||0} out=${u.output_tokens||0} cache_write=${u.cache_creation_input_tokens||0} cache_read=${u.cache_read_input_tokens||0}`);
+    await recordUsage("claude", CLAUDE_MODEL, kind, { inTok:u.input_tokens, outTok:u.output_tokens, crTok:u.cache_read_input_tokens, cwTok:u.cache_creation_input_tokens });
     return (data.content || []).filter(b => b.type === "text").map(b => b.text).join("\n").trim();
   }
   // Mock
@@ -1019,11 +1041,12 @@ function getMailer() {
   } catch (e) { console.error("nodemailer not available:", e.message); _mailer = null; }
   return _mailer;
 }
-async function sendEmail(to, subject, text, attachments) {
+async function sendEmail(to, subject, text, attachments, html) {
   const m = getMailer();
   if (!m || !to) return false;
   try {
     const msg = { from: process.env.SMTP_FROM || process.env.SMTP_USER, to, subject, text };
+    if (html) msg.html = html;
     if (Array.isArray(attachments) && attachments.length) msg.attachments = attachments;
     await m.sendMail(msg);
     return true;
@@ -1169,10 +1192,11 @@ app.get("/api/cron/daily-digest", async (req, res) => {
     const slot = req.query.slot === "evening" ? "Evening" : req.query.slot === "morning" ? "Morning" : "";
 
     const users = await db(`SELECT id,name,email,role,approval_slots FROM users WHERE email IS NOT NULL AND email <> ''`);
-    const rawCamps = await db(`SELECT id,name,product,stage,data,copy_author,tat_brief_due,tat_content_due,tat_design_due FROM campaigns`);
+    const rawCamps = await db(`SELECT id,name,product,stage,data,copy_author,channel,crm_type,created_at,go_live_date,tat_brief_due,tat_content_due,tat_design_due FROM campaigns`);
     const camps = rawCamps.map(c => {
       const d = c.data ? (typeof c.data === "string" ? JSON.parse(c.data) : c.data) : {};
       return { label: c.product || c.name || "Untitled", stage: c.stage, d, copy_author: c.copy_author,
+               channel: c.channel, crm: c.crm_type, brief_on: c.created_at, go_live: c.go_live_date,
                tat_brief_due: c.tat_brief_due, tat_content_due: c.tat_content_due, tat_design_due: c.tat_design_due };
     }).filter(c => c.stage !== "done" && !c.d.archived);
 
@@ -1182,41 +1206,88 @@ app.get("/api/cron/daily-digest", async (req, res) => {
     const dueFlag = (c, field) => {
       const v = c[field]; const due = v ? new Date(v) : null;
       if (!due || isNaN(due.getTime())) return { rank: 2, prefix: "" };
-      if (due < startToday) return { rank: 0, prefix: "[OVERDUE] " };
-      if (due <= endToday)  return { rank: 1, prefix: "[TODAY] " };
+      if (due < startToday) return { rank: 0, prefix: "OVERDUE" };
+      if (due <= endToday)  return { rank: 1, prefix: "TODAY" };
       return { rank: 2, prefix: "" };
+    };
+    const esc = (x) => String(x==null?"":x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    const fmtD = (v) => { if(!v) return "—"; const dt=new Date(v); if(isNaN(dt.getTime())) return "—"; return dt.toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"}); };
+    const statusOf = (c) => {
+      const d = c.d || {}, de = d.design || {};
+      if (c.stage === "brief") return d.brief ? "Brief ready" : "Needs brief";
+      if (c.stage === "content") return (d.copyOptions && d.selectedCopyIdx != null) ? "Copy pending approval" : (d.copyOptions ? "Copy in progress" : "Needs copy");
+      if (c.stage === "brand_review") return "Copy pending approval";
+      if (c.stage === "design") {
+        if (de.finalReview) return "Final sign-off";
+        if (de.brandReview) return "Full-asset review";
+        if (de.assetReview) return "Asset review";
+        if (de.pendingApproval) return "Design pending approval";
+        if (de.generatedImage || de.finalFile || de.libraryPick) return "In design";
+        return "Needs design";
+      }
+      return c.stage;
     };
 
     const APP = process.env.APP_URL || "https://crm-engine-test.vercel.app";
-    const CAP = 40;
+    const CAP = 25;
     let sent = 0;
     for (const u of users) {
       const role = normRole(u.role);
       const isAdmin = role === "super_admin" || u.role === "admin";
       const slots = Array.isArray(u.approval_slots) ? u.approval_slots : [];
       const holds = (s) => isAdmin || slots.includes(s);
-      const tasks = [];
-      const add = (label, c, field) => { const f = dueFlag(c, field); tasks.push({ rank: f.rank, text: f.prefix + label + " — " + c.label }); };
+      const myTasks = [], approvals = [];
+      const push = (arr, action, c, field) => { const f = dueFlag(c, field); arr.push({ rank: f.rank, prefix: f.prefix, action, product: c.label, brief: fmtD(c.brief_on), live: fmtD(c.go_live), status: statusOf(c), chan: c.channel || "", crm: c.crm || "" }); };
 
-      if (role === "business") camps.filter(c => c.stage === "brief" && !c.d.brief).forEach(c => add("Write the brief", c, "tat_brief_due"));
-      if (role === "brand_team") camps.filter(c => c.stage === "content" && !(c.d.copyOptions && c.d.selectedCopyIdx != null)).forEach(c => add("Write copy", c, "tat_content_due"));
-      if (role === "design_team" || role === "design_lead") camps.filter(c => c.stage === "design" && !(c.d.design && (c.d.design.approvedPromptIdx != null || c.d.design.libraryPick || c.d.design.pendingApproval))).forEach(c => add("Build the design", c, "tat_design_due"));
-      if (holds("copy")) camps.filter(c => c.stage === "brand_review").forEach(c => add("Approve copy", c, "tat_content_due"));
-      if (holds("design")) camps.filter(c => c.stage === "design" && c.d.design && c.d.design.pendingApproval).forEach(c => add("Approve design", c, "tat_design_due"));
-      camps.filter(c => c.stage === "design" && c.d.design && c.d.design.assetReview && (c.copy_author === u.name || holds("asset"))).forEach(c => add("Review the full asset", c, "tat_design_due"));
-      if (role === "brand_lead" || isAdmin) camps.filter(c => c.stage === "design" && c.d.design && c.d.design.brandReview).forEach(c => add("Sign off the full asset", c, "tat_design_due"));
-      if (holds("final") || role === "head_marketing") camps.filter(c => c.stage === "design" && c.d.design && c.d.design.finalReview).forEach(c => add("Final sign-off", c, "tat_design_due"));
+      if (role === "business") camps.filter(c => c.stage === "brief" && !c.d.brief).forEach(c => push(myTasks, "Write the brief", c, "tat_brief_due"));
+      if (role === "brand_team") camps.filter(c => c.stage === "content" && !(c.d.copyOptions && c.d.selectedCopyIdx != null)).forEach(c => push(myTasks, "Write copy", c, "tat_content_due"));
+      if (role === "design_team" || role === "design_lead") camps.filter(c => c.stage === "design" && !(c.d.design && (c.d.design.generatedImage || c.d.design.finalFile || c.d.design.libraryPick || c.d.design.pendingApproval))).forEach(c => push(myTasks, "Build the design", c, "tat_design_due"));
 
-      const seen = new Set();
-      const uniq = tasks.filter(t => (seen.has(t.text) ? false : (seen.add(t.text), true))).sort((a, b) => a.rank - b.rank);
-      if (!uniq.length) continue;
-      const overdue = uniq.filter(t => t.rank === 0).length;
-      const today = uniq.filter(t => t.rank === 1).length;
-      const shown = uniq.slice(0, CAP).map(t => t.text);
-      const extra = uniq.length - shown.length;
-      const head = (overdue || today) ? ("You have " + (overdue ? overdue + " overdue" : "") + (overdue && today ? " and " : "") + (today ? today + " due today" : "") + ".\n\n") : "";
-      const body = "Hi " + (u.name || "there") + ",\n\n" + head + "Here's what's waiting on you in the HUFT Creative Engine:\n\n• " + shown.join("\n• ") + (extra > 0 ? "\n• …and " + extra + " more" : "") + "\n\nOpen the CRM: " + APP + "\n\n— HUFT Creative Engine";
-      try { await sendEmail(u.email, "[HUFT CRM] " + (slot ? slot + " digest" : "Your tasks") + " (" + uniq.length + (overdue ? ", " + overdue + " overdue" : "") + ")", body); sent++; }
+      if (holds("copy")) camps.filter(c => c.stage === "brand_review").forEach(c => push(approvals, "Approve copy", c, "tat_content_due"));
+      if (holds("design")) camps.filter(c => c.stage === "design" && c.d.design && c.d.design.pendingApproval).forEach(c => push(approvals, "Approve design", c, "tat_design_due"));
+      camps.filter(c => c.stage === "design" && c.d.design && c.d.design.assetReview && (c.copy_author === u.name || holds("asset"))).forEach(c => push(approvals, "Review the full asset", c, "tat_design_due"));
+      if (role === "brand_lead" || isAdmin) camps.filter(c => c.stage === "design" && c.d.design && c.d.design.brandReview).forEach(c => push(approvals, "Sign off the full asset", c, "tat_design_due"));
+      if (holds("final") || role === "head_marketing") camps.filter(c => c.stage === "design" && c.d.design && c.d.design.finalReview).forEach(c => push(approvals, "Final sign-off", c, "tat_design_due"));
+
+      const dedupe = (arr) => { const seen = new Set(); return arr.filter(t => { const k = t.action+"|"+t.product; return seen.has(k) ? false : (seen.add(k), true); }).sort((a,b) => a.rank - b.rank); };
+      const my = dedupe(myTasks), ap = dedupe(approvals);
+      if (!my.length && !ap.length) continue;
+      const overdue = my.concat(ap).filter(t => t.rank === 0).length;
+      const today = my.concat(ap).filter(t => t.rank === 1).length;
+
+      const badge = (p) => p === "OVERDUE"
+        ? `<span style="display:inline-block;background:#FEE2E2;color:#B91C1C;font-size:9px;font-weight:800;padding:1px 6px;border-radius:999px;vertical-align:middle;margin-right:6px;">OVERDUE</span>`
+        : p === "TODAY"
+        ? `<span style="display:inline-block;background:#FEF3C7;color:#92400E;font-size:9px;font-weight:800;padding:1px 6px;border-radius:999px;vertical-align:middle;margin-right:6px;">DUE TODAY</span>` : "";
+      const chip = (t) => `<span style="display:inline-block;background:#EEF2FF;color:#4338CA;font-size:11px;font-weight:700;padding:1px 8px;border-radius:999px;">${esc(t)}</span>`;
+      const row = (t) => `<tr><td style="padding:12px 0;border-bottom:1px solid #F1EDE7;">`
+        + `<div style="font-size:14px;font-weight:700;color:#1F2734;">${badge(t.prefix)}${esc(t.product)}</div>`
+        + `<div style="font-size:12px;color:#6B7280;margin-top:4px;">${esc(t.action)} &nbsp;&middot;&nbsp; ${chip(t.status)}</div>`
+        + `<div style="font-size:11px;color:#9CA3AF;margin-top:5px;">Brief <b style="color:#6B7280;">${t.brief}</b> &nbsp;&middot;&nbsp; Go-live <b style="color:#1F2734;">${t.live}</b>${t.chan?` &nbsp;&middot;&nbsp; ${esc(t.chan)}`:""}${t.crm?` &nbsp;&middot;&nbsp; ${esc(t.crm)}`:""}</div>`
+        + `</td></tr>`;
+      const section = (title, color, items) => items.length ? `<div style="margin-top:22px;">`
+        + `<div style="font-size:12px;font-weight:800;color:${color};text-transform:uppercase;letter-spacing:.6px;">${title} (${items.length})</div>`
+        + `<table role="presentation" style="width:100%;border-collapse:collapse;margin-top:4px;">${items.slice(0,CAP).map(row).join("")}</table>`
+        + (items.length>CAP?`<div style="font-size:11px;color:#9CA3AF;margin-top:6px;">+ ${items.length-CAP} more in the app</div>`:"") + `</div>` : "";
+
+      const summary = (overdue || today) ? `<div style="margin-top:14px;padding:11px 14px;border-radius:10px;background:${overdue?"#FEF2F2":"#FFFBEB"};border:1px solid ${overdue?"#FECACA":"#FDE68A"};font-size:13px;color:${overdue?"#991B1B":"#92400E"};font-weight:600;">${overdue?`<b>${overdue}</b> overdue`:""}${overdue&&today?" &nbsp;and&nbsp; ":""}${today?`<b>${today}</b> due today`:""}.</div>` : "";
+      const dateStr = now.toLocaleDateString("en-IN",{weekday:"long",day:"numeric",month:"long"});
+      const html = `<div style="background:#F5F1EB;padding:24px 12px;margin:0;font-family:Arial,Helvetica,sans-serif;">`
+        + `<div style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;">`
+        + `<div style="background:#1F2734;padding:24px 26px;"><div style="color:#E8622D;font-size:11px;font-weight:800;letter-spacing:2px;">HUFT CRM CREATIVE ENGINE</div>`
+        + `<div style="color:#ffffff;font-size:22px;font-weight:800;margin-top:6px;">${slot?esc(slot)+" digest":"Your digest"}</div>`
+        + `<div style="color:rgba(255,255,255,.55);font-size:12px;margin-top:3px;">${esc(dateStr)}</div></div>`
+        + `<div style="padding:22px 26px 8px;"><div style="font-size:15px;color:#1F2734;">Hi ${esc(u.name||"there")},</div>`
+        + `<div style="font-size:13px;color:#6B7280;margin-top:4px;">Here's what needs you today.</div>${summary}`
+        + section("⏳ Approvals pending", "#9333EA", ap)
+        + section("✍️ My tasks", "#E8622D", my)
+        + `<div style="margin-top:26px;text-align:center;"><a href="${APP}/?view=approvals" style="display:inline-block;background:#E8622D;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;padding:11px 22px;border-radius:10px;">Review &amp; approve &rarr;</a>`
+        + `<a href="${APP}" style="display:inline-block;margin-left:6px;color:#6B7280;text-decoration:none;font-size:13px;font-weight:600;padding:11px 10px;">Open the engine</a></div></div>`
+        + `<div style="padding:16px 26px;color:#9CA3AF;font-size:11px;border-top:1px solid #F1EDE7;">You're receiving this because you have open items in the HUFT CRM Creative Engine.</div></div></div>`;
+
+      const text = "Hi " + (u.name||"there") + " — " + ap.length + " approval(s) and " + my.length + " task(s) waiting" + (overdue?" ("+overdue+" overdue)":"") + ". Open " + APP + "/?view=approvals";
+      const subj = "[HUFT CRM] " + (slot ? slot + " digest" : "Your digest") + " — " + (ap.length?ap.length+" approval"+(ap.length>1?"s":""):"") + (ap.length&&my.length?", ":"") + (my.length?my.length+" task"+(my.length>1?"s":""):"") + (overdue?" ("+overdue+" overdue)":"");
+      try { await sendEmail(u.email, subj, text, undefined, html); sent++; }
       catch (e) { console.error("digest email failed for", u.email, e.message); }
     }
     res.json({ ok: true, users: users.length, sent });
@@ -1466,7 +1537,7 @@ async function runSheetSync() {
     const sys = `You write tight CRM creative briefs for HUFT. Return ONLY JSON: {"campaignName":"MonYY_Product_Hook_Aud","strategicInsight":"","idea":"","proofPoints":["","",""],"pillar":"Importance","copyDirection":"","whatsappNote":""}`;
     const usr = `CRM type: ${norm.crmType}\nChannel: ${norm.channel}\nProduct: ${norm.product}\nPillar: ${norm.pillar || "Importance"}\nAudience: ${norm.audience}\nObjective: ${norm.objective}\nOffer: ${norm.offer || "none"}\nHook: ${norm.hook || "derive"}\nRTBs: ${norm.rtbs.join("; ") || "derive"}\nReferences: ${norm.references.join(" , ") || "none"}`;
     let j = {};
-    try { const txt = await generate(sys, usr); j = JSON.parse(txt.replace(/```json|```/g, "").trim().replace(/^[^[{]*/, "")); }
+    try { const txt = await generate(sys, usr, undefined, undefined, "brief"); j = JSON.parse(txt.replace(/```json|```/g, "").trim().replace(/^[^[{]*/, "")); }
     catch { j = { campaignName: norm.product, strategicInsight: "", idea: "", proofPoints: norm.rtbs, pillar: norm.pillar || "Importance", copyDirection: "", whatsappNote: "" }; }
     if (norm.rtbs.length) j.proofPoints = norm.rtbs;
 
@@ -1671,6 +1742,8 @@ app.get("/api/image-library/:id", authMiddleware, async (req, res) => {
     const rows = await db("SELECT * FROM image_library WHERE id=$1", [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: "Not found" });
     const r = rows[0];
+    // Cache image bytes in the browser so repeat views don't re-hit Supabase egress (image_library rows are immutable once uploaded).
+    res.set("Cache-Control", "private, max-age=604800, immutable");
     res.json({ ...r, tags: typeof r.tags === "string" ? JSON.parse(r.tags) : (r.tags || []) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1878,17 +1951,33 @@ app.delete("/api/reports/:id", authMiddleware, roles("admin","business"), async 
 
 // ── GENERATE ──────────────────────────────────────────────────────────────────
 
+// Admin: month-to-date API spend from api_usage. Read-only; never affects generation.
+app.get("/api/usage", authMiddleware, roles("admin"), async (req, res) => {
+  try {
+    const rows = await db(
+      `SELECT provider, model, kind,
+         SUM(in_tokens)::bigint AS in_tokens, SUM(out_tokens)::bigint AS out_tokens,
+         SUM(cost_usd) AS cost, COUNT(*)::int AS calls
+       FROM api_usage WHERE created_at >= date_trunc('month', now())
+       GROUP BY provider, model, kind ORDER BY SUM(cost_usd) DESC`
+    );
+    const total = rows.reduce((a, r) => a + Number(r.cost || 0), 0);
+    const calls = rows.reduce((a, r) => a + Number(r.calls || 0), 0);
+    res.json({ month: new Date().toISOString().slice(0, 7), total_usd: Number(total.toFixed(4)), calls, breakdown: rows });
+  } catch (e) { res.json({ month: new Date().toISOString().slice(0, 7), total_usd: 0, calls: 0, breakdown: [], note: "api_usage table not found yet" }); }
+});
+
 app.post("/api/generate", authMiddleware, async (req, res) => {
   const { system = "", prompt = "", kind = "", limits = null, providerOverride = null } = req.body;
   // Per-content-type routing: copy → Anthropic (Claude), brief → Gemini, everything else → env default.
-  let want = kind === "copy" ? "claude" : kind === "brief" ? "gemini" : undefined;
+  let want = kind === "copy" ? "claude" : (kind === "brief" || kind === "grammar") ? "gemini" : undefined;
   // Admin-only model-comparison hook: force a specific provider (claude|gemini) to A/B copy quality.
   // Ignored for non-admins and for any value other than claude|gemini — default routing is untouched.
   if (req.user && ["admin", "super_admin"].includes(req.user.role) && (providerOverride === "claude" || providerOverride === "gemini")) want = providerOverride;
   let sys = system, ruleText = "";
   if (kind === "copy") { const _a = await assembleCopySys(system); sys = _a.sys; ruleText = _a.ruleText; }
   try {
-    let text = await generate(sys, prompt, want);
+    let text = await generate(sys, prompt, want, undefined, kind);
     if (kind === "copy") {
       text = await reviewCopy(text, ruleText);   // FLAGS possible language errors as _warn (rulebook-aware) — never edits the copy
       text = enforceCopyHardRules(text, limits); // mechanical strip + length clamp stays LAST (final guard)
