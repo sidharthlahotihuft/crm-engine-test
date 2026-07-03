@@ -1380,6 +1380,51 @@ app.post("/api/campaigns/:id/brand-asset-approve", authMiddleware, roles("brand"
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 // Final gate — HoM / CXO (final slot). → done.
+// Undo the most recent approval on an asset (steps back exactly one gate).
+app.post("/api/campaigns/:id/undo-approval", authMiddleware, async (req, res) => {
+  try {
+    const cur = await db(`SELECT * FROM campaigns WHERE id=$1`, [req.params.id]);
+    if (!cur.length) return res.status(404).json({ error: "Not found" });
+    const c = cur[0];
+    const data = c.data ? (typeof c.data === "string" ? JSON.parse(c.data) : c.data) : {};
+    const des = { ...(data.design || {}) };
+    let stage = c.stage, clearBrand = false, clearDesign = false, clearLive = false, undone = "";
+    if (c.stage === "done") { des.finalReview = true; des.forceFinalized = false; stage = "design"; clearLive = true; undone = "final sign-off"; }
+    else if (des.finalReview) { des.finalReview = false; des.brandReview = true; clearBrand = true; undone = "full-asset approval"; }
+    else if (des.brandReview) { des.brandReview = false; des.assetReview = true; undone = "asset review"; }
+    else if (des.assetReview) { des.assetReview = false; des.pendingApproval = true; clearDesign = true; undone = "design approval"; }
+    else if (des.pendingApproval || c.stage === "design") { des.pendingApproval = false; des.assetReview = false; des.brandReview = false; des.finalReview = false; stage = "brand_review"; clearBrand = true; undone = "copy approval"; }
+    else return res.status(400).json({ error: "Nothing to undo on this asset" });
+    const sets = ["data=$1", "stage=$2", "updated_at=NOW()"];
+    const vals = [JSON.stringify({ ...data, design: des }), stage];
+    if (clearBrand)  sets.push("brand_approver=NULL", "brand_approved_at=NULL");
+    if (clearDesign) sets.push("design_approver=NULL", "design_approved_at=NULL");
+    if (clearLive)   sets.push("went_live_at=NULL");
+    vals.push(req.params.id);
+    const rows = await db(`UPDATE campaigns SET ${sets.join(", ")} WHERE id=$${vals.length} RETURNING *`, vals);
+    res.json({ ok: true, undone, campaign: rows[0] });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Super admin: push an asset straight through every gate to Finalized.
+app.post("/api/campaigns/:id/force-finalize", authMiddleware, roles("admin"), async (req, res) => {
+  try {
+    const cur = await db(`SELECT * FROM campaigns WHERE id=$1`, [req.params.id]);
+    if (!cur.length) return res.status(404).json({ error: "Not found" });
+    const now = new Date().toISOString();
+    const by = req.user.name || "Super admin";
+    const { data } = mergeGates(cur[0], { copy:{by,at:now}, design:{by,at:now}, asset:{by,at:now}, brand:{by,at:now}, final:{by,at:now} });
+    const d2 = { ...data, design: { ...(data.design || {}), pendingApproval:false, assetReview:false, brandReview:false, finalReview:false, sentBack:false, forceFinalized:true } };
+    const rows = await db(`UPDATE campaigns SET data=$1, stage='done', went_live_at=NOW(),
+      copy_approver=COALESCE(copy_approver,$2), copy_approved_at=COALESCE(copy_approved_at,NOW()),
+      design_approver=COALESCE(design_approver,$2), design_approved_at=COALESCE(design_approved_at,NOW()),
+      brand_approver=COALESCE(brand_approver,$2), brand_approved_at=COALESCE(brand_approved_at,NOW())
+      WHERE id=$3 RETURNING *`, [JSON.stringify(d2), by, req.params.id]);
+    try { notify({ toRole: "brand_lead", campaignId: req.params.id, kind: "Asset finalized", body: (cur[0].product||cur[0].name||"An asset")+" pushed straight to finalized by "+by+"." }); } catch(e){}
+    res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post("/api/campaigns/:id/final-approve", authMiddleware, async (req, res) => {
   try {
     const isHOM = normRole(req.user.role) === "head_marketing";
