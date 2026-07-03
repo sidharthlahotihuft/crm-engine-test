@@ -1657,7 +1657,7 @@ function RowActions({c,patch,me,onEdit,onDelete,onDuplicate}){
 
 function ApproverChip({name,at,color=C.teal}){if(!name)return null;return<span style={{display:"inline-flex",alignItems:"center",gap:5,background:color+"18",color:color,fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={12}/>{name} · {fmtTime(at)}</span>;}
 // Build a clean, paste-ready text block from an approved copy option
-const copyTextFromOption=(o)=>{if(!o)return"";const rtb=(Array.isArray(o.rtbsSelected)&&o.rtbsSelected.length)?("RTB on image: "+o.rtbsSelected.join(" · ")):undefined;return[o.subject?("Subject: "+o.subject):"",o.subject?"":undefined,o.header,rtb,"",o.body,"",o.cta?("CTA: "+o.cta):""].filter(x=>x!==undefined).join("\n").replace(/\n{3,}/g,"\n\n").trim();};
+const copyTextFromOption=(o,channel)=>{if(!o)return"";const clean=(x)=>String(x||"").trim();const isPush=isPushChannel(channel);const isEmail=channel==="Email"||channel==="WhatsApp + Email";if(isPush)return [clean(o.header),clean(o.body)].filter(Boolean).join("\n");if(isEmail)return [clean(o.subject),clean(o.body)].filter(Boolean).join("\n\n");return clean(o.body);};
 // How many copy options to generate per channel — Email gets 2, WhatsApp/Push get 5
 const copyOptionCount=(ch)=>{const c=(ch||"").toLowerCase();return(c.includes("email")&&!c.includes("whatsapp"))?2:3;};
 
@@ -1900,7 +1900,7 @@ function MobileApprovals({me,campaigns,team,onOpen,reload,onLogout}){
 function App(){
   const[me,setMe]=useState(null);
   const[checking,setChecking]=useState(true);
-  const[tab,setTab]=useState("dashboard");
+  const[tab,setTab]=useState((()=>{try{const q=new URLSearchParams(window.location.search);return (q.get("view")==="approvals"||window.location.hash==="#approvals")?"approvals":"dashboard";}catch(e){return "dashboard";}})());
   const[campaigns,setCampaigns]=useState([]);
   const[rules,setRules]=useState([]);
   const[feedback,setFeedback]=useState([]);
@@ -2190,7 +2190,7 @@ function App(){
 
   const sideBtn={display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:9,border:"none",cursor:"pointer",background:"transparent",color:"rgba(255,255,255,.7)",fontSize:13,fontWeight:600,width:"100%",textAlign:"left"};
 
-  const _mobileApprovals=(()=>{try{const q=new URLSearchParams(window.location.search);return q.get("view")==="approvals"||window.location.hash==="#approvals";}catch(e){return false;}})();
+  const _mobileApprovals=(()=>{try{const q=new URLSearchParams(window.location.search);const wantApprovals=q.get("view")==="approvals"||window.location.hash==="#approvals";const isMobile=(window.innerWidth||999)<=768||/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent||"");return wantApprovals&&isMobile;}catch(e){return false;}})();
   if(_mobileApprovals)return<MobileApprovals me={me}campaigns={scoped}team={team}onOpen={open}reload={loadAll}onLogout={logout}/>;
   return<div style={{minHeight:"100vh",background:C.paper,display:"flex"}}>
     {/* ===== LEFT SIDEBAR ===== */}
@@ -5263,7 +5263,7 @@ function ApprovedCopyCard({copy,channel,product,image,hideImageCopy}){
         {copy.direction&&<span style={{fontSize:10.5,color:"#7C3AED",background:"#EDE9FE",padding:"2px 7px",borderRadius:5,fontWeight:600}}>{copy.direction}</span>}
         {isWA&&<button onClick={()=>setShowMock(true)}style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,fontWeight:700,color:"#0b141a",background:"#00a884",border:"none",borderRadius:7,padding:"4px 9px",cursor:"pointer"}}><MessageSquare size={12}/>Preview as WhatsApp</button>}
         {isPush&&<button onClick={()=>setShowPush(true)}style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,fontWeight:700,color:"#fff",background:C.navy,border:"none",borderRadius:7,padding:"4px 9px",cursor:"pointer"}}><BellIcon size={12}/>Preview as notification</button>}
-        <CopyBtn text={()=>copyTextFromOption(copy)}/>
+        <CopyBtn text={()=>copyTextFromOption(copy,channel)}/>
       </div>
     </div>
     {!isPush&&!hideImageCopy&&copy.header&&<div style={{margin:"2px 0 10px"}}><CreativeCard o={copy} product={product}/></div>}
@@ -5451,7 +5451,7 @@ function ShareFinalModal({c,copy,image,onClose}){
   const[showPushPrev,setShowPushPrev]=useState(false);
   const fname=((c.product||"creative").replace(/[^a-z0-9]+/gi,"_").replace(/^_+|_+$/g,"")||"creative")+".png";
   // Per-channel share text
-  const waText=copy?copyTextFromOption(copy):"";
+  const waText=copy?copyTextFromOption(copy,c.channel):"";
   const emailText=copy?[(copy.subject?"Subject: "+copy.subject:""),(copy.header||""),"",(copy.body||""),(copy.cta?"\n"+copy.cta:"")].filter(Boolean).join("\n").trim():"";
   const pushText=copy?[(copy.header||""),(copy.body||""),(copy.cta||"")].filter(Boolean).join("\n").trim():"";
   const shareText=isEmail?emailText:isPush?pushText:waText;
@@ -7831,7 +7831,7 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate}){
           </div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-          {copy&&<div onClick={e=>e.stopPropagation()}><CopyBtn text={()=>copyTextFromOption(copy)}/></div>}
+          {copy&&<div onClick={e=>e.stopPropagation()}><CopyBtn text={()=>copyTextFromOption(copy,c.channel)}/></div>}
           {isOpen?<ChevronDown size={16}color={C.sub}/>:<ChevronRight size={16}color={C.sub}/>}
         </div>
       </div>
