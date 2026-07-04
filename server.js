@@ -239,7 +239,7 @@ async function reviewCopy(text, ruleStr, user) {
   } catch (e) { console.error("[review] skipped:", e.message); }
   return JSON.stringify(Array.isArray(parsed) ? arr : arr[0]);
 }
-const SERVER_BUILD = "v29.98s (b72) - Opus 4.8 is back as the ONE focused copy: default lineup = opus(focused) + sonnet(creative) + chatgpt (Opus replaces the focused Sonnet, ~3 cards, cost barely moves). Override via COPY_VARIANT_MODELS. Prior (b71): distinct Sonnet lenses; (b70) grammar on bake-off.";
+const SERVER_BUILD = "v29.99s (b73) - FIX: Opus 4.8 no longer receives temperature (deprecated for that model, was erroring the call so Opus returned nothing). Sonnets keep temperature. Prior (b72): Opus back as focused copy; (b71) distinct Sonnet lenses.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -2141,7 +2141,7 @@ app.post("/api/generate-variants", authMiddleware, async (req, res) => {
     const fail = (model, error) => ({ raw: null, model, error });
     const runModel = async (which) => {
       try {
-        if (which === "opus")    return mk(await generate(sys, pFocused, "claude", 0.4, "copy", user, "claude-opus-4-8"), "Claude Opus 4.8 (focused)");
+        if (which === "opus")    return mk(await generate(sys, pFocused, "claude", undefined, "copy", user, "claude-opus-4-8"), "Claude Opus 4.8 (focused)"); // no temperature: deprecated for Opus 4.8
         if (which === "sonnet")  return mk(await generate(sys, pFocused, "claude", 0.4,  "copy", user, "claude-sonnet-4-6"), "Sonnet 4.6 (focused)");
         if (which === "sonnet2") return mk(await generate(sys, pCreative, "claude", 0.95, "copy", user, "claude-sonnet-4-6"), "Sonnet 4.6 (creative)");
         if (which === "haiku")   return mk(await generate(sys, p, "claude", undefined, "copy", user, "claude-haiku-4-5"), "Claude Haiku 4.5");
