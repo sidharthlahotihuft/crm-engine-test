@@ -153,7 +153,7 @@ const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // ===== Supabase egress control (paused image library/suggestions; reversible) =====
 const ENABLE_IMAGE_SUGGESTIONS=false; // brief-form image suggestions fetch — OFF to cut egress
 const ENABLE_LIBRARY_THUMBS=false;    // auto-load full-res library thumbnails on open — OFF. Explicit preview still loads one image.
-const BUILD="v42.12 (b109) - polished the Idea line in the Copy panel: it now sits in a proper card (white background, coral left-accent, rounded, padded) with the Idea label as a filled coral chip and a cleaner Full brief button - instead of the flat floating text it was before. Builds on b108 and prior.";
+const BUILD="v42.13 (b110) - EDITABLE DIRECTIONS: the copy team can now edit the 3 AI-generated directions before picking one. Each direction card has a pencil that opens an inline editor for its title + angle; Save persists the edit to the asset (c.data.directions) and they can then pick the edited version. Body-click still generates copy for that direction; Write-your-own remains for a from-scratch angle. Builds on b109 and prior.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -2267,7 +2267,7 @@ function App(){
         <div style={{width:34,height:34,borderRadius:9,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={18}color="#fff"/></div>
         <div style={{lineHeight:1.15,minWidth:0}}>
           <div style={{fontWeight:800,fontSize:15,letterSpacing:-.3}}>CRM Engine</div>
-          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b109</div>
+          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b110</div>
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"12px 10px",display:"flex",flexDirection:"column",gap:3}}>
@@ -4801,6 +4801,8 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
     const[mVote,setMVote]=useState(c.data?.modelVote||null);
     const[mTally,setMTally]=useState(null);
     const[customDir,setCustomDir]=useState("");const[showCustomDir,setShowCustomDir]=useState(false); // b54: write-your-own direction
+    const[editDirIdx,setEditDirIdx]=useState(null);const[dirLabelDraft,setDirLabelDraft]=useState("");const[dirAngleDraft,setDirAngleDraft]=useState(""); // edit a generated direction
+    const saveDirEdit=(i)=>{const arr=(c.data?.directions||[]).map((x,xi)=>xi===i?{...x,label:dirLabelDraft.trim()||x.label,angle:dirAngleDraft.trim()||x.angle}:x);patch(c.id,{data:{...(c.data||{}),directions:arr}});setEditDirIdx(null);};
     React.useEffect(()=>{if(!showCompare)return;api.get("/api/model-votes").then(setMTally).catch(()=>{});},[showCompare]);
     const castVote=async(winner)=>{
       setMVote(winner);
@@ -5125,7 +5127,19 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
         </div>}
         <BriefSummaryCard active={c}activeBrief={activeBrief}copyRules={copyRules}busy={busy}refineFor={refineFor}gen={gen}genDirections={genDirections}opts={opts}patch={patch}me={me}onPreview={(o)=>setMockupOpt(o)}/>
         {!c.data?.directions&&!opts&&!manualMode&&activeBrief&&<Card style={{padding:"14px 16px",marginBottom:12,display:"flex",alignItems:"center",gap:12}}><div style={{width:34,height:34,borderRadius:9,background:"#FFF4ED",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={17}color={C.coral}/></div><div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:800,color:C.ink}}>Ready when you are</div><div style={{fontSize:12,color:C.sub,marginTop:1}}>Hit <b>Generate directions</b> above to get 3 creative angles from the brief — or add copy manually.</div></div></Card>}
-        {c.data?.directions&&!opts&&!manualMode&&<Card style={{padding:"14px 16px",marginBottom:12}}><div style={{fontSize:12.5,fontWeight:800,color:C.ink,marginBottom:10}}>Pick a direction</div><div style={{display:"flex",flexDirection:"column",gap:8}}>{c.data.directions.map((d,i)=><button key={i}onClick={()=>gen(d)}disabled={busy}style={{textAlign:"left",background:"#FFF4ED",border:`1px solid ${C.coral}44`,borderRadius:10,padding:"10px 14px",cursor:busy?"default":"pointer"}}><div style={{fontSize:13.5,fontWeight:800,color:C.coral}}>{asText(d.label)}</div><div style={{fontSize:12,color:C.ink,marginTop:2}}>{asText(d.angle)}</div></button>)}
+        {c.data?.directions&&!opts&&!manualMode&&<Card style={{padding:"14px 16px",marginBottom:12}}><div style={{fontSize:12.5,fontWeight:800,color:C.ink,marginBottom:10}}>Pick a direction <span style={{fontWeight:600,color:C.sub}}>— or edit one first</span></div><div style={{display:"flex",flexDirection:"column",gap:8}}>{c.data.directions.map((d,i)=>editDirIdx===i
+          ? <div key={i}style={{background:"#fff",border:`1px solid ${C.coral}66`,borderRadius:10,padding:"10px 12px"}}>
+              <input value={dirLabelDraft}onChange={e=>setDirLabelDraft(e.target.value)}placeholder="Direction title"style={{width:"100%",boxSizing:"border-box",fontSize:13,fontWeight:700,padding:"7px 9px",border:`1px solid ${C.line}`,borderRadius:8,marginBottom:6,fontFamily:"inherit",color:C.coral}}/>
+              <textarea value={dirAngleDraft}onChange={e=>setDirAngleDraft(e.target.value)}placeholder="The angle in a sentence"rows={2}style={{width:"100%",boxSizing:"border-box",fontSize:12.5,padding:"7px 9px",border:`1px solid ${C.line}`,borderRadius:8,resize:"vertical",fontFamily:"inherit"}}/>
+              <div style={{display:"flex",gap:7,marginTop:8}}>
+                <Btn small onClick={()=>saveDirEdit(i)}disabled={!dirLabelDraft.trim()&&!dirAngleDraft.trim()}><Check size={13}/>Save</Btn>
+                <button onClick={()=>setEditDirIdx(null)}style={{background:"none",border:"none",color:C.sub,fontSize:12,fontWeight:600,cursor:"pointer"}}>Cancel</button>
+              </div>
+            </div>
+          : <div key={i}style={{display:"flex",alignItems:"stretch",background:"#FFF4ED",border:`1px solid ${C.coral}44`,borderRadius:10,overflow:"hidden"}}>
+              <button onClick={()=>gen(d)}disabled={busy}style={{flex:1,minWidth:0,textAlign:"left",background:"none",border:"none",padding:"10px 14px",cursor:busy?"default":"pointer"}}><div style={{fontSize:13.5,fontWeight:800,color:C.coral}}>{asText(d.label)}</div><div style={{fontSize:12,color:C.ink,marginTop:2}}>{asText(d.angle)}</div></button>
+              <button onClick={()=>{setEditDirIdx(i);setDirLabelDraft(asText(d.label));setDirAngleDraft(asText(d.angle));}}disabled={busy}title="Edit this direction"style={{flexShrink:0,width:40,background:"none",border:"none",borderLeft:`1px solid ${C.coral}22`,cursor:busy?"default":"pointer",color:C.coral,display:"flex",alignItems:"center",justifyContent:"center"}}><PenLine size={14}/></button>
+            </div>)}
           {!showCustomDir
             ? <button onClick={()=>setShowCustomDir(true)}disabled={busy}style={{textAlign:"left",background:"#fff",border:`1px dashed ${C.sub}66`,borderRadius:10,padding:"10px 14px",cursor:busy?"default":"pointer",display:"flex",alignItems:"center",gap:7,color:C.sub,fontWeight:700,fontSize:12.5}}><PenLine size={13}/>Write your own direction</button>
             : <div style={{background:"#fff",border:`1px solid ${C.coral}66`,borderRadius:10,padding:"10px 12px"}}>
