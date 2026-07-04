@@ -129,9 +129,14 @@ const enforceCopyLimits = (opt, L) => {
   if (!opt || typeof opt !== "object") return opt;
   const o = { ...opt };
   if (typeof o.subject === "string") o.subject = clampLen(o.subject, Math.min(L.subject || 1e9, HARD_MAX.subject));
-  if (typeof o.cta === "string") o.cta = clampLen(o.cta, Math.min(L.cta || 1e9, HARD_MAX.cta));
-  if (typeof o.header === "string") o.header = o.header.split(/\r?\n/).map(ln => clampLen(ln, HARD_MAX.headerLine)).join("\n"); // image-copy header: soft length (short, but never hard-cut mid-thought) — only a generous safety ceiling applies
-  if (L.body && typeof o.body === "string") o.body = clampLen(o.body, L.body); // body cap only when the client knows the channel (e.g. push 90)
+  if (typeof o.cta === "string") o.cta = L.push ? "" : clampLen(o.cta, Math.min(L.cta || 1e9, HARD_MAX.cta)); // push has NO CTA button
+  if (typeof o.header === "string") {
+    // Push title is a HARD cap (titleMax); the image-copy header (WhatsApp/Email) stays a SOFT guide so a hook is never cut mid-thought.
+    o.header = L.titleMax
+      ? clampLen(o.header, L.titleMax)
+      : o.header.split(/\r?\n/).map(ln => clampLen(ln, HARD_MAX.headerLine)).join("\n");
+  }
+  if (L.body && typeof o.body === "string") o.body = clampLen(o.body, L.body); // push body HARD cap (70); email/WhatsApp bodies are long-form (no cap sent)
   return o;
 };
 // The single chokepoint: strip forbidden tokens everywhere + clamp lengths.
@@ -216,7 +221,7 @@ async function reviewCopy(text, ruleStr, user) {
   } catch (e) { console.error("[review] skipped:", e.message); }
   return JSON.stringify(Array.isArray(parsed) ? arr : arr[0]);
 }
-const SERVER_BUILD = "v29.87s (b55) - default COPY_VARIANT_MODELS=sonnet,openai,gemini,qwen (Qwen pinned, not auto-wildcard); ChatGPT/Qwen/wildcard/sanitize/compare spend now attributed to the real user, not system. Prior: cache-write premium removed (COPY_CACHE=1 to re-enable).";
+const SERVER_BUILD = "v29.89s (b59) - push title now HARD-capped (titleMax) + body 70 + no CTA; steer/refine now runs the length+token clamp too (was copy-only). All copy paths (variants, generate, steer, compare) hard-enforce caps on every channel. Prior (b58): variants clamp; (b55) qwen lineup + attribution + cache removal.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -2096,7 +2101,7 @@ app.get("/api/usage", authMiddleware, roles("admin"), async (req, res) => {
 // Multi-model copy bake-off: Opus, Sonnet, ChatGPT, and an OpenRouter wildcard (auto-picks best model; badge shows which). Graceful Sonnet fallback if a key is missing.
 app.post("/api/generate-variants", authMiddleware, async (req, res) => {
   try {
-    const { system, prompt } = req.body;
+    const { system, prompt, limits } = req.body;
     const user = (req.user && (req.user.name || req.user.email)) || "system";
     const { sys } = await assembleCopySys(system || "");
     const p = (prompt || "") + "\n\nReturn EXACTLY ONE option as a JSON array containing a single object with the required fields.";
@@ -2119,6 +2124,14 @@ app.post("/api/generate-variants", authMiddleware, async (req, res) => {
     const _MODELS = (process.env.COPY_VARIANT_MODELS || "sonnet,openai,gemini,qwen")
       .split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
     const variants = await Promise.all(_MODELS.map(runModel));
+    // b58: apply the same mechanical hard-rule + length clamp the single-model path uses, so the
+    // bake-off respects push title/body caps too (was slipping through, e.g. Body 126/70). Pure JS,
+    // no extra model call. Leaves raw untouched if it can't be parsed as copy JSON.
+    for (const v of variants) {
+      if (v && typeof v.raw === "string" && v.raw) {
+        try { v.raw = enforceCopyHardRules(v.raw, limits || null); } catch (e) {}
+      }
+    }
     res.json({ variants });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -2137,7 +2150,9 @@ app.post("/api/generate", authMiddleware, async (req, res) => {
     let text = await generate(sys, prompt, want, undefined, kind, _user);
     if (kind === "copy") {
       text = await reviewCopy(text, ruleText, _user);   // FLAGS possible language errors as _warn (rulebook-aware) — never edits the copy
-      text = enforceCopyHardRules(text, limits); // mechanical strip + length clamp stays LAST (final guard)
+    }
+    if (kind === "copy" || kind === "steer") {
+      text = enforceCopyHardRules(text, limits); // mechanical strip + length clamp — now also on steer/refine (was a gap)
     }
     res.json({ text });
   } catch (e) { res.status(500).json({ error: e.message }); }
