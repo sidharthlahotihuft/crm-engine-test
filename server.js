@@ -31,11 +31,21 @@ const dns = require("dns");
 dns.setDefaultResultOrder("ipv4first");
 
 // ── Supabase / PostgreSQL pool ────────────────────────────────────────────────
+// b74: pool is capped + fast idle release. On serverless (Vercel) each instance opens its own pool,
+// and Supabase's session-mode pooler caps TOTAL clients at 15 — an uncapped pool (default max 10)
+// across a few instances exhausts that and reads start failing with 500 (EMAXCONNSESSION). Keeping
+// each instance's footprint tiny + releasing idle connections quickly keeps us under the ceiling.
+// Real fix for serverless is the TRANSACTION-mode pooler (port 6543) via DATABASE_URL — see note below.
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
   family: 4,
+  max: Number(process.env.PG_POOL_MAX || 3),   // small footprint per instance (override via env)
+  idleTimeoutMillis: 10000,                     // drop idle connections after 10s so slots free up
+  connectionTimeoutMillis: 15000,               // wait up to 15s for a slot before failing
+  allowExitOnIdle: true,                        // let idle serverless instances release everything
 });
+pool.on("error", (err) => { console.error("pg pool error (non-fatal):", err.message); });
 
 // Thin query helper — returns rows array
 const db = async (sql, params = []) => {
@@ -239,7 +249,7 @@ async function reviewCopy(text, ruleStr, user) {
   } catch (e) { console.error("[review] skipped:", e.message); }
   return JSON.stringify(Array.isArray(parsed) ? arr : arr[0]);
 }
-const SERVER_BUILD = "v29.99s (b73) - FIX: Opus 4.8 no longer receives temperature (deprecated for that model, was erroring the call so Opus returned nothing). Sonnets keep temperature. Prior (b72): Opus back as focused copy; (b71) distinct Sonnet lenses.";
+const SERVER_BUILD = "v30.0s (b74) - DB POOL CAPPED: connection pool now max=3 (env PG_POOL_MAX) + 10s idle release + allowExitOnIdle, so serverless instances stop exhausting Supabase session-pooler 15-client limit that was causing 500s on campaigns/stats/etc. Prior (b73): Opus temperature fix.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
