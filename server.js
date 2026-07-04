@@ -255,6 +255,11 @@ const roles = (...allowed) => (req, res, next) => {
 // ── LLM provider ─────────────────────────────────────────────────────────────
 const GEMINI_KEY   = process.env.GEMINI_API_KEY   || "";
 const CLAUDE_KEY   = process.env.ANTHROPIC_API_KEY || "";
+const OPENAI_KEY   = process.env.OPENAI_API_KEY    || "";
+const JASPER_KEY   = process.env.JASPER_API_KEY    || "";
+const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o";
+const QWEN_KEY     = process.env.OPENROUTER_API_KEY || "";
+const QWEN_MODEL   = process.env.QWEN_MODEL || "qwen/qwen3.7-max";
 // Text/content generation provider. Default: prefer Gemini (uses GEMINI_API_KEY) so copy
 // and briefs run on the Gemini key. Force a provider explicitly with LLM_PROVIDER=gemini|claude.
 const _FORCED_PROVIDER = (process.env.LLM_PROVIDER || "").trim().toLowerCase();
@@ -269,21 +274,25 @@ const GEMINI_IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-i
 const CLAUDE_MODEL = process.env.CLAUDE_MODEL || "claude-sonnet-4-6";
 // ---- LLM cost tracking (list $/Mtok; powers the admin monthly-spend counter) ----
 const LLM_PRICING = {
-  "claude-opus-4-8":       { in:5,    out:25,   cr:0.50, cw:6.25 },
-  "claude-opus-4-7":       { in:5,    out:25,   cr:0.50, cw:6.25 },
-  "claude-sonnet-4-6":     { in:3,    out:15,   cr:0.30, cw:3.75 },
-  "claude-haiku-4-5":      { in:1,    out:5,    cr:0.10, cw:1.25 },
+  "qwen3.7-max":           { in:1.25, out:3.75, cr:1.25, cw:1.25 },
+  "gpt-4o":                { in:2.5,  out:10,   cr:1.25, cw:2.5 },
+  "gpt-4":                 { in:30,   out:60,   cr:30,   cw:30 },
+  "jasper":                { in:5,    out:15,   cr:5,    cw:5 },
+  "claude-opus-4-8":       { in:5,    out:25,   cr:0.50, cw:10 },
+  "claude-opus-4-7":       { in:5,    out:25,   cr:0.50, cw:10 },
+  "claude-sonnet-4-6":     { in:3,    out:15,   cr:0.30, cw:6 },
+  "claude-haiku-4-5":      { in:1,    out:5,    cr:0.10, cw:2 },
   "gemini-2.5-flash":      { in:0.30, out:2.50, cr:0.03, cw:0.30 },
   "gemini-2.5-flash-lite": { in:0.10, out:0.40, cr:0.01, cw:0.10 },
 };
 const priceFor = (m) => LLM_PRICING[m] || { in:3, out:15, cr:0.30, cw:3.75 };
-async function recordUsage(provider, model, kind, u) {
+async function recordUsage(provider, model, kind, u, user) {
   try {
     const p = priceFor(model);
     const cost = (u.inTok||0)/1e6*p.in + (u.outTok||0)/1e6*p.out + (u.crTok||0)/1e6*p.cr + (u.cwTok||0)/1e6*p.cw;
     await pool.query(
-      "INSERT INTO api_usage (id,provider,model,kind,in_tokens,out_tokens,cache_read_tokens,cache_write_tokens,cost_usd) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
-      [uid(), provider, model, kind||"", u.inTok||0, u.outTok||0, u.crTok||0, u.cwTok||0, cost]
+      "INSERT INTO api_usage (id,provider,model,kind,user_name,in_tokens,out_tokens,cache_read_tokens,cache_write_tokens,cost_usd) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
+      [uid(), provider, model, kind||"", user||"system", u.inTok||0, u.outTok||0, u.crTok||0, u.cwTok||0, cost]
     );
   } catch (e) { /* usage logging must never break generation */ }
 }
@@ -331,7 +340,58 @@ function pickProvider(want){
   if (p === "gemini" && !GEMINI_KEY) p = CLAUDE_KEY ? "claude" : "mock";
   return p;
 }
-async function generate(system, prompt, providerOverride, temperature, kind) {
+async function callOpenAI(system, prompt) {
+  if (!OPENAI_KEY) return null;
+  const r = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: { "content-type": "application/json", "authorization": "Bearer " + OPENAI_KEY },
+    body: JSON.stringify({ model: OPENAI_MODEL, max_tokens: 1500, messages: [{ role: "system", content: system }, { role: "user", content: prompt }] }),
+  });
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error?.message || "OpenAI error");
+  const u = d.usage || {};
+  try { await recordUsage("openai", OPENAI_MODEL, "copy", { inTok: u.prompt_tokens, outTok: u.completion_tokens }); } catch(e){}
+  return (d.choices?.[0]?.message?.content || "").trim();
+}
+async function callJasper(system, prompt) {
+  if (!JASPER_KEY) return null;
+  const r = await fetch("https://api.jasper.ai/v1/commands", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-api-key": JASPER_KEY },
+    body: JSON.stringify({ inputs: { command: system + "\n\n" + prompt, context: "" }, options: { outputCount: 1, outputLanguage: "English", completionType: "performance" } }),
+  });
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error?.message || d.message || "Jasper error");
+  return (d.data?.[0]?.text || "").trim();
+}
+async function callQwen(system, prompt) {
+  if (!QWEN_KEY) return null;
+  const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: { "content-type": "application/json", "authorization": "Bearer " + QWEN_KEY, "HTTP-Referer": "https://crm-engine-test.vercel.app", "X-Title": "HUFT CRM Engine" },
+    body: JSON.stringify({ model: QWEN_MODEL, max_tokens: 1500, reasoning: { enabled: false }, messages: [{ role: "system", content: system }, { role: "user", content: prompt }] }),
+  });
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error?.message || (d.error && d.error) || "Qwen error");
+  const u = d.usage || {};
+  try { await recordUsage("qwen", "qwen3.7-max", "copy", { inTok: u.prompt_tokens, outTok: u.completion_tokens }); } catch(e){}
+  return (d.choices?.[0]?.message?.content || "").trim();
+}
+async function callWildcard(system, prompt) {
+  if (!QWEN_KEY) return null;
+  const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: { "content-type": "application/json", "authorization": "Bearer " + QWEN_KEY, "HTTP-Referer": "https://crm-engine-test.vercel.app", "X-Title": "HUFT CRM Engine" },
+    body: JSON.stringify({ model: "openrouter/auto", max_tokens: 1500, messages: [{ role: "system", content: system }, { role: "user", content: prompt }] }),
+  });
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error?.message || "OpenRouter error");
+  const u = d.usage || {};
+  const picked = String(d.model || "auto").split("/").pop();
+  try { await recordUsage("openrouter", d.model || "openrouter/auto", "copy", { inTok: u.prompt_tokens, outTok: u.completion_tokens }); } catch(e){}
+  return { text: (d.choices?.[0]?.message?.content || "").trim(), model: "Auto: " + picked };
+}
+async function generate(system, prompt, providerOverride, temperature, kind, user, modelOverride) {
   const PV = pickProvider(providerOverride);
   if (PV === "gemini") {
     // Support both AIza (v1beta) and AQ. (newer) key formats
@@ -354,22 +414,24 @@ async function generate(system, prompt, providerOverride, temperature, kind) {
       console.error("Gemini error:", JSON.stringify(data));
       throw new Error(data.error?.message || "Gemini API error " + r.status);
     }
-    const _um = data.usageMetadata || {}; await recordUsage("gemini", GEMINI_MODEL, kind, { inTok:_um.promptTokenCount, outTok:_um.candidatesTokenCount });
+    const _um = data.usageMetadata || {}; await recordUsage("gemini", GEMINI_MODEL, kind, { inTok:_um.promptTokenCount, outTok:_um.candidatesTokenCount }, user);
     return (data.candidates?.[0]?.content?.parts || []).map(p => p.text || "").join("").trim();
   }
   if (PV === "claude") {
+    const _model = modelOverride || ((kind === "steer" || kind === "directions") ? "claude-sonnet-4-6" : CLAUDE_MODEL);
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "content-type": "application/json",
         "x-api-key": CLAUDE_KEY,
         "anthropic-version": "2023-06-01",
+        "anthropic-beta": "extended-cache-ttl-2025-04-11",
       },
       body: JSON.stringify({
-        model: CLAUDE_MODEL, max_tokens: 4096,
+        model: _model, max_tokens: 4096,
         // Prompt caching: the big, stable system prompt (brand context + rules + voice + rulebook) is cached,
         // so repeat copy calls pay ~10% of input price on the cached prefix instead of the full rate.
-        system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+        system: [{ type: "text", text: system, cache_control: { type: "ephemeral", ttl: "1h" } }],
         messages: [{ role: "user", content: prompt }],
       }),
     });
@@ -377,8 +439,8 @@ async function generate(system, prompt, providerOverride, temperature, kind) {
     if (!r.ok) throw new Error(data.error?.message || "Claude error");
     // Proof line: shows which model ran + caching activity. cache_read>0 means the cached system prompt was reused.
     const u = data.usage || {};
-    console.log(`[claude] model=${CLAUDE_MODEL} in=${u.input_tokens||0} out=${u.output_tokens||0} cache_write=${u.cache_creation_input_tokens||0} cache_read=${u.cache_read_input_tokens||0}`);
-    await recordUsage("claude", CLAUDE_MODEL, kind, { inTok:u.input_tokens, outTok:u.output_tokens, crTok:u.cache_read_input_tokens, cwTok:u.cache_creation_input_tokens });
+    console.log(`[claude] model=${_model} in=${u.input_tokens||0} out=${u.output_tokens||0} cache_write=${u.cache_creation_input_tokens||0} cache_read=${u.cache_read_input_tokens||0}`);
+    await recordUsage("claude", _model, kind, { inTok:u.input_tokens, outTok:u.output_tokens, crTok:u.cache_read_input_tokens, cwTok:u.cache_creation_input_tokens }, user);
     return (data.content || []).filter(b => b.type === "text").map(b => b.text).join("\n").trim();
   }
   // Mock
@@ -2006,23 +2068,57 @@ app.get("/api/usage", authMiddleware, roles("admin"), async (req, res) => {
        FROM api_usage WHERE created_at >= date_trunc('month', now())
        GROUP BY provider, model, kind ORDER BY SUM(cost_usd) DESC`
     );
+    const byUser = await db(
+      `SELECT COALESCE(NULLIF(user_name,''),'system') AS user_name,
+         SUM(cost_usd) AS cost, COUNT(*)::int AS calls
+       FROM api_usage WHERE created_at >= date_trunc('month', now())
+       GROUP BY 1 ORDER BY SUM(cost_usd) DESC`
+    );
+    const byKind = await db(
+      `SELECT COALESCE(NULLIF(kind,''),'other') AS kind,
+         SUM(cost_usd) AS cost, COUNT(*)::int AS calls
+       FROM api_usage WHERE created_at >= date_trunc('month', now())
+       GROUP BY 1 ORDER BY SUM(cost_usd) DESC`
+    );
     const total = rows.reduce((a, r) => a + Number(r.cost || 0), 0);
     const calls = rows.reduce((a, r) => a + Number(r.calls || 0), 0);
-    res.json({ month: new Date().toISOString().slice(0, 7), total_usd: Number(total.toFixed(4)), calls, breakdown: rows });
-  } catch (e) { res.json({ month: new Date().toISOString().slice(0, 7), total_usd: 0, calls: 0, breakdown: [], note: "api_usage table not found yet" }); }
+    res.json({ month: new Date().toISOString().slice(0, 7), total_usd: Number(total.toFixed(4)), calls, breakdown: rows, by_user: byUser, by_kind: byKind });
+  } catch (e) { res.json({ month: new Date().toISOString().slice(0, 7), total_usd: 0, calls: 0, breakdown: [], by_user: [], by_kind: [], note: "api_usage table not found yet" }); }
+});
+
+// Multi-model copy bake-off: Opus, Sonnet, ChatGPT, and an OpenRouter wildcard (auto-picks best model; badge shows which). Graceful Sonnet fallback if a key is missing.
+app.post("/api/generate-variants", authMiddleware, async (req, res) => {
+  try {
+    const { system, prompt } = req.body;
+    const user = (req.user && (req.user.name || req.user.email)) || "system";
+    const { sys } = await assembleCopySys(system || "");
+    const p = (prompt || "") + "\n\nReturn EXACTLY ONE option as a JSON array containing a single object with the required fields.";
+    const sonnet = (lbl) => generate(sys, p, "claude", undefined, "copy", user, "claude-sonnet-4-6").then(raw => ({ raw, model: lbl }));
+    const runModel = async (which) => {
+      try {
+        if (which === "opus")   return { raw: await generate(sys, p, "claude", undefined, "copy", user, "claude-opus-4-8"),   model: "Claude Opus 4.8" };
+        if (which === "sonnet") return { raw: await generate(sys, p, "claude", undefined, "copy", user, "claude-sonnet-4-6"), model: "Claude Sonnet 4.6" };
+        if (which === "jasper") { const raw = await callJasper(sys, p); return raw == null ? await sonnet("Jasper (no key \u2192 Sonnet)") : { raw, model: "Jasper" }; }
+        if (which === "openai") { const raw = await callOpenAI(sys, p); return raw == null ? await sonnet("ChatGPT 4 (no key \u2192 Sonnet)") : { raw, model: "ChatGPT 4" }; }
+        const w = await callWildcard(sys, p); return w == null ? await sonnet("OpenRouter pick (no key \u2192 Sonnet)") : { raw: w.text, model: w.model };
+      } catch (e) { try { return await sonnet(which + " (error \u2192 Sonnet)"); } catch (e2) { return { raw: null, model: which, error: e.message }; } }
+    };
+    const variants = await Promise.all(["opus", "sonnet", "openai", "wildcard"].map(runModel));
+    res.json({ variants });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post("/api/generate", authMiddleware, async (req, res) => {
   const { system = "", prompt = "", kind = "", limits = null, providerOverride = null } = req.body;
   // Per-content-type routing: copy → Anthropic (Claude), brief → Gemini, everything else → env default.
-  let want = kind === "copy" ? "claude" : (kind === "brief" || kind === "grammar") ? "gemini" : undefined;
+  let want = kind === "copy" ? "claude" : (kind === "steer" || kind === "directions") ? "claude" : "gemini";
   // Admin-only model-comparison hook: force a specific provider (claude|gemini) to A/B copy quality.
   // Ignored for non-admins and for any value other than claude|gemini — default routing is untouched.
   if (req.user && ["admin", "super_admin"].includes(req.user.role) && (providerOverride === "claude" || providerOverride === "gemini")) want = providerOverride;
   let sys = system, ruleText = "";
   if (kind === "copy") { const _a = await assembleCopySys(system); sys = _a.sys; ruleText = _a.ruleText; }
   try {
-    let text = await generate(sys, prompt, want, undefined, kind);
+    let text = await generate(sys, prompt, want, undefined, kind, (req.user && (req.user.name || req.user.email)) || "system");
     if (kind === "copy") {
       text = await reviewCopy(text, ruleText);   // FLAGS possible language errors as _warn (rulebook-aware) — never edits the copy
       text = enforceCopyHardRules(text, limits); // mechanical strip + length clamp stays LAST (final guard)
@@ -2077,9 +2173,9 @@ app.get("/api/model-votes", authMiddleware, async (req, res) => {
   try {
     await ensureVotes();
     const rows = await db("SELECT winner, COUNT(*)::int n FROM model_votes GROUP BY winner");
-    const t = { claude: 0, gemini: 0, tie: 0 };
-    (rows || []).forEach(r => { if (t[r.winner] != null) t[r.winner] = Number(r.n); });
-    t.total = t.claude + t.gemini + t.tie;
+    const t = {}; let total = 0;
+    (rows || []).forEach(r => { t[r.winner] = Number(r.n); total += Number(r.n); });
+    t.total = total;
     res.json(t);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
