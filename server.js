@@ -68,6 +68,7 @@ const stripForbidden = (s) => {
   // Remove opt-out / unsubscribe / "reply STOP" boilerplate — the platform handles this, it is never creative copy.
   out = out.replace(/[^.!?\n]*\b(?:opt[\s-]?out|unsubscribe)\b[^.!?\n]*[.!?]?/gi, "");
   out = out.replace(/[^.!?\n]*\breply\s+stop\b[^.!?\n]*[.!?]?/gi, "");
+  out = out.replace(/\s*\u2014\s*/g, ", ").replace(/\s*,\s*,/g, ",").replace(/,\s*([.!?;:])/g, "$1"); // b68: em dash (—) → comma (brand rule: never use em dashes)
   out = out.replace(/[ \t]{2,}/g, " ").replace(/ +([,.!?])/g, "$1").replace(/\s+([,.])/g, "$1").replace(/^[\s,;:]+/gm, "").replace(/\n{3,}/g, "\n\n").trim();
   out = out.replace(/\u0001NAME\u0001/g, "{{Name}}"); // restore sanctioned personalisation token
   return out;
@@ -180,6 +181,7 @@ const COPY_HARD_RULES = " NON-NEGOTIABLE HARD RULES (never break): "
     + "(7) ACTION-LED ALWAYS: every piece of copy must drive a clear action (tap, switch, try, shop, book, learn, save); even awareness copy moves the reader to act, never just informs. "
     + "(8) Push notifications: the action MUST be in the FIRST line (the title) — every push, even awareness ones, drives an action. Push has NO image, so never write image/overlay copy or image RTBs for a push. "
     + "(9) No opt-out / unsubscribe / 'reply STOP' lines or any channel/system boilerplate — the platform adds those, not the copy. "
+    + "(11) NEVER use the em dash (—). Use a comma, full stop, or 'and' instead. Keep punctuation simple: commas and full stops only. "
     + "(10) NAME THE PRODUCT: use the exact product / sub-brand from the brief at least once, spelled correctly (e.g. \"Sara's Wholesome Broth\", \"Meowsi Crunchies\") — never reduce it to a generic \"broth\", \"kibble\", \"food\" or \"treats\" with no name. On a PUSH this is REQUIRED because there is NO image/pack to show what it is; the reader must know the product from the words alone. (The only place a bare category is acceptable is when a pack shot already carries the name on a creative — never on push.)";
 const COPY_RULEBOOK_PREAMBLE = "\n\nACTIVE RULEBOOK — EVERY rule below is a HARD, NON-NEGOTIABLE rule. There are NO soft, optional, 'preferred', or 'where possible' rules here: treat each as mandatory and apply it to EVERY option, on EVERY channel, EVERY time. Any rule added to this list later is automatically a hard rule too. Breaking ANY single rule means the copy is rejected and sent back. If two rules ever appear to conflict, satisfy both by rewriting — never drop one:\n";
 async function assembleCopySys(systemBase){
@@ -237,7 +239,7 @@ async function reviewCopy(text, ruleStr, user) {
   } catch (e) { console.error("[review] skipped:", e.message); }
   return JSON.stringify(Array.isArray(parsed) ? arr : arr[0]);
 }
-const SERVER_BUILD = "v29.94s (b66) - /api/usage accepts ?range=today|7d|month (IST-aware today) so spend can show live burn not just cumulative month. Prior (b64): 2-Sonnet+ChatGPT lineup, fail-loud on dead keys.";
+const SERVER_BUILD = "v29.95s (b68) - em dash (—) banned from copy: hard rule (11) + stripForbidden replaces it with a comma on every copy path. Prior (b66): /api/usage range filter; (b64) 2-Sonnet+ChatGPT, fail-loud.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
