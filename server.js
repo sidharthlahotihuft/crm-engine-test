@@ -249,7 +249,7 @@ async function reviewCopy(text, ruleStr, user) {
   } catch (e) { console.error("[review] skipped:", e.message); }
   return JSON.stringify(Array.isArray(parsed) ? arr : arr[0]);
 }
-const SERVER_BUILD = "v30.0s (b74) - DB POOL CAPPED: connection pool now max=3 (env PG_POOL_MAX) + 10s idle release + allowExitOnIdle, so serverless instances stop exhausting Supabase session-pooler 15-client limit that was causing 500s on campaigns/stats/etc. Prior (b73): Opus temperature fix.";
+const SERVER_BUILD = "v30.1s (b75) - PUSH SKIPS DESIGN: brand-approve now sends push notifications straight to done (finalized) instead of the design stage (push has no creative to design). Non-push still goes to design. Plus one-time cleanup endpoint POST /api/cleanup/push-in-design to move push assets already stuck in design. Prior (b74): DB pool cap. DB POOL CAPPED: connection pool now max=3 (env PG_POOL_MAX) + 10s idle release + allowExitOnIdle, so serverless instances stop exhausting Supabase session-pooler 15-client limit that was causing 500s on campaigns/stats/etc. Prior (b73): Opus temperature fix.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -1079,6 +1079,23 @@ app.delete("/api/comments/:id", authMiddleware, async (req, res) => {
 
 app.post("/api/campaigns/:id/brand-approve", authMiddleware, roles("brand", "admin"), async (req, res) => {
   try {
+    // Push notifications have NO creative to design — they skip the design stage and go straight to done.
+    const isPush = (ch) => { const s = String(ch || "").trim(); return /push/i.test(s) || /^pn$/i.test(s); };
+    const cur = await db("SELECT channel, data FROM campaigns WHERE id=$1", [req.params.id]);
+    const pushAsset = cur.length && isPush(cur[0].channel);
+    if (pushAsset) {
+      const d2 = { ...(cur[0].data || {}), design: { ...((cur[0].data || {}).design || {}), pendingApproval: false, assetReview: false, brandReview: false, finalReview: false, sentBack: false, forceFinalized: true } };
+      const rows = await db(
+        `UPDATE campaigns SET data=$1, stage='done', brand_approver=$2, brand_approved_at=NOW(), went_live_at=NOW()
+           WHERE id=$3 AND stage='brand_review' RETURNING *`,
+        [d2, req.user.name, req.params.id]
+      );
+      if (!rows.length) return res.status(409).json({ error: "Campaign is not awaiting brand review." });
+      const prod = rows[0].product || rows[0].name || "An asset";
+      notify({ toRole: "brand_lead", campaignId: req.params.id, kind: "Asset finalized", body: prod + " — push approved by " + req.user.name + " and finalized (push skips design)." });
+      notify({ toRole: "business", campaignId: req.params.id, kind: "Asset finalized", body: prod + " — finalized and ready." });
+      return res.json(rows[0]);
+    }
     const rows = await db(
       `UPDATE campaigns
          SET stage='design', brand_approver=$1, brand_approved_at=NOW()
@@ -1506,6 +1523,22 @@ app.post("/api/campaigns/:id/undo-approval", authMiddleware, async (req, res) =>
     vals.push(req.params.id);
     const rows = await db(`UPDATE campaigns SET ${sets.join(", ")} WHERE id=$${vals.length} RETURNING *`, vals);
     res.json({ ok: true, undone, campaign: rows[0] });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// One-time cleanup: push notifications wrongly parked in the design stage → move to done.
+app.post("/api/cleanup/push-in-design", authMiddleware, roles("admin"), async (req, res) => {
+  try {
+    const rows = await db("SELECT id, channel, data FROM campaigns WHERE stage='design'");
+    const isPush = (ch) => { const s = String(ch || "").trim(); return /push/i.test(s) || /^pn$/i.test(s); };
+    const stuck = rows.filter(r => isPush(r.channel));
+    let moved = 0;
+    for (const r of stuck) {
+      const d2 = { ...(r.data || {}), design: { ...((r.data || {}).design || {}), pendingApproval:false, assetReview:false, brandReview:false, finalReview:false, sentBack:false, forceFinalized:true } };
+      await db("UPDATE campaigns SET data=$1, stage='done', went_live_at=COALESCE(went_live_at, NOW()) WHERE id=$2", [d2, r.id]);
+      moved++;
+    }
+    res.json({ moved, ids: stuck.map(s => s.id) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
