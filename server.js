@@ -195,14 +195,14 @@ const REVIEW_SYS =
 + "Return ONLY JSON: {\"warnings\":[{\"i\":<option index number>,\"field\":\"body|header|subject|cta\",\"issue\":\"<=10 word description\",\"wrong\":\"the exact offending text copied VERBATIM from that field \u2014 a single word or short phrase, NEVER the whole field\",\"suggestion\":\"the replacement for ONLY that wrong text; everything else in the field stays exactly as written\"}]}. "
 + "CRITICAL: 'wrong' MUST be an exact substring of the field, and 'suggestion' replaces ONLY 'wrong'. Never echo the whole field, never drop other sentences. "
 + "If there are no real issues, return {\"warnings\":[]}.";
-async function reviewCopy(text, ruleStr) {
+async function reviewCopy(text, ruleStr, user) {
   const parse = (s) => { try { return JSON.parse(s); } catch (_) { const m = s && s.match(/[\[{][\s\S]*[\]}]/); if (m) { try { return JSON.parse(m[0]); } catch (__) {} } return null; } };
   const parsed = parse(text);
   if (parsed === null || typeof parsed !== "object") return text;
   const arr = Array.isArray(parsed) ? parsed : [parsed];
   try {
     const sys = REVIEW_SYS + (ruleStr ? "\n\nALLOWED BRAND RULES (never flag anything these permit):\n" + ruleStr : "");
-    const raw = await generate(sys, JSON.stringify(arr), "gemini", 0.2, "sanitize"); // cheap Flash, cold — never Opus
+    const raw = await generate(sys, JSON.stringify(arr), "gemini", 0.2, "sanitize", user); // cheap Flash, cold — never Opus
     const rev = parse(raw);
     const warns = Array.isArray(rev && rev.warnings) ? rev.warnings : (Array.isArray(rev) ? rev : []);
     arr.forEach((o, i) => {
@@ -216,7 +216,7 @@ async function reviewCopy(text, ruleStr) {
   } catch (e) { console.error("[review] skipped:", e.message); }
   return JSON.stringify(Array.isArray(parsed) ? arr : arr[0]);
 }
-const SERVER_BUILD = "v29.85s - email is digest-only (morning+evening); digest now covers writer asset review, Ilena brand sign-off & HOM final";
+const SERVER_BUILD = "v29.87s (b55) - default COPY_VARIANT_MODELS=sonnet,openai,gemini,qwen (Qwen pinned, not auto-wildcard); ChatGPT/Qwen/wildcard/sanitize/compare spend now attributed to the real user, not system. Prior: cache-write premium removed (COPY_CACHE=1 to re-enable).";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -340,7 +340,7 @@ function pickProvider(want){
   if (p === "gemini" && !GEMINI_KEY) p = CLAUDE_KEY ? "claude" : "mock";
   return p;
 }
-async function callOpenAI(system, prompt) {
+async function callOpenAI(system, prompt, user) {
   if (!OPENAI_KEY) return null;
   const r = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -350,7 +350,7 @@ async function callOpenAI(system, prompt) {
   const d = await r.json();
   if (!r.ok) throw new Error(d.error?.message || "OpenAI error");
   const u = d.usage || {};
-  try { await recordUsage("openai", OPENAI_MODEL, "copy", { inTok: u.prompt_tokens, outTok: u.completion_tokens }); } catch(e){}
+  try { await recordUsage("openai", OPENAI_MODEL, "copy", { inTok: u.prompt_tokens, outTok: u.completion_tokens }, user); } catch(e){}
   return (d.choices?.[0]?.message?.content || "").trim();
 }
 async function callJasper(system, prompt) {
@@ -364,7 +364,7 @@ async function callJasper(system, prompt) {
   if (!r.ok) throw new Error(d.error?.message || d.message || "Jasper error");
   return (d.data?.[0]?.text || "").trim();
 }
-async function callQwen(system, prompt) {
+async function callQwen(system, prompt, user) {
   if (!QWEN_KEY) return null;
   const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
@@ -374,10 +374,10 @@ async function callQwen(system, prompt) {
   const d = await r.json();
   if (!r.ok) throw new Error(d.error?.message || (d.error && d.error) || "Qwen error");
   const u = d.usage || {};
-  try { await recordUsage("qwen", "qwen3.7-max", "copy", { inTok: u.prompt_tokens, outTok: u.completion_tokens }); } catch(e){}
+  try { await recordUsage("qwen", "qwen3.7-max", "copy", { inTok: u.prompt_tokens, outTok: u.completion_tokens }, user); } catch(e){}
   return (d.choices?.[0]?.message?.content || "").trim();
 }
-async function callWildcard(system, prompt) {
+async function callWildcard(system, prompt, user) {
   if (!QWEN_KEY) return null;
   const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
@@ -388,7 +388,7 @@ async function callWildcard(system, prompt) {
   if (!r.ok) throw new Error(d.error?.message || "OpenRouter error");
   const u = d.usage || {};
   const picked = String(d.model || "auto").split("/").pop();
-  try { await recordUsage("openrouter", d.model || "openrouter/auto", "copy", { inTok: u.prompt_tokens, outTok: u.completion_tokens }); } catch(e){}
+  try { await recordUsage("openrouter", d.model || "openrouter/auto", "copy", { inTok: u.prompt_tokens, outTok: u.completion_tokens }, user); } catch(e){}
   return { text: (d.choices?.[0]?.message?.content || "").trim(), model: "Auto: " + picked };
 }
 async function generate(system, prompt, providerOverride, temperature, kind, user, modelOverride) {
@@ -419,19 +419,26 @@ async function generate(system, prompt, providerOverride, temperature, kind, use
   }
   if (PV === "claude") {
     const _model = modelOverride || ((kind === "steer" || kind === "directions") ? "claude-sonnet-4-6" : CLAUDE_MODEL);
+    // b54: prompt caching REMOVED. It was net-negative here: in the 4-model bake-off each Claude
+    // model is called once per generate (no intra-call reuse), and the cached prefix carried volatile
+    // content (per-channel rules, the live rulebook, accumulated feedback) so it changed almost every
+    // call — meaning we paid the 1h cache-WRITE premium (2x input) on ~17.5K tokens every time and
+    // essentially never got a cache READ. Plain input at 1x is strictly cheaper until we split a
+    // truly-stable prefix out (future optimisation). Set COPY_CACHE=1 to re-enable if that's done.
+    const _useCache = process.env.COPY_CACHE === "1";
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "content-type": "application/json",
         "x-api-key": CLAUDE_KEY,
         "anthropic-version": "2023-06-01",
-        "anthropic-beta": "extended-cache-ttl-2025-04-11",
+        ...(_useCache ? { "anthropic-beta": "extended-cache-ttl-2025-04-11" } : {}),
       },
       body: JSON.stringify({
         model: _model, max_tokens: 4096,
-        // Prompt caching: the big, stable system prompt (brand context + rules + voice + rulebook) is cached,
-        // so repeat copy calls pay ~10% of input price on the cached prefix instead of the full rate.
-        system: [{ type: "text", text: system, cache_control: { type: "ephemeral", ttl: "1h" } }],
+        system: _useCache
+          ? [{ type: "text", text: system, cache_control: { type: "ephemeral", ttl: "1h" } }]
+          : system,
         messages: [{ role: "user", content: prompt }],
       }),
     });
@@ -2098,12 +2105,20 @@ app.post("/api/generate-variants", authMiddleware, async (req, res) => {
       try {
         if (which === "opus")   return { raw: await generate(sys, p, "claude", undefined, "copy", user, "claude-opus-4-8"),   model: "Claude Opus 4.8" };
         if (which === "sonnet") return { raw: await generate(sys, p, "claude", undefined, "copy", user, "claude-sonnet-4-6"), model: "Claude Sonnet 4.6" };
+        if (which === "haiku")  return { raw: await generate(sys, p, "claude", undefined, "copy", user, "claude-haiku-4-5"),  model: "Claude Haiku 4.5" };
+        if (which === "gemini") return { raw: await generate(sys, p, "gemini", undefined, "copy", user), model: "Gemini Flash" };
+        if (which === "qwen")   { const raw = await callQwen(sys, p, user);   return raw == null ? await sonnet("Qwen (no key \u2192 Sonnet)")    : { raw, model: "Qwen 3.7" }; }
         if (which === "jasper") { const raw = await callJasper(sys, p); return raw == null ? await sonnet("Jasper (no key \u2192 Sonnet)") : { raw, model: "Jasper" }; }
-        if (which === "openai") { const raw = await callOpenAI(sys, p); return raw == null ? await sonnet("ChatGPT 4 (no key \u2192 Sonnet)") : { raw, model: "ChatGPT 4" }; }
-        const w = await callWildcard(sys, p); return w == null ? await sonnet("OpenRouter pick (no key \u2192 Sonnet)") : { raw: w.text, model: w.model };
+        if (which === "openai") { const raw = await callOpenAI(sys, p, user); return raw == null ? await sonnet("ChatGPT 4 (no key \u2192 Sonnet)") : { raw, model: "ChatGPT 4" }; }
+        const w = await callWildcard(sys, p, user); return w == null ? await sonnet("OpenRouter pick (no key \u2192 Sonnet)") : { raw: w.text, model: w.model };
       } catch (e) { try { return await sonnet(which + " (error \u2192 Sonnet)"); } catch (e2) { return { raw: null, model: which, error: e.message }; } }
     };
-    const variants = await Promise.all(["opus", "sonnet", "openai", "wildcard"].map(runModel));
+    // b54: default lineup drops Opus (≈$2.4/mo for copy that didn't win) and the openrouter "wildcard"
+    // (openrouter/auto kept picking a weak Gemini variant that returned non-JSON garbage). Cheaper,
+    // still a real comparison. Override with COPY_VARIANT_MODELS="opus,sonnet,openai,wildcard" to restore.
+    const _MODELS = (process.env.COPY_VARIANT_MODELS || "sonnet,openai,gemini,qwen")
+      .split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
+    const variants = await Promise.all(_MODELS.map(runModel));
     res.json({ variants });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -2118,9 +2133,10 @@ app.post("/api/generate", authMiddleware, async (req, res) => {
   let sys = system, ruleText = "";
   if (kind === "copy") { const _a = await assembleCopySys(system); sys = _a.sys; ruleText = _a.ruleText; }
   try {
-    let text = await generate(sys, prompt, want, undefined, kind, (req.user && (req.user.name || req.user.email)) || "system");
+    const _user = (req.user && (req.user.name || req.user.email)) || "system";
+    let text = await generate(sys, prompt, want, undefined, kind, _user);
     if (kind === "copy") {
-      text = await reviewCopy(text, ruleText);   // FLAGS possible language errors as _warn (rulebook-aware) — never edits the copy
+      text = await reviewCopy(text, ruleText, _user);   // FLAGS possible language errors as _warn (rulebook-aware) — never edits the copy
       text = enforceCopyHardRules(text, limits); // mechanical strip + length clamp stays LAST (final guard)
     }
     res.json({ text });
@@ -2132,6 +2148,7 @@ app.post("/api/generate", authMiddleware, async (req, res) => {
 app.post("/api/generate-compare", authMiddleware, async (req, res) => {
   if (!["admin", "super_admin"].includes(req.user.role)) return res.status(403).json({ error: "Admin only" });
   const { system = "", prompt = "", limits = null } = req.body;
+  const _cuser = (req.user && (req.user.name || req.user.email)) || "system";
   const { sys, ruleText } = await assembleCopySys(system);
   const ask = (n) => sys + `\n\nFOR THIS REQUEST ONLY: return EXACTLY ${n} option${n > 1 ? "s" : ""} in the JSON array — no more, no fewer.`;
   const tag = (text, model) => {
@@ -2142,12 +2159,12 @@ app.post("/api/generate-compare", authMiddleware, async (req, res) => {
   };
   try {
     const [cText, gText] = await Promise.all([
-      generate(ask(2), prompt, "claude"),
-      generate(ask(1), prompt, "gemini"),
+      generate(ask(2), prompt, "claude", undefined, "copy", _cuser),
+      generate(ask(1), prompt, "gemini", undefined, "copy", _cuser),
     ]);
     const merged = [...tag(cText, "claude").slice(0, 2), ...tag(gText, "gemini").slice(0, 1)];
     let text = JSON.stringify(merged);
-    text = await reviewCopy(text, ruleText);   // flags _warn per option (model tag preserved)
+    text = await reviewCopy(text, ruleText, _cuser);   // flags _warn per option (model tag preserved)
     text = enforceCopyHardRules(text, limits);  // mechanical strip + length clamp (final guard)
     res.json({ text });
   } catch (e) { res.status(500).json({ error: e.message }); }
