@@ -153,7 +153,7 @@ const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // ===== Supabase egress control (paused image library/suggestions; reversible) =====
 const ENABLE_IMAGE_SUGGESTIONS=false; // brief-form image suggestions fetch — OFF to cut egress
 const ENABLE_LIBRARY_THUMBS=false;    // auto-load full-res library thumbnails on open — OFF. Explicit preview still loads one image.
-const BUILD="v42.6 (b103) - COPY PANEL POLISH: (1) the big second product-name line in the open panel now shows the IDEA instead of repeating the product name; removed the now-duplicate Row3 idea block. (2) Row2 Preview is a WA-icon + short Preview label; Full brief toggle moved onto Row2. (3) option cards: removed Copy text and the inline Preview from the footer; kept Send for approval + Edit copy; Preview is now an ICON at the top-right of each card; card heights equalized (row stretches, card is a flex column, action bar pinned to the bottom so CTAs line up). (4) removed the Pick-one-option-below / straight-to-Ilena line. Builds on b102 (dashboard week view) and prior.";
+const BUILD="v42.9 (b106) - DASHBOARD CALENDAR FIXES: (1) fixed the DUPLICATE week calendar - the business Go-live calendar block was rendering at the dashboard top level (for everyone); it is now gated to business-only, so each role sees exactly one week strip. (2) WeekStrip now has the same three filters as the pipeline: All channels / D2C-Retail / All categories. (3) clicking an asset in the week strip now ROUTES BY STAGE for everyone: ready/finalized -> Finalized Assets; work-in-progress -> its stage page (Copy/Design/Brief), which auto-expands that asset and collapses the rest (ContentTab/DesignTab already focus the active asset). Business still cannot click not-ready assets. Builds on b105 (copy card layout) and prior.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -2267,7 +2267,7 @@ function App(){
         <div style={{width:34,height:34,borderRadius:9,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={18}color="#fff"/></div>
         <div style={{lineHeight:1.15,minWidth:0}}>
           <div style={{fontWeight:800,fontSize:15,letterSpacing:-.3}}>CRM Engine</div>
-          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b103</div>
+          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b106</div>
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"12px 10px",display:"flex",flexDirection:"column",gap:3}}>
@@ -2463,15 +2463,36 @@ function ReportUploader({campaign,me,onUploaded}){
 /* ===== Calendar View ==================================================== */
 function WeekStrip({campaigns,onOpen,readyOnly}){
   const[weekOffset,setWeekOffset]=useState(0);
+  const[wf,setWf]=useState({channel:"",crm:"",category:""});
   const today=new Date();today.setHours(0,0,0,0);
-  // Start of the current week (Sunday), shifted by weekOffset weeks
   const start=new Date(today);start.setDate(today.getDate()-today.getDay()+weekOffset*7);
   const days=[];for(let i=0;i<7;i++){const d=new Date(start);d.setDate(start.getDate()+i);days.push(d);}
-  const byDay=(d)=>(campaigns||[]).filter(c=>{if(!c.go_live_date)return false;const g=new Date(c.go_live_date);g.setHours(0,0,0,0);return g.getTime()===d.getTime();}).sort((a,b)=>(b.stage==="done"?1:0)-(a.stage==="done"?1:0));
+  const src=(campaigns||[]).filter(c=>{
+    if(wf.channel&&String(c.channel||"")!==wf.channel)return false;
+    if(wf.crm&&normCrmType(c.crm_type)!==wf.crm)return false;
+    if(wf.category&&String(c.category||"")!==wf.category)return false;
+    return true;
+  });
+  const byDay=(d)=>src.filter(c=>{if(!c.go_live_date)return false;const g=new Date(c.go_live_date);g.setHours(0,0,0,0);return g.getTime()===d.getTime();}).sort((a,b)=>(b.stage==="done"?1:0)-(a.stage==="done"?1:0));
   const DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
   const stageCol={brief:C.coral,content:C.purple,brand_review:"#9333EA",design:C.teal,done:C.green};
   const fmtRange=days[0].toLocaleDateString("en-IN",{day:"numeric",month:"short"})+" – "+days[6].toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"});
+  // Route by stage: ready/finalized -> Finalized; work-in-progress -> its stage page (content/design/brief).
+  const openAsset=(c)=>{
+    if(readyOnly&&c.stage!=="done")return; // business: not-ready is non-clickable
+    if(c.stage==="done"){onOpen(c.id,"done");return;}
+    const tab=c.stage==="design"?"design":(c.stage==="brief"?"brief":"content");
+    onOpen(c.id,tab);
+  };
+  const channels=Array.from(new Set((campaigns||[]).map(c=>c.channel).filter(Boolean)));
+  const cats=Array.from(new Set((campaigns||[]).map(c=>c.category).filter(Boolean)));
+  const selSx={fontSize:12,fontWeight:600,color:C.ink,border:`1px solid ${C.line}`,borderRadius:8,padding:"5px 9px",background:"#fff",cursor:"pointer",fontFamily:"inherit"};
   return<div>
+    <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginBottom:10}}>
+      <select value={wf.channel}onChange={e=>setWf({...wf,channel:e.target.value})}style={selSx}><option value="">All channels</option>{channels.map(ch=><option key={ch}value={ch}>{ch}</option>)}</select>
+      <select value={wf.crm}onChange={e=>setWf({...wf,crm:e.target.value})}style={selSx}><option value="">D2C / Retail</option><option value="D2C">D2C</option><option value="Retail">Retail</option></select>
+      <select value={wf.category}onChange={e=>setWf({...wf,category:e.target.value})}style={selSx}><option value="">All categories</option>{cats.map(ct=><option key={ct}value={ct}>{ct}</option>)}</select>
+    </div>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
       <button onClick={()=>setWeekOffset(w=>w-1)}style={{background:"#fff",border:`1px solid ${C.line}`,borderRadius:8,padding:"4px 12px",cursor:"pointer",fontSize:14,fontWeight:700,color:C.ink}}>←</button>
       <div style={{fontSize:14,fontWeight:800,color:C.ink}}>{weekOffset===0?"This week":fmtRange} <span style={{fontSize:11,fontWeight:600,color:C.sub}}>· {fmtRange}</span></div>
@@ -2481,7 +2502,7 @@ function WeekStrip({campaigns,onOpen,readyOnly}){
       {days.map((d,i)=>{const items=byDay(d);const isToday=d.getTime()===today.getTime();return<div key={i}style={{minWidth:0,minHeight:120,border:`1px solid ${isToday?C.coral:C.line}`,borderWidth:isToday?2:1,borderRadius:10,background:isToday?"#FFF7F5":"#fff",padding:8,overflow:"hidden"}}>
         <div style={{fontSize:10.5,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.3}}>{DOW[d.getDay()]}</div>
         <div style={{fontSize:15,fontWeight:800,color:isToday?C.coral:C.ink,marginBottom:6}}>{d.getDate()}</div>
-        {items.length===0?<div style={{fontSize:10.5,color:C.sub,opacity:.5}}>—</div>:items.slice(0,6).map(c=>{const _ready=c.stage==="done";const _click=readyOnly&&!_ready;return<div key={c.id}onClick={()=>{if(_click)return;onOpen(c.id,readyOnly?"done":undefined);}}title={c.product||c.name}style={{fontSize:10,fontWeight:600,padding:"3px 5px",borderRadius:5,marginBottom:3,background:(stageCol[c.stage]||C.sub)+"18",color:stageCol[c.stage]||C.sub,cursor:_click?"default":"pointer",opacity:_click?.55:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.3}}>{humanizeToken(c.product)||parseName(c.name).product||"Asset"}</div>;})}
+        {items.length===0?<div style={{fontSize:10.5,color:C.sub,opacity:.5}}>—</div>:items.slice(0,6).map(c=>{const _disabled=readyOnly&&c.stage!=="done";return<div key={c.id}onClick={()=>openAsset(c)}title={c.product||c.name}style={{fontSize:10,fontWeight:600,padding:"3px 5px",borderRadius:5,marginBottom:3,background:(stageCol[c.stage]||C.sub)+"18",color:stageCol[c.stage]||C.sub,cursor:_disabled?"default":"pointer",opacity:_disabled?.55:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.3}}>{humanizeToken(c.product)||parseName(c.name).product||"Asset"}</div>;})}
         {items.length>6&&<div style={{fontSize:10,color:C.sub,marginTop:1}}>+{items.length-6} more</div>}
       </div>;})}
     </div>
@@ -2947,7 +2968,7 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
         {k:"cp",title:"Copy in progress",color:C.purple,items:_pf.filter(c=>c.stage==="content"||(c.stage==="brand_review"))},
         {k:"cr",title:"Copy Ready",color:"#9333EA",items:_pf.filter(c=>c.stage==="design"&&!isPushChannel(c.channel)&&!(c.data&&c.data.design&&(c.data.design.generatedImage||c.data.design.finalFile||c.data.design.libraryPick||c.data.design.pendingApproval||c.data.design.assetReview||c.data.design.brandReview||c.data.design.finalReview)))},
         {k:"dp",title:"Design in progress",color:C.teal,items:_pf.filter(c=>c.stage==="design"&&!isPushChannel(c.channel)&&c.data&&c.data.design&&(c.data.design.generatedImage||c.data.design.finalFile||c.data.design.libraryPick||c.data.design.pendingApproval||c.data.design.assetReview||c.data.design.brandReview||c.data.design.finalReview))},
-        {k:"dr",title:"Design Ready",color:C.green,items:_pf.filter(c=>c.stage==="done")},
+        {k:"dr",title:"Asset Ready",color:C.green,items:_pf.filter(c=>c.stage==="done")},
       ];
       const selSx={fontSize:12,fontWeight:600,color:C.ink,border:`1px solid ${C.line}`,borderRadius:8,padding:"5px 8px",background:"#fff",cursor:"pointer",fontFamily:"inherit"};
       return<Card style={{padding:0,overflow:"hidden",marginBottom:18}}>
@@ -3037,11 +3058,11 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
         </div>)}
       </Card>;
     })()}
-    {/* Business team: show the go-live calendar below Assets ready. No needs-attention / completed sections. */}
-    <div style={{marginTop:4}}>
-      <div style={{fontSize:12,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.5,margin:"8px 2px 10px"}}>Go-live calendar</div>
+    {/* Business team: show the go-live calendar below Assets ready. */}
+    {isBusiness(me)&&<div style={{marginTop:4}}>
+      <div style={{fontSize:12,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.5,margin:"8px 2px 10px"}}>Go-live calendar · this week</div>
       <WeekStrip campaigns={(campaigns||[]).filter(c=>!isArchived(c))}onOpen={onOpen}readyOnly={isBusiness(me)}/>
-    </div>
+    </div>}
   </div>;
 }
 
@@ -5099,7 +5120,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       </div>
 
       {/* Expanded content */}
-      {isOpen&&<div style={{padding:"0 18px 18px",background:"#FAF5FF"}}>
+      {isOpen&&<div style={{padding:"14px 18px 18px",background:"#FAF5FF"}}>
         {/* Panel-level preview removed — each option card has its own per-copy Preview */}
         {mockupOpt&&<WhatsAppMockup o={mockupOpt}image={mockImage}product={c.product}onClose={()=>setMockupOpt(null)}/>}
         {pushOpt&&<PushMockup o={pushOpt}image={mockImage}product={c.product}onClose={()=>setPushOpt(null)}/>}
@@ -5152,17 +5173,17 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
           </div>
         </div>}
         {opts&&!isBusiness(me)&&!(busy&&!refineFor)&&<div>
-          <DesignNote c={c}patch={patch}me={me}/>
+          {/* Add-a-note moved onto each option card's action bar */}
           {sel!=null&&<div style={{marginBottom:10}}>
             <div style={{fontSize:11,fontWeight:700,color:"#5B21B6",textTransform:"uppercase",letterSpacing:.5,marginBottom:6,display:"flex",alignItems:"center",gap:4}}><CheckCircle2 size={11}/>Approved copy</div>
             <ContentCard o={opts[sel]}idx={sel}sel={true}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}onFixFeedback={fixPerFeedback}onEditSave={editDirectly}onResolveWarn={resolveWarnAt}onRtbToggle={toggleRtb}channel={c.channel}product={c.product}anySelected={sel!=null}sentBack={c.data?.sentBack}isResend={!!c.data?.lastRejectReason}image={mockImage}/>
           </div>}
           {sel!=null&&<button onClick={()=>setShowAll(v=>!v)}style={{display:"flex",alignItems:"center",gap:5,background:"none",border:"none",cursor:"pointer",color:C.sub,fontSize:12.5,fontWeight:600,marginBottom:8}}>{showAll?<><ChevronDown size={13}/>Hide other options</>:<><Eye size={13}/>See other {opts.length-1} options</>}</button>}
           {opts&&Array.isArray(c.data?.copyErrors)&&c.data.copyErrors.length>0&&<div style={{marginBottom:10,background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:10,padding:"9px 13px"}}><div style={{fontSize:11.5,fontWeight:800,color:"#B45309",display:"flex",alignItems:"center",gap:6,marginBottom:3}}><AlertCircle size={13}/>{c.data.copyErrors.length} model{c.data.copyErrors.length>1?"s":""} didn’t return copy</div><div style={{fontSize:11.5,color:"#92400E",lineHeight:1.5}}>{c.data.copyErrors.map((e,i)=><span key={i}><b>{asText(e.model)}</b> — {asText(e.error)}{i<c.data.copyErrors.length-1?"; ":""}</span>)}. If this is a key/config issue, fix it in Vercel → Settings → Environment Variables, redeploy, then regenerate.</div></div>}
-          {opts&&opts.length>0&&c.data?.selectedDir&&<div style={{marginBottom:10,background:"#FFF4ED",border:`1px solid ${C.coral}33`,borderRadius:10,padding:"9px 13px",display:"flex",alignItems:"flex-start",gap:10}}><div style={{flex:1,minWidth:0}}><div style={{fontSize:10,fontWeight:800,color:C.coral,textTransform:"uppercase",letterSpacing:.5,marginBottom:2}}>Direction</div><div style={{fontSize:12.5,fontWeight:700,color:C.ink}}>{asText(c.data.selectedDir.label)}{sel==null&&c.data.selectedDir.angle?<span style={{fontWeight:500,color:C.sub}}> — {asText(c.data.selectedDir.angle)}</span>:null}</div></div><button onClick={()=>{patch(c.id,{data:{...(c.data||{}),copyOptions:null,copyErrors:null,selectedCopyIdx:null,selectedDir:null}});setShowAll(false);}}style={{flexShrink:0,background:"#fff",border:`1px solid ${C.coral}55`,borderRadius:7,padding:"4px 10px",fontSize:11.5,fontWeight:700,color:C.coral,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}><RefreshCw size={11}/>Different direction</button>{busy?<Spin label="…"/>:<button onClick={()=>gen(c.data.selectedDir)}style={{flexShrink:0,background:C.coral,border:"none",borderRadius:7,padding:"4px 10px",fontSize:11.5,fontWeight:700,color:"#fff",cursor:"pointer",display:"flex",alignItems:"center",gap:4}}><RefreshCw size={11}/>Regenerate</button>}</div>}
+          {opts&&opts.length>0&&c.data?.selectedDir&&<div style={{marginTop:6,marginBottom:14,background:"#FFF4ED",border:`1px solid ${C.coral}33`,borderRadius:10,padding:"11px 14px",display:"flex",alignItems:"flex-start",gap:10}}><div style={{flex:1,minWidth:0}}><div style={{fontSize:10,fontWeight:800,color:C.coral,textTransform:"uppercase",letterSpacing:.5,marginBottom:2}}>Direction</div><div style={{fontSize:12.5,fontWeight:700,color:C.ink}}>{asText(c.data.selectedDir.label)}{sel==null&&c.data.selectedDir.angle?<span style={{fontWeight:500,color:C.sub}}> — {asText(c.data.selectedDir.angle)}</span>:null}</div></div><button onClick={()=>{patch(c.id,{data:{...(c.data||{}),copyOptions:null,copyErrors:null,selectedCopyIdx:null,selectedDir:null}});setShowAll(false);}}style={{flexShrink:0,background:"#fff",border:`1px solid ${C.coral}55`,borderRadius:7,padding:"4px 10px",fontSize:11.5,fontWeight:700,color:C.coral,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}><RefreshCw size={11}/>Different direction</button>{busy?<Spin label="…"/>:<button onClick={()=>gen(c.data.selectedDir)}style={{flexShrink:0,background:C.coral,border:"none",borderRadius:7,padding:"4px 10px",fontSize:11.5,fontWeight:700,color:"#fff",cursor:"pointer",display:"flex",alignItems:"center",gap:4}}><RefreshCw size={11}/>Regenerate</button>}</div>}
           {/* 'Pick one option below' line removed */}
           {(sel==null||showAll)&&<div style={{display:"flex",gap:12,marginBottom:10,alignItems:"stretch"}}>
-            {opts.map((o,i)=>{if(sel!=null&&i===sel)return null;return<div key={i}style={{flex:"1 1 0",minWidth:0,display:"flex"}}><ContentCard o={o}idx={i}sel={false}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}onFixFeedback={fixPerFeedback}onEditSave={editDirectly}onResolveWarn={resolveWarnAt}onRtbToggle={toggleRtb}channel={c.channel}product={c.product}anySelected={sel!=null}sentBack={c.data?.sentBack}isResend={!!c.data?.lastRejectReason}image={mockImage}/></div>;})}</div>}
+            {opts.map((o,i)=>{if(sel!=null&&i===sel)return null;return<div key={i}style={{flex:"1 1 0",minWidth:0,display:"flex"}}><ContentCard o={o}idx={i}sel={false}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}onFixFeedback={fixPerFeedback}onEditSave={editDirectly}onResolveWarn={resolveWarnAt}onRtbToggle={toggleRtb}channel={c.channel}product={c.product}anySelected={sel!=null}sentBack={c.data?.sentBack}isResend={!!c.data?.lastRejectReason}image={mockImage}noteSlot={!isBusiness(me)?<DesignNote c={c}patch={patch}me={me}compact/>:null}/></div>;})}</div>}
           {showCompare&&<div style={{marginBottom:10,border:"1.5px solid #C7D2FE",background:"#EEF2FF",borderRadius:12,padding:"11px 13px"}}>
             <div style={{fontSize:12.5,fontWeight:800,color:"#3730A3",display:"flex",alignItems:"center",gap:6,marginBottom:3}}><Sparkles size={13}/>Model A/B — which copy performed better?</div>
             <div style={{fontSize:11.5,color:"#4338CA",marginBottom:9}}>Each option is from a different model — look for the model tag on each card. Pick the one that performed best:</div>
@@ -5574,7 +5595,7 @@ function ShareFinalModal({c,copy,image,onClose}){
   </div>;
 }
 // A note the copy writer leaves for the design team. Editable in the Copy panel; read-only callout in the Design panel.
-function DesignNote({c,patch,me,readOnly}){
+function DesignNote({c,patch,me,readOnly,compact}){
   const note=(c.data&&c.data.designNote)||null;
   const[txt,setTxt]=React.useState(note?note.text:"");
   const[open,setOpen]=React.useState(false);
@@ -5595,6 +5616,21 @@ function DesignNote({c,patch,me,readOnly}){
     patch(c.id,{data:{...(c.data||{}),designNote:t?{text:t,by:(me&&me.name)||"Copy",at:new Date().toISOString()}:null}});
     setOpen(false);setSaved(true);setTimeout(()=>setSaved(false),1600);
   };
+  if(compact){
+    return<React.Fragment>
+      <button onClick={()=>setOpen(true)}title={note&&note.text?"Edit note for design":"Add a note for the design team"}style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,fontWeight:600,padding:"6px 10px",borderRadius:8,border:`1px solid ${note&&note.text?C.coral+"66":C.line}`,background:note&&note.text?"#FFF7ED":"#fff",color:note&&note.text?"#B45309":C.ink,cursor:"pointer"}}><MessageSquare size={12}/>Note{note&&note.text?" ✓":""}</button>
+      {open&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.35)",zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}onClick={()=>setOpen(false)}>
+        <div onClick={e=>e.stopPropagation()}style={{background:"#fff",borderRadius:14,padding:18,width:"100%",maxWidth:440,boxShadow:"0 12px 40px rgba(0,0,0,.2)"}}>
+          <div style={{fontSize:13.5,fontWeight:800,color:C.ink,marginBottom:8,display:"flex",alignItems:"center",gap:6}}><MessageSquare size={15}color={C.coral}/>Note for the design team</div>
+          <textarea value={txt}onChange={e=>setTxt(e.target.value)}rows={4}placeholder="e.g. Use the lifestyle shot, keep the ₹449 offer prominent…"style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:10,padding:"10px 12px",fontSize:13,resize:"vertical",boxSizing:"border-box",lineHeight:1.5}}/>
+          <div style={{display:"flex",gap:8,marginTop:10}}>
+            <Btn small onClick={save}><Check size={13}/>Save note</Btn>
+            <Btn small variant="ghost"onClick={()=>setOpen(false)}>Cancel</Btn>
+          </div>
+        </div>
+      </div>}
+    </React.Fragment>;
+  }
   return<div style={{marginBottom:10}}>
     {!open
       ?<div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
@@ -5612,7 +5648,7 @@ function DesignNote({c,patch,me,readOnly}){
       </div>}
   </div>;
 }
-function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,busy,onSelect,onRefine,onEditSave,onResolveWarn,onRtbToggle,channel,product,sentBack,isResend,image,onFixFeedback,anySelected}){
+function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,busy,onSelect,onRefine,onEditSave,onResolveWarn,onRtbToggle,channel,product,sentBack,isResend,image,onFixFeedback,anySelected,noteSlot}){
   const[showWA,setShowWA]=useState(false);
   const[showPush,setShowPush]=useState(false);
   const isWAchan=/whatsapp/i.test(channel||"");
@@ -5668,7 +5704,7 @@ function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,
     </div>}
 
     {/* Copy preview */}
-    {open&&<React.Fragment><div style={{padding:12}}>
+    {open&&<React.Fragment><div style={{padding:12,flex:1,display:"flex",flexDirection:"column"}}>
       {warns.length>0&&showWarns&&<div style={{marginBottom:10,border:"1.5px solid #FCD34D",background:"#FFFBEB",borderRadius:10,padding:"9px 11px"}}>
         <div style={{fontSize:10.5,fontWeight:800,color:"#B45309",display:"flex",alignItems:"center",gap:5,marginBottom:7}}><AlertCircle size={12}/>Possible language issues — you decide</div>
         {warns.map((w,wi)=><div key={wi} style={{paddingTop:wi?7:0,marginTop:wi?7:0,borderTop:wi?"1px solid #FDE68A":"none"}}>
@@ -5680,6 +5716,7 @@ function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,
           </div>
         </div>)}
       </div>}
+      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:4}}><button onClick={()=>setEditMode("menu")}title="Edit this copy"style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:26,height:26,borderRadius:7,border:`1px solid ${C.line}`,background:"#fff",color:C.sub,cursor:"pointer"}}><PenLine size={13}/></button></div>
       {!isPush&&<div style={{marginBottom:12}}><CreativeCard o={o} idx={idx} editable={true} onEditSave={onEditSave} onRtbToggle={onRtbToggle} product={product}/></div>}
       {isPush
         /* Push notification preview */
@@ -5759,7 +5796,8 @@ function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,
           <button onClick={()=>setEditMode(null)}style={{marginTop:8,fontSize:11,color:C.sub,background:"none",border:"none",cursor:"pointer",padding:0}}>✕ Cancel</button>
         </div>
       /* Default action bar */
-      :<div style={{display:"flex",gap:7,flexWrap:"wrap",marginTop:"auto"}}>
+      :<div style={{display:"flex",gap:7,flexWrap:"wrap",marginTop:"auto",alignItems:"center"}}>
+          {noteSlot}
           {!sel&&(sentBack
             ?<button onClick={()=>onFixFeedback&&onFixFeedback(idx)}title="Let AI revise this copy to address the reviewer's feedback, then review and resend"style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,fontWeight:800,color:"#fff",background:C.purple,border:"none",borderRadius:8,padding:"6px 11px",cursor:"pointer"}}><Sparkles size={12}/>Fix per feedback</button>
             :<Btn small variant="dark"onClick={()=>onSelect(idx)}><CheckCircle2 size={12}/>{isResend?"Send again for approval":"Send for approval"}</Btn>)}
