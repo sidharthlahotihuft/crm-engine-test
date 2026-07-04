@@ -239,7 +239,7 @@ async function reviewCopy(text, ruleStr, user) {
   } catch (e) { console.error("[review] skipped:", e.message); }
   return JSON.stringify(Array.isArray(parsed) ? arr : arr[0]);
 }
-const SERVER_BUILD = "v29.97s (b71) - the two Sonnets now get different prompt lenses (focused=direct, creative=bolder/avoid-obvious) so they no longer produce identical copy. Prior (b70): grammar review on bake-off; (b68) em-dash ban.";
+const SERVER_BUILD = "v29.98s (b72) - Opus 4.8 is back as the ONE focused copy: default lineup = opus(focused) + sonnet(creative) + chatgpt (Opus replaces the focused Sonnet, ~3 cards, cost barely moves). Override via COPY_VARIANT_MODELS. Prior (b71): distinct Sonnet lenses; (b70) grammar on bake-off.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -2141,7 +2141,7 @@ app.post("/api/generate-variants", authMiddleware, async (req, res) => {
     const fail = (model, error) => ({ raw: null, model, error });
     const runModel = async (which) => {
       try {
-        if (which === "opus")    return mk(await generate(sys, p, "claude", undefined, "copy", user, "claude-opus-4-8"), "Claude Opus 4.8");
+        if (which === "opus")    return mk(await generate(sys, pFocused, "claude", 0.4, "copy", user, "claude-opus-4-8"), "Claude Opus 4.8 (focused)");
         if (which === "sonnet")  return mk(await generate(sys, pFocused, "claude", 0.4,  "copy", user, "claude-sonnet-4-6"), "Sonnet 4.6 (focused)");
         if (which === "sonnet2") return mk(await generate(sys, pCreative, "claude", 0.95, "copy", user, "claude-sonnet-4-6"), "Sonnet 4.6 (creative)");
         if (which === "haiku")   return mk(await generate(sys, p, "claude", undefined, "copy", user, "claude-haiku-4-5"), "Claude Haiku 4.5");
@@ -2152,8 +2152,9 @@ app.post("/api/generate-variants", authMiddleware, async (req, res) => {
         const w = await callWildcard(sys, p, user); return w == null ? fail("OpenRouter", "OPENROUTER_API_KEY not set") : mk(w.text, w.model);
       } catch (e) { return fail(which, e && e.message ? e.message : "generation failed"); } // b64: fail loudly, no silent Sonnet fallback
     };
-    // b64: default lineup = 2 Sonnets (different temperatures) + ChatGPT. Override via COPY_VARIANT_MODELS.
-    const _MODELS = (process.env.COPY_VARIANT_MODELS || "sonnet,sonnet2,openai")
+    // b72: Opus does the ONE focused copy (replaces the focused Sonnet, so Opus quality on the direct
+    // take without adding a 4th call). Lineup = Opus focused + Sonnet creative + ChatGPT. Override via COPY_VARIANT_MODELS.
+    const _MODELS = (process.env.COPY_VARIANT_MODELS || "opus,sonnet2,openai")
       .split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
     const variants = await Promise.all(_MODELS.map(runModel));
     // b58: apply the same mechanical hard-rule + length clamp the single-model path uses, so the
