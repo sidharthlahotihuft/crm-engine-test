@@ -153,7 +153,7 @@ const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // ===== Supabase egress control (paused image library/suggestions; reversible) =====
 const ENABLE_IMAGE_SUGGESTIONS=false; // brief-form image suggestions fetch — OFF to cut egress
 const ENABLE_LIBRARY_THUMBS=false;    // auto-load full-res library thumbnails on open — OFF. Explicit preview still loads one image.
-const BUILD="v42.15 (b112) - (1) removed the Pending your approval card from the DASHBOARD for everyone - approvals now live only on the Approvals page. (2) removed Archive + Delete from brand_team AND design_team (RowActions canEdit now excludes them explicitly). (3) the Design page row header now matches the Copy page: Row1 Product - CRM - Format - design status badge; Row2 people row (WhoChips); Brief/Live dates pinned right (was the old created_by + inline-dates + idea format). Builds on b111 and prior.";
+const BUILD="v42.17 (b114) - design approved-copy card is now THREE columns: left = RTB + notes, center = creative mockup (centered), right = body copy. (Was two columns with the mock+body crammed on the right and a big empty left when there was no RTB/note.) Stacks on narrow screens. Builds on b113 and prior.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -2267,7 +2267,7 @@ function App(){
         <div style={{width:34,height:34,borderRadius:9,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={18}color="#fff"/></div>
         <div style={{lineHeight:1.15,minWidth:0}}>
           <div style={{fontWeight:800,fontSize:15,letterSpacing:-.3}}>CRM Engine</div>
-          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b112</div>
+          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b114</div>
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"12px 10px",display:"flex",flexDirection:"column",gap:3}}>
@@ -2966,8 +2966,7 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
       const chans=[...new Set(_na.map(c=>c.channel).filter(Boolean))].sort();
       const cols=[
         {k:"cp",title:"Copy in progress",color:C.purple,items:_pf.filter(c=>c.stage==="content"||(c.stage==="brand_review"))},
-        {k:"cr",title:"Copy Ready",color:"#9333EA",items:_pf.filter(c=>c.stage==="design"&&!isPushChannel(c.channel)&&!(c.data&&c.data.design&&(c.data.design.generatedImage||c.data.design.finalFile||c.data.design.libraryPick||c.data.design.pendingApproval||c.data.design.assetReview||c.data.design.brandReview||c.data.design.finalReview)))},
-        {k:"dp",title:"Design in progress",color:C.teal,items:_pf.filter(c=>c.stage==="design"&&!isPushChannel(c.channel)&&c.data&&c.data.design&&(c.data.design.generatedImage||c.data.design.finalFile||c.data.design.libraryPick||c.data.design.pendingApproval||c.data.design.assetReview||c.data.design.brandReview||c.data.design.finalReview))},
+        {k:"dp",title:"Design in progress",color:C.teal,items:_pf.filter(c=>c.stage==="design"&&!isPushChannel(c.channel))},
         {k:"dr",title:"Asset Ready",color:C.green,items:_pf.filter(c=>c.stage==="done")},
       ];
       const selSx={fontSize:12,fontWeight:600,color:C.ink,border:`1px solid ${C.line}`,borderRadius:8,padding:"5px 8px",background:"#fff",cursor:"pointer",fontFamily:"inherit"};
@@ -5331,8 +5330,10 @@ function ApprovedCopyCard({copy,channel,product,image,hideImageCopy,leftExtras})
     {leftExtras}
     {!hasRtb&&!leftExtras&&<div style={{fontSize:11.5,color:C.sub,fontStyle:"italic",padding:"6px 2px"}}>No RTB or notes for this asset.</div>}
   </div>;
+  const centerCol=<div style={{flex:"1 1 0",minWidth:0,display:"flex",flexDirection:"column",gap:10,alignItems:"center"}}>
+    {!isPush&&copy.header&&<div style={{width:"100%",display:"flex",justifyContent:"center"}}><CreativeCard o={copy} product={product}/></div>}
+  </div>;
   const rightCol=<div style={{flex:"1 1 0",minWidth:0,display:"flex",flexDirection:"column",gap:10}}>
-    {!isPush&&copy.header&&<div><CreativeCard o={copy} product={product}/></div>}
     {copy.body&&<div>
       <div style={{fontSize:9,fontWeight:800,color:"#0F766E",textTransform:"uppercase",letterSpacing:.6,marginBottom:3}}>{isPush?"Message":"Body copy"}</div>
       <div style={{fontSize:12.5,color:"#4C1D95",lineHeight:1.5,whiteSpace:"pre-line"}}>{copy.body}</div>
@@ -5349,9 +5350,10 @@ function ApprovedCopyCard({copy,channel,product,image,hideImageCopy,leftExtras})
         <CopyBtn text={()=>copyTextFromOption(copy,channel)}/>
       </div>
     </div>
-    {/* Two columns — left: RTB + notes | right: creative mockup + body copy. Stacks on narrow screens. */}
+    {/* Three columns — left: RTB + notes | center: creative mockup | right: body copy. Stacks on narrow screens. */}
     <div style={{display:"flex",gap:14,flexWrap:"wrap",alignItems:"flex-start"}}>
       {leftCol}
+      {centerCol}
       {rightCol}
     </div>
     {showMock&&<WhatsAppMockup o={copy}image={image}product={product}imageHasCopy={!!image}onClose={()=>setShowMock(false)}/>}
