@@ -239,7 +239,7 @@ async function reviewCopy(text, ruleStr, user) {
   } catch (e) { console.error("[review] skipped:", e.message); }
   return JSON.stringify(Array.isArray(parsed) ? arr : arr[0]);
 }
-const SERVER_BUILD = "v29.95s (b68) - em dash (—) banned from copy: hard rule (11) + stripForbidden replaces it with a comma on every copy path. Prior (b66): /api/usage range filter; (b64) 2-Sonnet+ChatGPT, fail-loud.";
+const SERVER_BUILD = "v29.96s (b70) - grammar/language review now runs on the bake-off too (one Gemini call for the whole batch, _warn per option) — was single-model/compare only. Prior (b68): em-dash ban; (b66) usage range filter.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -2130,7 +2130,7 @@ app.post("/api/generate-variants", authMiddleware, async (req, res) => {
   try {
     const { system, prompt, limits } = req.body;
     const user = (req.user && (req.user.name || req.user.email)) || "system";
-    const { sys } = await assembleCopySys(system || "");
+    const { sys, ruleText } = await assembleCopySys(system || "");
     const p = (prompt || "") + "\n\nReturn EXACTLY ONE option as a JSON array containing a single object with the required fields.";
     const mk = (raw, model) => ({ raw, model });
     const fail = (model, error) => ({ raw: null, model, error });
@@ -2159,6 +2159,20 @@ app.post("/api/generate-variants", authMiddleware, async (req, res) => {
         try { v.raw = enforceCopyHardRules(v.raw, limits || null); } catch (e) {}
       }
     }
+    // b70: grammar/language review now runs on the bake-off too (it only ran on the single-model
+    // path before, so bake-off copy was never grammar-checked). ONE Gemini call for the whole batch
+    // — parse each variant, review them together, attach _warn back per option. Best-effort.
+    try {
+      const parseOne = (s) => { try { const x = JSON.parse(s); return Array.isArray(x) ? (x[0] || {}) : (x && typeof x === "object" ? x : { body: String(s) }); } catch (_) { return { body: String(s || "").slice(0, 600) }; } };
+      const idx = [];
+      const arr = [];
+      variants.forEach((v, i) => { if (v && typeof v.raw === "string" && v.raw) { idx.push(i); arr.push(parseOne(v.raw)); } });
+      if (arr.length) {
+        const reviewed = await reviewCopy(JSON.stringify(arr), ruleText, user);
+        let rev = null; try { rev = JSON.parse(reviewed); } catch (_) {}
+        if (Array.isArray(rev)) rev.forEach((o, k) => { const vi = idx[k]; if (vi != null && o && typeof o === "object") variants[vi].raw = JSON.stringify(o); });
+      }
+    } catch (e) { /* review is best-effort; never block generation */ }
     res.json({ variants });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
