@@ -239,7 +239,7 @@ async function reviewCopy(text, ruleStr, user) {
   } catch (e) { console.error("[review] skipped:", e.message); }
   return JSON.stringify(Array.isArray(parsed) ? arr : arr[0]);
 }
-const SERVER_BUILD = "v29.96s (b70) - grammar/language review now runs on the bake-off too (one Gemini call for the whole batch, _warn per option) — was single-model/compare only. Prior (b68): em-dash ban; (b66) usage range filter.";
+const SERVER_BUILD = "v29.97s (b71) - the two Sonnets now get different prompt lenses (focused=direct, creative=bolder/avoid-obvious) so they no longer produce identical copy. Prior (b70): grammar review on bake-off; (b68) em-dash ban.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -2132,13 +2132,18 @@ app.post("/api/generate-variants", authMiddleware, async (req, res) => {
     const user = (req.user && (req.user.name || req.user.email)) || "system";
     const { sys, ruleText } = await assembleCopySys(system || "");
     const p = (prompt || "") + "\n\nReturn EXACTLY ONE option as a JSON array containing a single object with the required fields.";
+    // b71: the two Sonnets get DIFFERENT lenses so they don't land on the same hook (temperature
+    // alone wasn't enough). Focused = the clearest, most direct take; Creative = a bolder, less
+    // obvious angle that must NOT reuse the predictable opening line.
+    const pFocused  = p + "\n\nSTYLE FOR THIS VERSION: the clearest, most DIRECT expression of the direction — plain, confident, benefit-first. State the core message simply and land it fast.";
+    const pCreative = p + "\n\nSTYLE FOR THIS VERSION: take a BOLDER, less obvious angle — a fresh hook, wordplay, tension, or a surprising turn on the same direction. DELIBERATELY AVOID the most predictable opening line and the most literal phrasing; make it distinctive while landing the same message.";
     const mk = (raw, model) => ({ raw, model });
     const fail = (model, error) => ({ raw: null, model, error });
     const runModel = async (which) => {
       try {
         if (which === "opus")    return mk(await generate(sys, p, "claude", undefined, "copy", user, "claude-opus-4-8"), "Claude Opus 4.8");
-        if (which === "sonnet")  return mk(await generate(sys, p, "claude", 0.4,  "copy", user, "claude-sonnet-4-6"), "Sonnet 4.6 (focused)");
-        if (which === "sonnet2") return mk(await generate(sys, p, "claude", 0.95, "copy", user, "claude-sonnet-4-6"), "Sonnet 4.6 (creative)");
+        if (which === "sonnet")  return mk(await generate(sys, pFocused, "claude", 0.4,  "copy", user, "claude-sonnet-4-6"), "Sonnet 4.6 (focused)");
+        if (which === "sonnet2") return mk(await generate(sys, pCreative, "claude", 0.95, "copy", user, "claude-sonnet-4-6"), "Sonnet 4.6 (creative)");
         if (which === "haiku")   return mk(await generate(sys, p, "claude", undefined, "copy", user, "claude-haiku-4-5"), "Claude Haiku 4.5");
         if (which === "gemini")  return mk(await generate(sys, p, "gemini", undefined, "copy", user), "Gemini Flash");
         if (which === "qwen")   { const raw = await callQwen(sys, p, user);   return raw == null ? fail("Qwen 3.7", "OPENROUTER_API_KEY not set / not working") : mk(raw, "Qwen 3.7"); }
