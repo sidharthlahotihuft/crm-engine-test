@@ -153,7 +153,7 @@ const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // ===== Supabase egress control (paused image library/suggestions; reversible) =====
 const ENABLE_IMAGE_SUGGESTIONS=false; // brief-form image suggestions fetch — OFF to cut egress
 const ENABLE_LIBRARY_THUMBS=false;    // auto-load full-res library thumbnails on open — OFF. Explicit preview still loads one image.
-const BUILD="v42.17 (b114) - design approved-copy card is now THREE columns: left = RTB + notes, center = creative mockup (centered), right = body copy. (Was two columns with the mock+body crammed on the right and a big empty left when there was no RTB/note.) Stacks on narrow screens. Builds on b113 and prior.";
+const BUILD="v42.18 (b115) - fixed the three-column design card crushing the creative mock: the center (mock) column is now a fixed 300px (minWidth 280) so the square renders at full size instead of collapsing and wrapping the RTB footer one word per line; left (RTB/notes) and right (body) columns flex around it with sensible min-widths (180/200) and wrap to a new row on narrow screens. Builds on b114 and prior.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -2267,7 +2267,7 @@ function App(){
         <div style={{width:34,height:34,borderRadius:9,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={18}color="#fff"/></div>
         <div style={{lineHeight:1.15,minWidth:0}}>
           <div style={{fontWeight:800,fontSize:15,letterSpacing:-.3}}>CRM Engine</div>
-          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b114</div>
+          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b115</div>
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"12px 10px",display:"flex",flexDirection:"column",gap:3}}>
@@ -5322,7 +5322,7 @@ function ApprovedCopyCard({copy,channel,product,image,hideImageCopy,leftExtras})
   const isPush=isPushChannel(channel);
   if(!copy)return null;
   const hasRtb=!hideImageCopy&&Array.isArray(copy.rtbsSelected)&&copy.rtbsSelected.length>0;
-  const leftCol=<div style={{flex:"1 1 0",minWidth:0,display:"flex",flexDirection:"column",gap:8}}>
+  const leftCol=<div style={{flex:"1 1 200px",minWidth:180,display:"flex",flexDirection:"column",gap:8}}>
     {hasRtb&&<div style={{background:C.tealSoft,border:`1px solid ${C.teal}55`,borderRadius:8,padding:"7px 10px"}}>
       <div style={{fontSize:9,fontWeight:800,color:C.teal,textTransform:"uppercase",letterSpacing:.6,marginBottom:3}}>RTB on the image</div>
       <div style={{fontWeight:600,fontSize:13,lineHeight:1.4,color:"#0F766E"}}>{copy.rtbsSelected.join(" · ")}</div>
@@ -5330,10 +5330,10 @@ function ApprovedCopyCard({copy,channel,product,image,hideImageCopy,leftExtras})
     {leftExtras}
     {!hasRtb&&!leftExtras&&<div style={{fontSize:11.5,color:C.sub,fontStyle:"italic",padding:"6px 2px"}}>No RTB or notes for this asset.</div>}
   </div>;
-  const centerCol=<div style={{flex:"1 1 0",minWidth:0,display:"flex",flexDirection:"column",gap:10,alignItems:"center"}}>
+  const centerCol=<div style={{flex:"0 0 300px",minWidth:280,display:"flex",flexDirection:"column",gap:10,alignItems:"center"}}>
     {!isPush&&copy.header&&<div style={{width:"100%",display:"flex",justifyContent:"center"}}><CreativeCard o={copy} product={product}/></div>}
   </div>;
-  const rightCol=<div style={{flex:"1 1 0",minWidth:0,display:"flex",flexDirection:"column",gap:10}}>
+  const rightCol=<div style={{flex:"1 1 220px",minWidth:200,display:"flex",flexDirection:"column",gap:10}}>
     {copy.body&&<div>
       <div style={{fontSize:9,fontWeight:800,color:"#0F766E",textTransform:"uppercase",letterSpacing:.6,marginBottom:3}}>{isPush?"Message":"Body copy"}</div>
       <div style={{fontSize:12.5,color:"#4C1D95",lineHeight:1.5,whiteSpace:"pre-line"}}>{copy.body}</div>
