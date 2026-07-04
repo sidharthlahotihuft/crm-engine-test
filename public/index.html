@@ -153,7 +153,7 @@ const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // ===== Supabase egress control (paused image library/suggestions; reversible) =====
 const ENABLE_IMAGE_SUGGESTIONS=false; // brief-form image suggestions fetch — OFF to cut egress
 const ENABLE_LIBRARY_THUMBS=false;    // auto-load full-res library thumbnails on open — OFF. Explicit preview still loads one image.
-const BUILD="v42.11 (b108) - removed the redundant bottom Edit copy button from each option card; the top-right pencil icon (b105) already opens the edit menu. Action bar is now Note + Send for approval (+ Unselect when selected). Builds on b107 and prior.";
+const BUILD="v42.12 (b109) - polished the Idea line in the Copy panel: it now sits in a proper card (white background, coral left-accent, rounded, padded) with the Idea label as a filled coral chip and a cleaner Full brief button - instead of the flat floating text it was before. Builds on b108 and prior.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -2267,7 +2267,7 @@ function App(){
         <div style={{width:34,height:34,borderRadius:9,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={18}color="#fff"/></div>
         <div style={{lineHeight:1.15,minWidth:0}}>
           <div style={{fontWeight:800,fontSize:15,letterSpacing:-.3}}>CRM Engine</div>
-          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b108</div>
+          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b109</div>
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"12px 10px",display:"flex",flexDirection:"column",gap:3}}>
@@ -4299,10 +4299,10 @@ function BriefSummaryCard({active,activeBrief,copyRules,busy,refineFor,gen,genDi
       ?<Card style={{padding:"14px 16px",marginBottom:6}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}><div style={{fontWeight:700,fontSize:13.5,display:"flex",alignItems:"center",gap:6}}><PenLine size={14}color={C.coral}/>Edit the brief</div><Btn small variant="ghost"onClick={()=>setEditBrief(false)}>Close</Btn></div><EditBriefForm brief={activeBrief}active={active}patch={patch}onDone={()=>setEditBrief(false)}/></Card>
       :<React.Fragment>
       {/* Row 1 — idea (product name already shown in the collapsed row header) */}
-      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:showRows?6:0}}>
-        <span style={{fontSize:9.5,fontWeight:800,color:C.coral,textTransform:"uppercase",letterSpacing:.5,flexShrink:0}}>Idea</span>
-        <span title={asText(activeBrief.idea)} style={{fontWeight:700,fontSize:15,color:C.ink,whiteSpace:showRows&&expanded?"normal":"nowrap",overflow:"hidden",textOverflow:"ellipsis",minWidth:0,flex:1,lineHeight:1.35}}>{asText(activeBrief.idea)||active.product||p.product||"—"}</span>
-        <button onClick={toggle}style={{marginLeft:"auto",flexShrink:0,background:"none",border:`1px solid ${C.line}`,borderRadius:6,cursor:"pointer",color:C.sub,fontSize:11,padding:"3px 8px",display:"flex",alignItems:"center",gap:3}}>{expanded?<><ChevronDown size={11}/>Less</>:<><Eye size={11}/>Full brief</>}</button>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:showRows?8:0,padding:"9px 13px",background:"#fff",border:`1px solid ${C.line}`,borderLeft:`3px solid ${C.coral}`,borderRadius:10}}>
+        <span style={{fontSize:9.5,fontWeight:800,color:"#fff",background:C.coral,textTransform:"uppercase",letterSpacing:.5,flexShrink:0,padding:"2px 7px",borderRadius:5}}>Idea</span>
+        <span title={asText(activeBrief.idea)} style={{fontWeight:700,fontSize:14.5,color:C.ink,whiteSpace:showRows&&expanded?"normal":"nowrap",overflow:"hidden",textOverflow:"ellipsis",minWidth:0,flex:1,lineHeight:1.4}}>{asText(activeBrief.idea)||active.product||p.product||"—"}</span>
+        <button onClick={toggle}style={{marginLeft:"auto",flexShrink:0,background:C.paper,border:`1px solid ${C.line}`,borderRadius:7,cursor:"pointer",color:C.sub,fontSize:11,fontWeight:600,padding:"4px 9px",display:"flex",alignItems:"center",gap:4}}>{expanded?<><ChevronDown size={12}/>Less</>:<><Eye size={12}/>Full brief</>}</button>
       </div>
 
       {showRows&&<React.Fragment>
