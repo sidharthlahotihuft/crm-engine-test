@@ -153,7 +153,7 @@ const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // ===== Supabase egress control (paused image library/suggestions; reversible) =====
 const ENABLE_IMAGE_SUGGESTIONS=false; // brief-form image suggestions fetch — OFF to cut egress
 const ENABLE_LIBRARY_THUMBS=false;    // auto-load full-res library thumbnails on open — OFF. Explicit preview still loads one image.
-const BUILD="v42.4 (b101) - APPROVED TILE PREVIEW: added a Preview button (Preview as WhatsApp / Preview as notification per channel) to the approved-copy tile next to Edit copy - it was missing after the b99 rebuild. Verified the full 8pm batch is present: b91 brief filters + no calendar, b92/b97 KEY legend gone from all pages, b93 guided-only new brief, b94 dashboard cleanup, b95 brand_team page lock, b96 brand-asset rulebook+audiences, b98 category banner removed, b99 copy panel rebuild, b100 collapse-on-selection + Row2 preview + dedupe. Builds on prior.";
+const BUILD="v42.6 (b103) - COPY PANEL POLISH: (1) the big second product-name line in the open panel now shows the IDEA instead of repeating the product name; removed the now-duplicate Row3 idea block. (2) Row2 Preview is a WA-icon + short Preview label; Full brief toggle moved onto Row2. (3) option cards: removed Copy text and the inline Preview from the footer; kept Send for approval + Edit copy; Preview is now an ICON at the top-right of each card; card heights equalized (row stretches, card is a flex column, action bar pinned to the bottom so CTAs line up). (4) removed the Pick-one-option-below / straight-to-Ilena line. Builds on b102 (dashboard week view) and prior.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -2267,7 +2267,7 @@ function App(){
         <div style={{width:34,height:34,borderRadius:9,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={18}color="#fff"/></div>
         <div style={{lineHeight:1.15,minWidth:0}}>
           <div style={{fontWeight:800,fontSize:15,letterSpacing:-.3}}>CRM Engine</div>
-          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b101</div>
+          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b103</div>
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"12px 10px",display:"flex",flexDirection:"column",gap:3}}>
@@ -2461,6 +2461,33 @@ function ReportUploader({campaign,me,onUploaded}){
 
 
 /* ===== Calendar View ==================================================== */
+function WeekStrip({campaigns,onOpen,readyOnly}){
+  const[weekOffset,setWeekOffset]=useState(0);
+  const today=new Date();today.setHours(0,0,0,0);
+  // Start of the current week (Sunday), shifted by weekOffset weeks
+  const start=new Date(today);start.setDate(today.getDate()-today.getDay()+weekOffset*7);
+  const days=[];for(let i=0;i<7;i++){const d=new Date(start);d.setDate(start.getDate()+i);days.push(d);}
+  const byDay=(d)=>(campaigns||[]).filter(c=>{if(!c.go_live_date)return false;const g=new Date(c.go_live_date);g.setHours(0,0,0,0);return g.getTime()===d.getTime();}).sort((a,b)=>(b.stage==="done"?1:0)-(a.stage==="done"?1:0));
+  const DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const stageCol={brief:C.coral,content:C.purple,brand_review:"#9333EA",design:C.teal,done:C.green};
+  const fmtRange=days[0].toLocaleDateString("en-IN",{day:"numeric",month:"short"})+" – "+days[6].toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"});
+  return<div>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+      <button onClick={()=>setWeekOffset(w=>w-1)}style={{background:"#fff",border:`1px solid ${C.line}`,borderRadius:8,padding:"4px 12px",cursor:"pointer",fontSize:14,fontWeight:700,color:C.ink}}>←</button>
+      <div style={{fontSize:14,fontWeight:800,color:C.ink}}>{weekOffset===0?"This week":fmtRange} <span style={{fontSize:11,fontWeight:600,color:C.sub}}>· {fmtRange}</span></div>
+      <button onClick={()=>setWeekOffset(w=>w+1)}style={{background:"#fff",border:`1px solid ${C.line}`,borderRadius:8,padding:"4px 12px",cursor:"pointer",fontSize:14,fontWeight:700,color:C.ink}}>→</button>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6}}>
+      {days.map((d,i)=>{const items=byDay(d);const isToday=d.getTime()===today.getTime();return<div key={i}style={{minWidth:0,minHeight:120,border:`1px solid ${isToday?C.coral:C.line}`,borderWidth:isToday?2:1,borderRadius:10,background:isToday?"#FFF7F5":"#fff",padding:8,overflow:"hidden"}}>
+        <div style={{fontSize:10.5,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.3}}>{DOW[d.getDay()]}</div>
+        <div style={{fontSize:15,fontWeight:800,color:isToday?C.coral:C.ink,marginBottom:6}}>{d.getDate()}</div>
+        {items.length===0?<div style={{fontSize:10.5,color:C.sub,opacity:.5}}>—</div>:items.slice(0,6).map(c=>{const _ready=c.stage==="done";const _click=readyOnly&&!_ready;return<div key={c.id}onClick={()=>{if(_click)return;onOpen(c.id,readyOnly?"done":undefined);}}title={c.product||c.name}style={{fontSize:10,fontWeight:600,padding:"3px 5px",borderRadius:5,marginBottom:3,background:(stageCol[c.stage]||C.sub)+"18",color:stageCol[c.stage]||C.sub,cursor:_click?"default":"pointer",opacity:_click?.55:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.3}}>{humanizeToken(c.product)||parseName(c.name).product||"Asset"}</div>;})}
+        {items.length>6&&<div style={{fontSize:10,color:C.sub,marginTop:1}}>+{items.length-6} more</div>}
+      </div>;})}
+    </div>
+  </div>;
+}
+
 function CalendarView({campaigns,onOpen,filterStage,readyOnly}){
   const now=new Date();
   const[month,setMonth]=useState(now.getMonth());
@@ -2907,30 +2934,10 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:18}}>
       <div><Eyebrow>Dashboard</Eyebrow><h1 style={{margin:"4px 0 0",fontSize:26,fontWeight:800}}>Hi {firstName},</h1><div style={{fontSize:13.5,color:C.sub,marginTop:3}}>Your tasks and approvals — here's where each one stands.</div></div>
       <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
-        {!isBusiness(me)&&<div style={{display:"flex",alignItems:"center",gap:6,border:`1px solid ${C.line}`,borderRadius:8,padding:"3px 8px",background:"#fff"}}>
-          <CalendarIcon size={13}color={C.sub}/>
-          <select value={period}onChange={e=>setPeriod(e.target.value)}style={{border:"none",background:"transparent",fontSize:12.5,fontWeight:600,color:C.ink,outline:"none",cursor:"pointer"}}>
-            <option value="7d">Last 7 days</option>
-            <option value="30d">Last 30 days</option>
-            <option value="90d">Last 90 days</option>
-            <option value="all">All time</option>
-            <option value="custom">Custom range…</option>
-          </select>
-          {period==="custom"&&<>
-            <input type="date"value={cFrom}max={cTo||undefined}onChange={e=>setCFrom(e.target.value)}style={{border:`1px solid ${C.line}`,borderRadius:6,padding:"3px 6px",fontSize:12,color:C.ink,outline:"none"}}/>
-            <span style={{color:C.sub,fontSize:12}}>→</span>
-            <input type="date"value={cTo}min={cFrom||undefined}onChange={e=>setCTo(e.target.value)}style={{border:`1px solid ${C.line}`,borderRadius:6,padding:"3px 6px",fontSize:12,color:C.ink,outline:"none"}}/>
-          </>}
-        </div>}
-        {!isBusiness(me)&&<div style={{display:"flex",border:`1px solid ${C.line}`,borderRadius:8,overflow:"hidden"}}>
-          <button onClick={()=>setView("list")}style={{padding:"6px 14px",border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:view==="list"?C.navy:"#fff",color:view==="list"?"#fff":C.sub,display:"flex",alignItems:"center",gap:5}}><LayoutDashboard size={13}/>List</button>
-          <button onClick={()=>setView("calendar")}style={{padding:"6px 14px",border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:view==="calendar"?C.navy:"#fff",color:view==="calendar"?"#fff":C.sub,display:"flex",alignItems:"center",gap:5}}><CalendarIcon size={13}/>Calendar</button>
-        </div>}
         {canCreateBrief(me)&&<Btn onClick={onNew}><Plus size={16}/>New asset</Btn>}
       </div>
     </div>
-    {!isBusiness(me)&&<div style={{fontSize:12,color:C.sub,marginBottom:10,marginTop:-8}}>Showing assets created in the <b style={{color:C.ink}}>{periodLabel}</b> · {campaigns.length} of {allCampaigns.length}</div>}
-    {/* KEY legend removed from dashboard */}
+    {/* period line + KEY legend removed from dashboard */}
     {/* ===== Task pipeline (content + design teams) ===== */}
     {!isBusiness(me)&&(()=>{
       const _na=(campaigns||[]).filter(c=>!isArchived(c));
@@ -2988,6 +2995,10 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
         </span>
       </div>)}
     </Card>}
+    {!isBusiness(me)&&<div style={{marginTop:4,marginBottom:8}}>
+      <div style={{fontSize:12,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.5,margin:"8px 2px 10px"}}>Go-live calendar · this week</div>
+      <WeekStrip campaigns={(campaigns||[]).filter(c=>!isArchived(c))}onOpen={onOpen}readyOnly={false}/>
+    </div>}
     {isBusiness(me)&&(()=>{
       const _today=new Date();_today.setHours(0,0,0,0);
       const _dayNum=(c)=>{if(!c.go_live_date)return Infinity;const d=new Date(c.go_live_date);d.setHours(0,0,0,0);return Math.round((d-_today)/86400000);};
@@ -3029,7 +3040,7 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
     {/* Business team: show the go-live calendar below Assets ready. No needs-attention / completed sections. */}
     <div style={{marginTop:4}}>
       <div style={{fontSize:12,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.5,margin:"8px 2px 10px"}}>Go-live calendar</div>
-      <CalendarView campaigns={(campaigns||[]).filter(c=>!isArchived(c))}onOpen={onOpen}readyOnly={isBusiness(me)}/>
+      <WeekStrip campaigns={(campaigns||[]).filter(c=>!isArchived(c))}onOpen={onOpen}readyOnly={isBusiness(me)}/>
     </div>
   </div>;
 }
@@ -4266,27 +4277,24 @@ function BriefSummaryCard({active,activeBrief,copyRules,busy,refineFor,gen,genDi
     {editBrief
       ?<Card style={{padding:"14px 16px",marginBottom:6}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}><div style={{fontWeight:700,fontSize:13.5,display:"flex",alignItems:"center",gap:6}}><PenLine size={14}color={C.coral}/>Edit the brief</div><Btn small variant="ghost"onClick={()=>setEditBrief(false)}>Close</Btn></div><EditBriefForm brief={activeBrief}active={active}patch={patch}onDone={()=>setEditBrief(false)}/></Card>
       :<React.Fragment>
-      {/* Row 1 — product title */}
+      {/* Row 1 — idea (product name already shown in the collapsed row header) */}
       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:showRows?6:0}}>
-        <span style={{fontWeight:800,fontSize:16,color:C.ink,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",minWidth:0}}>{active.product||p.product||active.name||"—"}</span>
+        <span style={{fontSize:9.5,fontWeight:800,color:C.coral,textTransform:"uppercase",letterSpacing:.5,flexShrink:0}}>Idea</span>
+        <span title={asText(activeBrief.idea)} style={{fontWeight:700,fontSize:15,color:C.ink,whiteSpace:showRows&&expanded?"normal":"nowrap",overflow:"hidden",textOverflow:"ellipsis",minWidth:0,flex:1,lineHeight:1.35}}>{asText(activeBrief.idea)||active.product||p.product||"—"}</span>
         {autoCollapsed&&<button onClick={toggle}style={{marginLeft:"auto",flexShrink:0,background:"none",border:`1px solid ${C.line}`,borderRadius:6,cursor:"pointer",color:C.sub,fontSize:11,padding:"3px 8px",display:"flex",alignItems:"center",gap:3}}>{expanded?<><ChevronDown size={11}/>Less</>:<><ChevronRight size={11}/>Details</>}</button>}
       </div>
 
       {showRows&&<React.Fragment>
-      {/* Row 2 — channel · brief by · brief date · live date · Preview */}
+      {/* Row 2 — channel · brief by · brief date · live date · Preview · Full brief */}
       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,fontSize:12,color:C.sub,flexWrap:"wrap"}}>
         <span style={{display:"inline-flex",alignItems:"center",gap:4,fontWeight:700,color:isWAchan?"#0F766E":C.ink}}>{isWAchan?<MessageSquare size={13}/>:isPushChannel(chan)?<BellIcon size={13}/>:<Send size={13}/>}{chan}</span>
         {briefBy&&<span>· Brief by <b style={{color:C.ink,fontWeight:700}}>{briefBy}</b></span>}
         {active.created_at&&<span>· Brief <b style={{color:C.ink,fontWeight:700}}>{fmtDate(active.created_at)}</b></span>}
         {active.go_live_date&&<span>· Live <b style={{color:C.ink,fontWeight:700}}>{fmtDate(active.go_live_date)}</b></span>}
-        {isWAchan&&opts&&opts.length>0&&onPreview&&<button onClick={()=>onPreview(opts[active?.data?.selectedCopyIdx!=null?active.data.selectedCopyIdx:0])}style={{marginLeft:"auto",flexShrink:0,display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,fontWeight:700,color:"#0b141a",background:"#00a884",border:"none",borderRadius:7,padding:"4px 10px",cursor:"pointer"}}><MessageSquare size={12}/>Preview as WhatsApp</button>}
-      </div>
-
-      {/* Row 3 — idea + Full brief toggle */}
-      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,padding:"7px 12px",background:"#fff",border:`1px solid ${C.line}`,borderLeft:`3px solid ${C.coral}`,borderRadius:8}}>
-        <span style={{fontSize:9.5,fontWeight:800,color:C.coral,textTransform:"uppercase",letterSpacing:.5,flexShrink:0}}>Idea</span>
-        <span title={asText(activeBrief.idea)} onClick={toggle} style={{fontSize:12.5,color:C.ink,fontWeight:600,whiteSpace:expanded?"normal":"nowrap",overflow:"hidden",textOverflow:"ellipsis",flex:1,minWidth:0,cursor:"pointer",lineHeight:1.4}}>{asText(activeBrief.idea)}</span>
-        <button onClick={toggle}style={{marginLeft:"auto",flexShrink:0,background:"none",border:`1px solid ${C.line}`,borderRadius:6,cursor:"pointer",color:C.sub,fontSize:11,padding:"3px 8px",display:"flex",alignItems:"center",gap:3}}>{expanded?<><ChevronDown size={11}/>Less</>:<><Eye size={11}/>Full brief</>}</button>
+        <span style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+          {isWAchan&&opts&&opts.length>0&&onPreview&&<button onClick={()=>onPreview(opts[active?.data?.selectedCopyIdx!=null?active.data.selectedCopyIdx:0])}style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,fontWeight:700,color:"#0b141a",background:"#00a884",border:"none",borderRadius:7,padding:"4px 10px",cursor:"pointer"}}><MessageSquare size={12}/>Preview</button>}
+          <button onClick={toggle}style={{background:"none",border:`1px solid ${C.line}`,borderRadius:6,cursor:"pointer",color:C.sub,fontSize:11,padding:"3px 8px",display:"flex",alignItems:"center",gap:3}}>{expanded?<><ChevronDown size={11}/>Less</>:<><Eye size={11}/>Full brief</>}</button>
+        </span>
       </div>
 
       <BriefLinksInline brief={activeBrief}/>
@@ -5152,9 +5160,9 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
           {sel!=null&&<button onClick={()=>setShowAll(v=>!v)}style={{display:"flex",alignItems:"center",gap:5,background:"none",border:"none",cursor:"pointer",color:C.sub,fontSize:12.5,fontWeight:600,marginBottom:8}}>{showAll?<><ChevronDown size={13}/>Hide other options</>:<><Eye size={13}/>See other {opts.length-1} options</>}</button>}
           {opts&&Array.isArray(c.data?.copyErrors)&&c.data.copyErrors.length>0&&<div style={{marginBottom:10,background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:10,padding:"9px 13px"}}><div style={{fontSize:11.5,fontWeight:800,color:"#B45309",display:"flex",alignItems:"center",gap:6,marginBottom:3}}><AlertCircle size={13}/>{c.data.copyErrors.length} model{c.data.copyErrors.length>1?"s":""} didn’t return copy</div><div style={{fontSize:11.5,color:"#92400E",lineHeight:1.5}}>{c.data.copyErrors.map((e,i)=><span key={i}><b>{asText(e.model)}</b> — {asText(e.error)}{i<c.data.copyErrors.length-1?"; ":""}</span>)}. If this is a key/config issue, fix it in Vercel → Settings → Environment Variables, redeploy, then regenerate.</div></div>}
           {opts&&opts.length>0&&c.data?.selectedDir&&<div style={{marginBottom:10,background:"#FFF4ED",border:`1px solid ${C.coral}33`,borderRadius:10,padding:"9px 13px",display:"flex",alignItems:"flex-start",gap:10}}><div style={{flex:1,minWidth:0}}><div style={{fontSize:10,fontWeight:800,color:C.coral,textTransform:"uppercase",letterSpacing:.5,marginBottom:2}}>Direction</div><div style={{fontSize:12.5,fontWeight:700,color:C.ink}}>{asText(c.data.selectedDir.label)}{sel==null&&c.data.selectedDir.angle?<span style={{fontWeight:500,color:C.sub}}> — {asText(c.data.selectedDir.angle)}</span>:null}</div></div><button onClick={()=>{patch(c.id,{data:{...(c.data||{}),copyOptions:null,copyErrors:null,selectedCopyIdx:null,selectedDir:null}});setShowAll(false);}}style={{flexShrink:0,background:"#fff",border:`1px solid ${C.coral}55`,borderRadius:7,padding:"4px 10px",fontSize:11.5,fontWeight:700,color:C.coral,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}><RefreshCw size={11}/>Different direction</button>{busy?<Spin label="…"/>:<button onClick={()=>gen(c.data.selectedDir)}style={{flexShrink:0,background:C.coral,border:"none",borderRadius:7,padding:"4px 10px",fontSize:11.5,fontWeight:700,color:"#fff",cursor:"pointer",display:"flex",alignItems:"center",gap:4}}><RefreshCw size={11}/>Regenerate</button>}</div>}
-          {sel==null&&opts&&opts.length>1&&<div style={{marginBottom:10,fontSize:12.5,color:C.sub,background:C.paper,border:`1px solid ${C.line}`,borderRadius:10,padding:"9px 13px"}}>Pick <b>one</b> option below — it goes straight to Ilena for approval.</div>}
-          {(sel==null||showAll)&&<div style={{display:"flex",gap:12,marginBottom:10,alignItems:"flex-start"}}>
-            {opts.map((o,i)=>{if(sel!=null&&i===sel)return null;return<div key={i}style={{flex:"1 1 0",minWidth:0}}><ContentCard o={o}idx={i}sel={false}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}onFixFeedback={fixPerFeedback}onEditSave={editDirectly}onResolveWarn={resolveWarnAt}onRtbToggle={toggleRtb}channel={c.channel}product={c.product}anySelected={sel!=null}sentBack={c.data?.sentBack}isResend={!!c.data?.lastRejectReason}image={mockImage}/></div>;})}</div>}
+          {/* 'Pick one option below' line removed */}
+          {(sel==null||showAll)&&<div style={{display:"flex",gap:12,marginBottom:10,alignItems:"stretch"}}>
+            {opts.map((o,i)=>{if(sel!=null&&i===sel)return null;return<div key={i}style={{flex:"1 1 0",minWidth:0,display:"flex"}}><ContentCard o={o}idx={i}sel={false}refineFor={refineFor}refineText={refineText}setRefineFor={setRefineFor}setRefineText={setRefineText}busy={busy}onSelect={select}onRefine={refine}onFixFeedback={fixPerFeedback}onEditSave={editDirectly}onResolveWarn={resolveWarnAt}onRtbToggle={toggleRtb}channel={c.channel}product={c.product}anySelected={sel!=null}sentBack={c.data?.sentBack}isResend={!!c.data?.lastRejectReason}image={mockImage}/></div>;})}</div>}
           {showCompare&&<div style={{marginBottom:10,border:"1.5px solid #C7D2FE",background:"#EEF2FF",borderRadius:12,padding:"11px 13px"}}>
             <div style={{fontSize:12.5,fontWeight:800,color:"#3730A3",display:"flex",alignItems:"center",gap:6,marginBottom:3}}><Sparkles size={13}/>Model A/B — which copy performed better?</div>
             <div style={{fontSize:11.5,color:"#4338CA",marginBottom:9}}>Each option is from a different model — look for the model tag on each card. Pick the one that performed best:</div>
@@ -5626,6 +5634,7 @@ function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,
   return<div style={{
     border:`2px solid ${sel?C.purple:C.line}`,borderRadius:14,overflow:"hidden",
     background:sel?"#FAF5FF":"#fff",transition:"border-color .15s",position:"relative",
+    display:"flex",flexDirection:"column",width:"100%",
   }}>
     {busy&&refineFor===idx&&<div style={{position:"absolute",inset:0,background:"rgba(250,245,255,.82)",zIndex:5,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:8,backdropFilter:"blur(1px)"}}>
       <RefreshCw size={22}color={C.purple}style={{animation:"spin 1s linear infinite"}}/>
@@ -5640,6 +5649,8 @@ function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,
           : <span style={{fontSize:11.5,fontWeight:700,color:sel?"#fff":dc.text}}>Option</span>}
       </span>
       <span style={{display:"flex",alignItems:"center",gap:8}}>
+        {isWAchan&&<button onClick={(e)=>{e.stopPropagation();setShowWA(true);}}title="Preview this copy on WhatsApp"style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:24,height:24,borderRadius:6,color:sel?"#fff":"#0b141a",background:sel?"rgba(255,255,255,.18)":"#25D36622",border:`1px solid ${sel?"rgba(255,255,255,.35)":"#25D36655"}`,cursor:"pointer"}}><MessageSquare size={13}/></button>}
+        {isPushChannel(channel)&&<button onClick={(e)=>{e.stopPropagation();setShowPush(true);}}title="Preview this copy as a notification"style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:24,height:24,borderRadius:6,color:sel?"#fff":C.navy,background:sel?"rgba(255,255,255,.18)":C.navy+"12",border:`1px solid ${sel?"rgba(255,255,255,.35)":C.navy+"40"}`,cursor:"pointer"}}><BellIcon size={13}/></button>}
         {warns.length>0&&<button onClick={(e)=>{e.stopPropagation();setShowWarns(v=>!v);setOpen(true);}} title="Possible language issues — tap to review" style={{display:"flex",alignItems:"center",gap:3,fontSize:10,fontWeight:800,color:"#B45309",background:showWarns?"#FDE68A":"#FEF3C7",border:"1px solid #FCD34D",borderRadius:6,padding:"1px 6px",cursor:"pointer"}}><AlertCircle size={10}/>{warns.length}{showWarns?<ChevronDown size={10}/>:<ChevronRight size={10}/>}</button>}
         {sel&&<span style={{color:"#fff",fontSize:11,fontWeight:700,display:"flex",alignItems:"center",gap:4}}><CheckCircle2 size={12}/>Selected</span>}
         {open?<ChevronDown size={15}color={sel?"#fff":dc.text}/>:<ChevronRight size={15}color={sel?"#fff":dc.text}/>}
@@ -5748,15 +5759,12 @@ function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,
           <button onClick={()=>setEditMode(null)}style={{marginTop:8,fontSize:11,color:C.sub,background:"none",border:"none",cursor:"pointer",padding:0}}>✕ Cancel</button>
         </div>
       /* Default action bar */
-      :<div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+      :<div style={{display:"flex",gap:7,flexWrap:"wrap",marginTop:"auto"}}>
           {!sel&&(sentBack
             ?<button onClick={()=>onFixFeedback&&onFixFeedback(idx)}title="Let AI revise this copy to address the reviewer's feedback, then review and resend"style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,fontWeight:800,color:"#fff",background:C.purple,border:"none",borderRadius:8,padding:"6px 11px",cursor:"pointer"}}><Sparkles size={12}/>Fix per feedback</button>
             :<Btn small variant="dark"onClick={()=>onSelect(idx)}><CheckCircle2 size={12}/>{isResend?"Send again for approval":"Send for approval"}</Btn>)}
           {sel&&<Btn small variant="ghost"onClick={()=>onSelect(null)}><X size={12}/>Unselect</Btn>}
           <Btn small variant="ghost"onClick={()=>setEditMode("menu")}><PenLine size={13}/>Edit copy</Btn>
-          {isWAchan&&<button onClick={()=>setShowWA(true)}title="Preview this copy on WhatsApp"style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,fontWeight:700,color:"#0b141a",background:"#25D36622",border:"1px solid #25D36655",borderRadius:8,padding:"6px 10px",cursor:"pointer"}}><MessageSquare size={13}/>Preview</button>}
-          {isPushChannel(channel)&&<button onClick={()=>setShowPush(true)}title="Preview this copy as a notification"style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,fontWeight:700,color:C.navy,background:C.navy+"12",border:`1px solid ${C.navy}40`,borderRadius:8,padding:"6px 10px",cursor:"pointer"}}><BellIcon size={13}/>Preview</button>}
-          <CopyBtn text={()=>copyTextFromOption(o)}/>
         </div>}
       {showWA&&<WhatsAppMockup o={o}image={image}product={null}onClose={()=>setShowWA(false)}/>}
       {showPush&&<PushMockup o={o}image={image}product={null}onClose={()=>setShowPush(false)}/>}
