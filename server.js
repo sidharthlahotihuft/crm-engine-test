@@ -116,12 +116,27 @@ const applyBrandRules = (s) => {
   return out;
 };
 // Truncate to a hard char cap on a word boundary, no mid-word cut, no dangling punctuation.
-const clampLen = (s, max) => {
+// Trailing function/connector words that read as "cut off" if a clamp ends on them.
+const _DANGLER_RE = /[\s,;:.\u2013\u2014-]*\s(?:a|an|the|to|for|of|and|or|but|with|without|in|on|at|by|from|as|is|are|was|were|be|that|this|these|those|your|our|their|its|his|her|my|so|even|more|most|just|only|&)$/i;
+const _stripTail = (t) => {
+  t = t.replace(/[\s,;:.\u2013\u2014\-&]+$/, "").trim();
+  for (let i = 0; i < 4; i++) { const nt = t.replace(_DANGLER_RE, "").replace(/[\s,;:.\u2013\u2014\-&]+$/, "").trim(); if (nt === t || !nt) break; t = nt; }
+  return t;
+};
+const clampLen = (s, max, smart) => {
   if (typeof s !== "string" || !max || s.length <= max) return s;
   let t = s.slice(0, max);
+  if (smart) {
+    // 1) prefer ending on a complete sentence within the window
+    const sent = Math.max(t.lastIndexOf(". "), t.lastIndexOf("! "), t.lastIndexOf("? "), /[.!?]$/.test(t) ? t.length - 1 : -1);
+    if (sent > max * 0.45) return t.slice(0, sent + 1).trim();
+    // 2) else end on a clean clause boundary (em dash / semicolon / comma)
+    const clause = Math.max(t.lastIndexOf(" \u2014 "), t.lastIndexOf("\u2014 "), t.lastIndexOf("; "), t.lastIndexOf(", "));
+    if (clause > max * 0.5) return _stripTail(t.slice(0, clause));
+  }
   const sp = t.lastIndexOf(" ");
-  if (sp > max * 0.55) t = t.slice(0, sp);
-  return t.replace(/[\s,;:.\u2013\u2014-]+$/, "").trim();
+  if (sp > max * 0.5) t = t.slice(0, sp);
+  return _stripTail(t); // never leave a stranded "…for" / "…and" / "…artificial" tail
 };
 // Universal safe maxima always applied; `limits` (from the client, channel-aware) tightens them.
 const HARD_MAX = { subject: 60, cta: 30, headerLine: 90 };
@@ -136,7 +151,7 @@ const enforceCopyLimits = (opt, L) => {
       ? clampLen(o.header, L.titleMax)
       : o.header.split(/\r?\n/).map(ln => clampLen(ln, HARD_MAX.headerLine)).join("\n");
   }
-  if (L.body && typeof o.body === "string") o.body = clampLen(o.body, L.body); // push body HARD cap (70); email/WhatsApp bodies are long-form (no cap sent)
+  if (L.body && typeof o.body === "string") o.body = clampLen(o.body, L.body, true); // push body HARD cap (70), smart backoff to a complete thought; email/WhatsApp bodies long-form (no cap)
   return o;
 };
 // The single chokepoint: strip forbidden tokens everywhere + clamp lengths.
@@ -221,7 +236,7 @@ async function reviewCopy(text, ruleStr, user) {
   } catch (e) { console.error("[review] skipped:", e.message); }
   return JSON.stringify(Array.isArray(parsed) ? arr : arr[0]);
 }
-const SERVER_BUILD = "v29.89s (b59) - push title now HARD-capped (titleMax) + body 70 + no CTA; steer/refine now runs the length+token clamp too (was copy-only). All copy paths (variants, generate, steer, compare) hard-enforce caps on every channel. Prior (b58): variants clamp; (b55) qwen lineup + attribution + cache removal.";
+const SERVER_BUILD = "v29.91s (b61) - clampLen is now sentence/clause-aware for push body (smart backoff to a complete thought) + strips trailing dangling function words, so clamped push bodies never end on for/with/and. Prior (b60): brief->Sonnet; (b59) push hard caps + steer clamp.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -423,7 +438,7 @@ async function generate(system, prompt, providerOverride, temperature, kind, use
     return (data.candidates?.[0]?.content?.parts || []).map(p => p.text || "").join("").trim();
   }
   if (PV === "claude") {
-    const _model = modelOverride || ((kind === "steer" || kind === "directions") ? "claude-sonnet-4-6" : CLAUDE_MODEL);
+    const _model = modelOverride || ((kind === "steer" || kind === "directions" || kind === "brief") ? "claude-sonnet-4-6" : CLAUDE_MODEL);
     // b54: prompt caching REMOVED. It was net-negative here: in the 4-model bake-off each Claude
     // model is called once per generate (no intra-call reuse), and the cached prefix carried volatile
     // content (per-channel rules, the live rulebook, accumulated feedback) so it changed almost every
@@ -2139,7 +2154,7 @@ app.post("/api/generate-variants", authMiddleware, async (req, res) => {
 app.post("/api/generate", authMiddleware, async (req, res) => {
   const { system = "", prompt = "", kind = "", limits = null, providerOverride = null } = req.body;
   // Per-content-type routing: copy → Anthropic (Claude), brief → Gemini, everything else → env default.
-  let want = kind === "copy" ? "claude" : (kind === "steer" || kind === "directions") ? "claude" : "gemini";
+  let want = kind === "copy" ? "claude" : (kind === "steer" || kind === "directions" || kind === "brief") ? "claude" : "gemini"; // b60: brief idea polished by Sonnet
   // Admin-only model-comparison hook: force a specific provider (claude|gemini) to A/B copy quality.
   // Ignored for non-admins and for any value other than claude|gemini — default routing is untouched.
   if (req.user && ["admin", "super_admin"].includes(req.user.role) && (providerOverride === "claude" || providerOverride === "gemini")) want = providerOverride;
