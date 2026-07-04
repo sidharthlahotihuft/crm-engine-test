@@ -153,7 +153,7 @@ const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // ===== Supabase egress control (paused image library/suggestions; reversible) =====
 const ENABLE_IMAGE_SUGGESTIONS=false; // brief-form image suggestions fetch — OFF to cut egress
 const ENABLE_LIBRARY_THUMBS=false;    // auto-load full-res library thumbnails on open — OFF. Explicit preview still loads one image.
-const BUILD="v42.9 (b106) - DASHBOARD CALENDAR FIXES: (1) fixed the DUPLICATE week calendar - the business Go-live calendar block was rendering at the dashboard top level (for everyone); it is now gated to business-only, so each role sees exactly one week strip. (2) WeekStrip now has the same three filters as the pipeline: All channels / D2C-Retail / All categories. (3) clicking an asset in the week strip now ROUTES BY STAGE for everyone: ready/finalized -> Finalized Assets; work-in-progress -> its stage page (Copy/Design/Brief), which auto-expands that asset and collapses the rest (ContentTab/DesignTab already focus the active asset). Business still cannot click not-ready assets. Builds on b105 (copy card layout) and prior.";
+const BUILD="v42.11 (b108) - removed the redundant bottom Edit copy button from each option card; the top-right pencil icon (b105) already opens the edit menu. Action bar is now Note + Send for approval (+ Unselect when selected). Builds on b107 and prior.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -2267,7 +2267,7 @@ function App(){
         <div style={{width:34,height:34,borderRadius:9,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={18}color="#fff"/></div>
         <div style={{lineHeight:1.15,minWidth:0}}>
           <div style={{fontWeight:800,fontSize:15,letterSpacing:-.3}}>CRM Engine</div>
-          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b106</div>
+          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b108</div>
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"12px 10px",display:"flex",flexDirection:"column",gap:3}}>
@@ -4302,22 +4302,10 @@ function BriefSummaryCard({active,activeBrief,copyRules,busy,refineFor,gen,genDi
       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:showRows?6:0}}>
         <span style={{fontSize:9.5,fontWeight:800,color:C.coral,textTransform:"uppercase",letterSpacing:.5,flexShrink:0}}>Idea</span>
         <span title={asText(activeBrief.idea)} style={{fontWeight:700,fontSize:15,color:C.ink,whiteSpace:showRows&&expanded?"normal":"nowrap",overflow:"hidden",textOverflow:"ellipsis",minWidth:0,flex:1,lineHeight:1.35}}>{asText(activeBrief.idea)||active.product||p.product||"—"}</span>
-        {autoCollapsed&&<button onClick={toggle}style={{marginLeft:"auto",flexShrink:0,background:"none",border:`1px solid ${C.line}`,borderRadius:6,cursor:"pointer",color:C.sub,fontSize:11,padding:"3px 8px",display:"flex",alignItems:"center",gap:3}}>{expanded?<><ChevronDown size={11}/>Less</>:<><ChevronRight size={11}/>Details</>}</button>}
+        <button onClick={toggle}style={{marginLeft:"auto",flexShrink:0,background:"none",border:`1px solid ${C.line}`,borderRadius:6,cursor:"pointer",color:C.sub,fontSize:11,padding:"3px 8px",display:"flex",alignItems:"center",gap:3}}>{expanded?<><ChevronDown size={11}/>Less</>:<><Eye size={11}/>Full brief</>}</button>
       </div>
 
       {showRows&&<React.Fragment>
-      {/* Row 2 — channel · brief by · brief date · live date · Preview · Full brief */}
-      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,fontSize:12,color:C.sub,flexWrap:"wrap"}}>
-        <span style={{display:"inline-flex",alignItems:"center",gap:4,fontWeight:700,color:isWAchan?"#0F766E":C.ink}}>{isWAchan?<MessageSquare size={13}/>:isPushChannel(chan)?<BellIcon size={13}/>:<Send size={13}/>}{chan}</span>
-        {briefBy&&<span>· Brief by <b style={{color:C.ink,fontWeight:700}}>{briefBy}</b></span>}
-        {active.created_at&&<span>· Brief <b style={{color:C.ink,fontWeight:700}}>{fmtDate(active.created_at)}</b></span>}
-        {active.go_live_date&&<span>· Live <b style={{color:C.ink,fontWeight:700}}>{fmtDate(active.go_live_date)}</b></span>}
-        <span style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
-          {isWAchan&&opts&&opts.length>0&&onPreview&&<button onClick={()=>onPreview(opts[active?.data?.selectedCopyIdx!=null?active.data.selectedCopyIdx:0])}style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,fontWeight:700,color:"#0b141a",background:"#00a884",border:"none",borderRadius:7,padding:"4px 10px",cursor:"pointer"}}><MessageSquare size={12}/>Preview</button>}
-          <button onClick={toggle}style={{background:"none",border:`1px solid ${C.line}`,borderRadius:6,cursor:"pointer",color:C.sub,fontSize:11,padding:"3px 8px",display:"flex",alignItems:"center",gap:3}}>{expanded?<><ChevronDown size={11}/>Less</>:<><Eye size={11}/>Full brief</>}</button>
-        </span>
-      </div>
-
       <BriefLinksInline brief={activeBrief}/>
 
       {/* Expanded full brief details */}
@@ -5802,7 +5790,6 @@ function ContentCard({o,idx,sel,refineFor,refineText,setRefineFor,setRefineText,
             ?<button onClick={()=>onFixFeedback&&onFixFeedback(idx)}title="Let AI revise this copy to address the reviewer's feedback, then review and resend"style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,fontWeight:800,color:"#fff",background:C.purple,border:"none",borderRadius:8,padding:"6px 11px",cursor:"pointer"}}><Sparkles size={12}/>Fix per feedback</button>
             :<Btn small variant="dark"onClick={()=>onSelect(idx)}><CheckCircle2 size={12}/>{isResend?"Send again for approval":"Send for approval"}</Btn>)}
           {sel&&<Btn small variant="ghost"onClick={()=>onSelect(null)}><X size={12}/>Unselect</Btn>}
-          <Btn small variant="ghost"onClick={()=>setEditMode("menu")}><PenLine size={13}/>Edit copy</Btn>
         </div>}
       {showWA&&<WhatsAppMockup o={o}image={image}product={null}onClose={()=>setShowWA(false)}/>}
       {showPush&&<PushMockup o={o}image={image}product={null}onClose={()=>setShowPush(false)}/>}
