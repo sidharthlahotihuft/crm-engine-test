@@ -153,7 +153,7 @@ const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // ===== Supabase egress control (paused image library/suggestions; reversible) =====
 const ENABLE_IMAGE_SUGGESTIONS=false; // brief-form image suggestions fetch — OFF to cut egress
 const ENABLE_LIBRARY_THUMBS=false;    // auto-load full-res library thumbnails on open — OFF. Explicit preview still loads one image.
-const BUILD="v42.20 (b117) - Design chip now shows ONLY the actual designer working on the asset (design_approver, or a design-team creator). Removed the lead fallback that listed the design leads (Anmol, Ilena) before anyone had picked it up - now there is simply no Design chip until an actual designer is on it. Builds on b116 and prior.";
+const BUILD="v42.23 (b120) - (1) FOCUS MODE: on the Copy and Design pages, when one asset row is open the OTHER (collapsed) rows now grey out (dimmed + desaturated + neutral accent) so the open one stands out in colour and it is clear which asset you are viewing/editing. Applies to all users. (2) the creative mock in the design 3-column card is larger (320px, via a new big prop on CreativeCard) so the on-image copy is not cut off / cramped. Builds on b119 and prior.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -2266,7 +2266,7 @@ function App(){
         <div style={{width:34,height:34,borderRadius:9,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={18}color="#fff"/></div>
         <div style={{lineHeight:1.15,minWidth:0}}>
           <div style={{fontWeight:800,fontSize:15,letterSpacing:-.3}}>CRM Engine</div>
-          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b117</div>
+          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b120</div>
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"12px 10px",display:"flex",flexDirection:"column",gap:3}}>
@@ -2826,6 +2826,7 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
   const[approving,setApproving]=useState("");
   const[hoverStat,setHoverStat]=useState(null);
   const[pf,setPf]=useState({channel:"",crm:"",category:""});
+  const[pipeMonth,setPipeMonth]=useState(0); // 0 = current month; +/- to navigate
   const[period,setPeriod]=useState("7d");
   const[cFrom,setCFrom]=useState("");
   const[cTo,setCTo]=useState("");
@@ -2961,7 +2962,12 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
     {/* ===== Task pipeline (content + design teams) ===== */}
     {!isBusiness(me)&&(()=>{
       const _na=(campaigns||[]).filter(c=>!isArchived(c));
-      const _pf=applyTileFilters(_na,pf).filter(c=>!pf.category||normCat(categoryOf(c))===pf.category);
+      const _monthBase=new Date();_monthBase.setDate(1);_monthBase.setMonth(_monthBase.getMonth()+pipeMonth);
+      const _pMonth=_monthBase.getMonth(),_pYear=_monthBase.getFullYear();
+      const _monthLabel=_monthBase.toLocaleDateString("en-IN",{month:"long",year:"numeric"});
+      const _inMonth=(c)=>{if(!c.go_live_date)return false;const g=new Date(c.go_live_date);return g.getMonth()===_pMonth&&g.getFullYear()===_pYear;};
+      const _naMonth=_na.filter(_inMonth);
+      const _pf=applyTileFilters(_naMonth,pf).filter(c=>!pf.category||normCat(categoryOf(c))===pf.category);
       const chans=[...new Set(_na.map(c=>c.channel).filter(Boolean))].sort();
       const cols=[
         {k:"cp",title:"Copy in progress",color:C.purple,items:_pf.filter(c=>c.stage==="content"||(c.stage==="brand_review"))},
@@ -2972,6 +2978,12 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
       return<Card style={{padding:0,overflow:"hidden",marginBottom:18}}>
         <div style={{padding:"12px 16px",borderBottom:`1px solid ${C.line}`,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
           <div style={{fontWeight:800,fontSize:14,color:C.ink,marginRight:"auto"}}>Task pipeline</div>
+          <div style={{display:"flex",alignItems:"center",gap:6,marginRight:8}}>
+            <button onClick={()=>setPipeMonth(m=>m-1)}style={{...selSx,padding:"5px 10px",fontWeight:700}}>←</button>
+            <span style={{fontSize:12.5,fontWeight:800,color:C.ink,minWidth:118,textAlign:"center"}}>{_monthLabel}</span>
+            <button onClick={()=>setPipeMonth(m=>m+1)}style={{...selSx,padding:"5px 10px",fontWeight:700}}>→</button>
+            {pipeMonth!==0&&<button onClick={()=>setPipeMonth(0)}style={{...selSx,color:C.coral,fontWeight:700}}>Today</button>}
+          </div>
           <select value={pf.channel}onChange={e=>setPf({...pf,channel:e.target.value})}style={selSx}><option value="">All channels</option>{chans.map(ch=><option key={ch}value={ch}>{ch}</option>)}</select>
           <select value={pf.crm}onChange={e=>setPf({...pf,crm:e.target.value})}style={selSx}><option value="">D2C / Retail</option><option value="D2C">D2C</option><option value="Retail">Retail</option></select>
           <select value={pf.category}onChange={e=>setPf({...pf,category:e.target.value})}style={selSx}><option value="">All categories</option>{CRM_CATEGORIES.map(cat=><option key={cat}value={cat}>{cat}</option>)}</select>
@@ -5061,7 +5073,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       </div>;
     }
 
-    return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`5px solid ${rowAccent(c)}`}}>
+    return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`5px solid ${openId&&!isOpen?C.line:rowAccent(c)}`,opacity:openId&&!isOpen?.5:1,filter:openId&&!isOpen?"grayscale(0.85)":"none",transition:"opacity .15s, filter .15s"}}>
       {/* Row header */}
       <div id={"crmrow-"+c.id} onClick={()=>setOpenId(isOpen?null:c.id)}
         style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer",background:isOpen?rowAccent(c)+"18":rowAccent(c)+"12"}}>
@@ -5329,8 +5341,8 @@ function ApprovedCopyCard({copy,channel,product,image,hideImageCopy,leftExtras})
     {leftExtras}
     {!hasRtb&&!leftExtras&&<div style={{fontSize:11.5,color:C.sub,fontStyle:"italic",padding:"6px 2px"}}>No RTB or notes for this asset.</div>}
   </div>;
-  const centerCol=<div style={{flex:"0 0 300px",minWidth:280,display:"flex",flexDirection:"column",gap:10,alignItems:"center"}}>
-    {!isPush&&copy.header&&<div style={{width:"100%",display:"flex",justifyContent:"center"}}><CreativeCard o={copy} product={product}/></div>}
+  const centerCol=<div style={{flex:"0 0 320px",width:320,display:"flex",flexDirection:"column",gap:10,alignItems:"center"}}>
+    {!isPush&&copy.header&&<div style={{width:320,flexShrink:0}}><CreativeCard o={copy} product={product} big/></div>}
   </div>;
   const rightCol=<div style={{flex:"1 1 220px",minWidth:200,display:"flex",flexDirection:"column",gap:10}}>
     {copy.body&&<div>
@@ -5360,7 +5372,7 @@ function ApprovedCopyCard({copy,channel,product,image,hideImageCopy,leftExtras})
   </div>;
 }
 
-function CreativeCard({o,idx,editable,onEditSave,onRtbToggle,product,preview}){
+function CreativeCard({o,idx,editable,onEditSave,onRtbToggle,product,preview,big}){
   const[editing,setEditing]=useState(false);
   const[draft,setDraft]=useState("");
   const[rtbDraft,setRtbDraft]=useState("");
@@ -5378,7 +5390,7 @@ function CreativeCard({o,idx,editable,onEditSave,onRtbToggle,product,preview}){
   const saveEdit=()=>{patchOpt({header:draft.trim()});setEditing(false);};
   const addRtb=()=>{const t=stripForbidden((rtbDraft||"").trim());if(t&&!strip.includes(t)){onRtbToggle&&onRtbToggle(idx,t);}setRtbDraft("");};
   return<div>
-    <div style={{position:"relative",width:"100%",maxWidth:preview?"100%":250,margin:preview?"0":"0 auto",aspectRatio:"1/1",borderRadius:preview?12:13,overflow:"hidden",background:"linear-gradient(150deg,#fcf4e9,#f6e9d6 55%,#efdcc6)",border:`1px solid ${C.line}`,boxShadow:"0 5px 16px rgba(120,80,40,.12)"}}>
+    <div style={{position:"relative",width:"100%",maxWidth:preview?"100%":(big?320:250),margin:preview?"0":"0 auto",aspectRatio:"1/1",borderRadius:preview?12:13,overflow:"hidden",background:"linear-gradient(150deg,#fcf4e9,#f6e9d6 55%,#efdcc6)",border:`1px solid ${C.line}`,boxShadow:"0 5px 16px rgba(120,80,40,.12)"}}>
       <div style={{position:"absolute",top:12,left:0,right:0,display:"flex",justifyContent:"center"}}>
         <span style={{display:"inline-flex",alignItems:"center",gap:5,padding:"3px 10px",borderRadius:999,border:"1px dashed rgba(60,40,20,.32)",color:"rgba(60,40,20,.5)"}}><ImageIcon size={11}/><span style={{fontSize:8.5,fontWeight:800,letterSpacing:1.5}}>LOGO</span></span>
       </div>
@@ -7594,7 +7606,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
       setEmailing(false);
     };
     const _dtone=(d.sentBack&&!d.pendingApproval)?ROW_TONE.attention:(_imgReady?ROW_TONE.design:ROW_TONE.attention);
-    return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`5px solid ${rowAccent(c)}`}}>
+    return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`5px solid ${openId&&!isOpen?C.line:rowAccent(c)}`,opacity:openId&&!isOpen?.5:1,filter:openId&&!isOpen?"grayscale(0.85)":"none",transition:"opacity .15s, filter .15s"}}>
       {/* Row header */}
       <div id={"crmrow-"+c.id} onClick={()=>setOpenId(isOpen?null:c.id)}
         style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer",background:isOpen?rowAccent(c)+"18":rowAccent(c)+"12"}}>
