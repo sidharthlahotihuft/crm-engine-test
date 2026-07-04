@@ -153,7 +153,7 @@ const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // ===== Supabase egress control (paused image library/suggestions; reversible) =====
 const ENABLE_IMAGE_SUGGESTIONS=false; // brief-form image suggestions fetch — OFF to cut egress
 const ENABLE_LIBRARY_THUMBS=false;    // auto-load full-res library thumbnails on open — OFF. Explicit preview still loads one image.
-const BUILD="v42.13 (b110) - EDITABLE DIRECTIONS: the copy team can now edit the 3 AI-generated directions before picking one. Each direction card has a pencil that opens an inline editor for its title + angle; Save persists the edit to the asset (c.data.directions) and they can then pick the edited version. Body-click still generates copy for that direction; Write-your-own remains for a from-scratch angle. Builds on b109 and prior.";
+const BUILD="v42.15 (b112) - (1) removed the Pending your approval card from the DASHBOARD for everyone - approvals now live only on the Approvals page. (2) removed Archive + Delete from brand_team AND design_team (RowActions canEdit now excludes them explicitly). (3) the Design page row header now matches the Copy page: Row1 Product - CRM - Format - design status badge; Row2 people row (WhoChips); Brief/Live dates pinned right (was the old created_by + inline-dates + idea format). Builds on b111 and prior.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -1713,7 +1713,7 @@ function ChannelIcon({channel,size=16}){
   return<span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:size+18,height:size+18,borderRadius:10,background:cfg.bg,color:cfg.fg,flexShrink:0}}>{cfg.ic}</span>;
 }
 function RowActions({c,patch,me,onEdit,onDelete,onDuplicate}){
-  const canEdit=seesAll(me)||isBusiness(me);
+  const canEdit=(seesAll(me)||isBusiness(me))&&!isBrandTeam(me)&&!isDesignTeam(me);
   const canDup=["super_admin","business","design_lead","design_team","brand_lead"].includes(_r(me));
   return<div style={{display:"flex",gap:5,alignItems:"center",flexShrink:0}}>
     {onEdit&&<button onClick={e=>{e.stopPropagation();onEdit();}}style={{display:"flex",alignItems:"center",gap:3,fontSize:11.5,padding:"4px 8px",borderRadius:6,border:`1px solid ${C.line}`,background:"#fff",cursor:"pointer",color:C.sub,fontWeight:600}}><PenLine size={11}/>Edit</button>}
@@ -2267,7 +2267,7 @@ function App(){
         <div style={{width:34,height:34,borderRadius:9,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={18}color="#fff"/></div>
         <div style={{lineHeight:1.15,minWidth:0}}>
           <div style={{fontWeight:800,fontSize:15,letterSpacing:-.3}}>CRM Engine</div>
-          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b110</div>
+          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b112</div>
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"12px 10px",display:"flex",flexDirection:"column",gap:3}}>
@@ -2989,33 +2989,17 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
             <div style={{padding:8,display:"flex",flexDirection:"column",gap:6,maxHeight:340,overflowY:"auto"}}>
               {col.items.length===0
                 ?<div style={{fontSize:11,color:C.sub,padding:"12px 4px",textAlign:"center"}}>—</div>
-                :col.items.map(c=><div key={c.id}onClick={()=>onOpen(c.id)}style={{padding:"7px 9px",border:`1px solid ${col.color}33`,borderLeft:`3px solid ${col.color}`,borderRadius:8,cursor:"pointer",background:col.color+"0C"}}>
+                :col.items.map(c=>{const _lockedForDesign=isDesignTeam(me)&&col.k==="cp";return<div key={c.id}onClick={()=>{if(_lockedForDesign)return;onOpen(c.id);}}style={{padding:"7px 9px",border:`1px solid ${col.color}33`,borderLeft:`3px solid ${col.color}`,borderRadius:8,cursor:_lockedForDesign?"default":"pointer",background:col.color+"0C",opacity:_lockedForDesign?.55:1}}>
                     <div style={{fontWeight:800,fontSize:12,color:col.color,marginBottom:3,lineHeight:1.25}}>{humanizeToken(c.product)||parseName(c)||"Untitled"}</div>
                     <div style={{fontSize:10,color:C.sub,display:"flex",gap:5,flexWrap:"wrap"}}><span>{c.channel}</span><span>·</span><span>{normCrmType(c.crm_type)}</span>{c.created_at&&<><span>·</span><span>Brief {fmtDate(c.created_at)}</span></>}{c.go_live_date&&<><span>·</span><span style={{color:C.ink,fontWeight:700}}>Live {fmtDate(c.go_live_date)}</span></>}</div>
-                  </div>)}
+                    {_lockedForDesign&&<div style={{marginTop:4,display:"inline-flex",alignItems:"center",gap:3,fontSize:9.5,fontWeight:800,color:C.purple,background:C.purple+"18",padding:"1px 7px",borderRadius:999,textTransform:"uppercase",letterSpacing:.3}}><ClockIcon size={9}/>Copy in progress</div>}
+                  </div>;})}
             </div>
           </div>)}
         </div>
       </Card>;
     })()}
-    {/* ===== Approvals waiting on me (slot-aware) ===== */}
-    {(mySlots.length>0||isSuper(me))&&<Card style={{padding:0,overflow:"hidden",marginBottom:18,border:`1.5px solid ${approvals.length?"#9333EA":C.line}`}}>
-      <div style={{display:"flex",alignItems:"center",gap:12,padding:"15px 18px",background:approvals.length?"#FAF5FF":C.paper}}>
-        <div style={{width:36,height:36,borderRadius:10,background:approvals.length?"#9333EA":C.sub,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><CheckCircle2 size={19}/></div>
-        <div style={{flex:1}}><div style={{fontWeight:800,fontSize:15.5,color:C.ink}}>Pending your approval · {approvals.length}</div><div style={{fontSize:12.5,color:C.sub}}>{approvals.length?"Waiting for your sign-off — click any to review.":"Nothing waiting on you. You're all caught up."}</div></div>
-      </div>
-      {approvals.slice(0,8).map(({c,kind,tab,action})=><div key={c.id+kind}style={{display:"flex",alignItems:"center",gap:8,padding:"11px 18px",borderTop:`1px solid ${C.line}`,background:"#fff"}}>
-        <span style={{fontSize:10.5,fontWeight:800,color:"#9333EA",background:"#9333EA18",padding:"2px 8px",borderRadius:999,flexShrink:0}}>{kind}</span>
-        <span onClick={()=>onOpen(c.id,tab)}style={{fontWeight:700,fontSize:13.5,color:C.ink,cursor:"pointer"}}>{humanizeToken(c.product)||parseName(c.name).product||c.name}</span>
-        <span style={{fontSize:11.5,color:C.sub}}>· {normCrmType(c.crm_type)} · {c.channel||"WhatsApp"}</span>
-        <span style={{marginLeft:"auto",display:"flex",gap:6,alignItems:"center"}}>
-          {approving===c.id+action?<span style={{fontSize:12,color:C.sub}}>Working…</span>:<>
-            <button onClick={()=>onOpen(c.id,tab)}style={{fontSize:11.5,fontWeight:700,color:C.sub,background:"none",border:"none",cursor:"pointer"}}>Review</button>
-            <button onClick={()=>approveGate(c,action)}style={{fontSize:11.5,fontWeight:800,color:"#fff",background:"#9333EA",border:"none",borderRadius:7,padding:"5px 11px",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4}}><CheckCircle2 size={12}/>Approve</button>
-          </>}
-        </span>
-      </div>)}
-    </Card>}
+    {/* Dashboard approvals card removed — approvals live only on the Approvals page */}
     {!isBusiness(me)&&<div style={{marginTop:4,marginBottom:8}}>
       <div style={{fontSize:12,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.5,margin:"8px 2px 10px"}}>Go-live calendar · this week</div>
       <WeekStrip campaigns={(campaigns||[]).filter(c=>!isArchived(c))}onOpen={onOpen}readyOnly={false}/>
@@ -5332,14 +5316,31 @@ function ManualCopyForm({initial,channel,onSave,onCancel}){
   </div>;
 }
 
-function ApprovedCopyCard({copy,channel,product,image,hideImageCopy}){
+function ApprovedCopyCard({copy,channel,product,image,hideImageCopy,leftExtras}){
   const[showMock,setShowMock]=useState(false);
   const[showPush,setShowPush]=useState(false);
   const isWA=/whatsapp/i.test(channel||"");
   const isPush=isPushChannel(channel);
   if(!copy)return null;
+  const hasRtb=!hideImageCopy&&Array.isArray(copy.rtbsSelected)&&copy.rtbsSelected.length>0;
+  const leftCol=<div style={{flex:"1 1 0",minWidth:0,display:"flex",flexDirection:"column",gap:8}}>
+    {hasRtb&&<div style={{background:C.tealSoft,border:`1px solid ${C.teal}55`,borderRadius:8,padding:"7px 10px"}}>
+      <div style={{fontSize:9,fontWeight:800,color:C.teal,textTransform:"uppercase",letterSpacing:.6,marginBottom:3}}>RTB on the image</div>
+      <div style={{fontWeight:600,fontSize:13,lineHeight:1.4,color:"#0F766E"}}>{copy.rtbsSelected.join(" · ")}</div>
+    </div>}
+    {leftExtras}
+    {!hasRtb&&!leftExtras&&<div style={{fontSize:11.5,color:C.sub,fontStyle:"italic",padding:"6px 2px"}}>No RTB or notes for this asset.</div>}
+  </div>;
+  const rightCol=<div style={{flex:"1 1 0",minWidth:0,display:"flex",flexDirection:"column",gap:10}}>
+    {!isPush&&copy.header&&<div><CreativeCard o={copy} product={product}/></div>}
+    {copy.body&&<div>
+      <div style={{fontSize:9,fontWeight:800,color:"#0F766E",textTransform:"uppercase",letterSpacing:.6,marginBottom:3}}>{isPush?"Message":"Body copy"}</div>
+      <div style={{fontSize:12.5,color:"#4C1D95",lineHeight:1.5,whiteSpace:"pre-line"}}>{copy.body}</div>
+      {!isPush&&copy.cta&&<div style={{marginTop:8,fontSize:11,fontWeight:700,color:"#5B21B6"}}>{copy.cta} →</div>}
+    </div>}
+  </div>;
   return<div style={{background:"#F5F3FF",border:"1px solid #DDD6FE",borderLeft:"3px solid "+C.purple,borderRadius:10,padding:"10px 14px",marginBottom:12}}>
-    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,gap:8,flexWrap:"wrap"}}>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,gap:8,flexWrap:"wrap"}}>
       <span style={{fontSize:10,fontWeight:700,color:"#5B21B6",textTransform:"uppercase",letterSpacing:.6,display:"flex",alignItems:"center",gap:4}}><CheckCircle2 size={11}/>Approved copy</span>
       <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
         {copy.direction&&<span style={{fontSize:10.5,color:"#7C3AED",background:"#EDE9FE",padding:"2px 7px",borderRadius:5,fontWeight:600}}>{copy.direction}</span>}
@@ -5348,23 +5349,11 @@ function ApprovedCopyCard({copy,channel,product,image,hideImageCopy}){
         <CopyBtn text={()=>copyTextFromOption(copy,channel)}/>
       </div>
     </div>
-    {!isPush&&!hideImageCopy&&copy.header&&<div style={{margin:"2px 0 10px"}}><CreativeCard o={copy} product={product}/></div>}
-    {/* Image copy — on-image overlay text (hidden for WhatsApp finalized: it's baked into the design) */}
-    {copy.header&&!hideImageCopy&&<div style={{marginBottom:8}}>
-      <div style={{fontSize:9,fontWeight:800,color:"#7C3AED",textTransform:"uppercase",letterSpacing:.6,marginBottom:3}}>{isPush?"Headline":"Image copy"}</div>
-      <div style={{fontWeight:700,fontSize:13.5,lineHeight:1.4,color:"#1E1B4B",whiteSpace:"pre-line"}}>{copy.header}</div>
-    </div>}
-    {/* RTB on the image — proof points to place on the creative. Hidden once baked into the final design (hideImageCopy). */}
-    {!hideImageCopy&&Array.isArray(copy.rtbsSelected)&&copy.rtbsSelected.length>0&&<div style={{marginBottom:8,background:C.tealSoft,border:`1px solid ${C.teal}55`,borderRadius:8,padding:"7px 10px"}}>
-      <div style={{fontSize:9,fontWeight:800,color:C.teal,textTransform:"uppercase",letterSpacing:.6,marginBottom:3}}>RTB on the image</div>
-      <div style={{fontWeight:600,fontSize:13,lineHeight:1.4,color:"#0F766E"}}>{copy.rtbsSelected.join(" · ")}</div>
-    </div>}
-    {/* Body copy — the message caption */}
-    {copy.body&&<div>
-      <div style={{fontSize:9,fontWeight:800,color:"#0F766E",textTransform:"uppercase",letterSpacing:.6,marginBottom:3}}>{isPush?"Subheadline":"Body copy"}</div>
-      <div style={{fontSize:12,color:"#4C1D95",lineHeight:1.5,whiteSpace:"pre-line"}}>{copy.body}</div>
-    </div>}
-    {!isPush&&copy.cta&&<div style={{marginTop:8,fontSize:11,fontWeight:700,color:"#5B21B6"}}>{copy.cta} →</div>}
+    {/* Two columns — left: RTB + notes | right: creative mockup + body copy. Stacks on narrow screens. */}
+    <div style={{display:"flex",gap:14,flexWrap:"wrap",alignItems:"flex-start"}}>
+      {leftCol}
+      {rightCol}
+    </div>
     {showMock&&<WhatsAppMockup o={copy}image={image}product={product}imageHasCopy={!!image}onClose={()=>setShowMock(false)}/>}
     {showPush&&<PushMockup o={copy}image={image}product={product}onClose={()=>setShowPush(false)}/>}
   </div>;
@@ -7610,21 +7599,25 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
         style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer",background:isOpen?rowAccent(c)+"18":rowAccent(c)+"12"}}>
         <ChannelIcon channel={c.channel}/>
         <div style={{flex:1,minWidth:0}}>
+          {/* Row 1: Product · CRM · Format · design status */}
           <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3,flexWrap:"wrap"}}>
             <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{humanizeToken(c.product)||parseName(c.name).product||"—"}</span>
-            {c.channel?<span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel}</span>:<span style={{fontSize:11,fontWeight:700,color:C.coral}}>· set channel</span>}
             <span style={{fontSize:11,fontWeight:700,color:C.coral}}>· {normCrmType(c.crm_type)}</span>
-            {c.created_by_name&&<span style={{fontSize:11,fontWeight:600,color:C.sub}}>· {c.created_by_name}</span>}
+            {c.channel?<span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel}</span>:<span style={{fontSize:11,fontWeight:700,color:C.coral}}>· set channel</span>}
+            {d.sentBack&&!d.pendingApproval&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:10.5,fontWeight:800,color:"#9A3412",background:"#FFF7ED",border:"1px solid #FED7AA",padding:"2px 8px",borderRadius:999}}><RotateCcw size={10}/>Sent back</span>}
+            {d.pendingApproval&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:10.5,fontWeight:800,color:"#9333EA",background:"#FAF5FF",border:"1px solid #E9D5FF",padding:"2px 8px",borderRadius:999}}><Eye size={10}/>Design review (Anmol)</span>}
+            {d.assetReview&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:10.5,fontWeight:800,color:"#9333EA",background:"#FAF5FF",border:"1px solid #E9D5FF",padding:"2px 8px",borderRadius:999}}><Eye size={10}/>Full-asset review (Ilena)</span>}
+            {d.finalReview&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:10.5,fontWeight:800,color:"#B45309",background:"#FEF3C7",border:"1px solid #FDE68A",padding:"2px 8px",borderRadius:999}}><Eye size={10}/>Final sign-off</span>}
+            {!d.sentBack&&!d.pendingApproval&&!d.assetReview&&!d.finalReview&&((d.generatedImage||d.finalFile||d.libraryPick||d.imageSource)?<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:10.5,fontWeight:700,color:"#0F766E",background:"#CCFBF1",padding:"2px 8px",borderRadius:999}}><CheckCircle2 size={10}/>In progress</span>:<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:10.5,fontWeight:700,color:"#B91C1C",background:"#FEF2F2",padding:"2px 8px",borderRadius:999}}>Needs design</span>)}
           </div>
-          <div style={{fontSize:12,color:C.sub,display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>{c.created_at&&<span>Brief {fmtDate(c.created_at)}</span>}{c.go_live_date&&<span style={{fontWeight:700,color:C.ink}}>· Live {fmtDate(c.go_live_date)}</span>}{c.audience_label&&<span>· {c.audience_label}</span>}</div>{(c.data?.brief?.idea||copy.direction)&&<div title={asText(c.data?.brief?.idea||copy.direction)} style={{fontSize:11.5,color:C.sub,marginTop:3,fontStyle:"italic",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"100%"}}>{asText(c.data?.brief?.idea||copy.direction)}</div>}
+          {/* Row 2: people row */}
+          <WhoChips c={c}team={team}me={me}/>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-          {d.sentBack&&!d.pendingApproval&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:800,color:"#9A3412",background:"#FFF7ED",border:"1px solid #FED7AA",padding:"3px 9px",borderRadius:999}}><RotateCcw size={11}/>Sent back</span>}
-          {d.pendingApproval&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:800,color:"#9333EA",background:"#FAF5FF",border:"1px solid #E9D5FF",padding:"3px 9px",borderRadius:999}}><Eye size={11}/>Design review (Anmol)</span>}
-          {d.assetReview&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:800,color:"#9333EA",background:"#FAF5FF",border:"1px solid #E9D5FF",padding:"3px 9px",borderRadius:999}}><Eye size={11}/>Full-asset review (Ilena)</span>}
-          {d.finalReview&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:800,color:"#B45309",background:"#FEF3C7",border:"1px solid #FDE68A",padding:"3px 9px",borderRadius:999}}><Eye size={11}/>Final sign-off (HoM/CXO)</span>}
-          {(d.generatedImage||d.finalFile||d.libraryPick||d.imageSource)?<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#0F766E",background:"#CCFBF1",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>In progress</span>
-          :<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:"#B91C1C",background:"#FEF2F2",padding:"3px 9px",borderRadius:999}}>Needs design</span>}
+          <div style={{textAlign:"right"}}>
+            {c.go_live_date&&<div style={{fontSize:12,fontWeight:700,color:C.ink}}>Live {fmtDate(c.go_live_date)}</div>}
+            {c.created_at&&<div style={{fontSize:11,color:C.sub}}>Brief {fmtDate(c.created_at)}</div>}
+          </div>
           {isOpen?<ChevronDown size={16}color={C.sub}/>:<ChevronRight size={16}color={C.sub}/>}
         </div>
       </div>
@@ -7648,9 +7641,11 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
         {/* Brief in short — context for the design team */}
         <BriefInShort c={c}/>
         {c.data?.brief&&<BriefLinksInline brief={c.data.brief}/>}
-        <DesignNote c={c}readOnly/>
-        {/* Selected copy context */}
-        <ApprovedCopyCard copy={copy}channel={c.channel}product={c.product}image={d.generatedImage||(d.finalFile&&d.finalFile.dataUrl)||null}/>
+        {/* Selected copy context — two columns: left RTB + note, right mockup + body */}
+        <ApprovedCopyCard copy={copy}channel={c.channel}product={c.product}image={d.generatedImage||(d.finalFile&&d.finalFile.dataUrl)||null}leftExtras={(c.data&&c.data.designNote&&c.data.designNote.text)?<div style={{background:"#FFFBEB",border:"1px solid #FDE68A",borderLeft:"4px solid #D97706",borderRadius:10,padding:"10px 12px"}}>
+          <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}><MessageSquare size={13}color="#B45309"/><div style={{fontSize:10.5,fontWeight:800,color:"#92400E",textTransform:"uppercase",letterSpacing:.4}}>Note{c.data.designNote.by?" · "+c.data.designNote.by:""}</div></div>
+          <div style={{fontSize:13,color:"#78350F",fontWeight:600,lineHeight:1.45,whiteSpace:"pre-line"}}>{c.data.designNote.text}</div>
+        </div>:null}/>
         {c.data?.selfMade&&(()=>{
           const sf=d.selfFinal;
           const apr=d.selfApprovals||{};
