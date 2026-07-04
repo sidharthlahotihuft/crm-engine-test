@@ -153,7 +153,7 @@ const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // ===== Supabase egress control (paused image library/suggestions; reversible) =====
 const ENABLE_IMAGE_SUGGESTIONS=false; // brief-form image suggestions fetch — OFF to cut egress
 const ENABLE_LIBRARY_THUMBS=false;    // auto-load full-res library thumbnails on open — OFF. Explicit preview still loads one image.
-const BUILD="v42.19 (b116) - removed the duplicate people row (Brief/Copy/Design chips) from inside the expanded design card - it was showing the same Brief/Copy/Design people that are already in the design row header above (added in b112). Now shown once, in the header. Builds on b115 and prior.";
+const BUILD="v42.20 (b117) - Design chip now shows ONLY the actual designer working on the asset (design_approver, or a design-team creator). Removed the lead fallback that listed the design leads (Anmol, Ilena) before anyone had picked it up - now there is simply no Design chip until an actual designer is on it. Builds on b116 and prior.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -579,10 +579,9 @@ function WhoChips({c,me,team}){
   const briefPerson=(_creatorIsCopy||_creatorIsDesign)?null:raised;
   const copyPerson=writer||(_creatorIsCopy?raised:null);
   const designerActual=c.design_approver||(_creatorIsDesign?raised:null);
-  const designLead=slotHolders(team,"design").join(", ");
-  const designer=designerActual||designLead;
-  const designerIsLead=!designerActual&&!!designLead;
-  const hasDesign=!isPushChannel(c.channel)&&(!!designerActual||!!(c.data&&c.data.design)||["design","done"].includes(c.stage)); // no design for push (skips design), and hide for copy-only
+  const designer=designerActual; // only the actual designer; no lead fallback — show no Design chip until someone picks it up
+  const designerIsLead=false;
+  const hasDesign=!isPushChannel(c.channel)&&!!designerActual; // show Design chip only once an actual designer is on it
   const w=waitingOn(c,team);
   const chip=(bg,fg,icon,txt)=><span style={{display:"inline-flex",alignItems:"center",gap:3,fontSize:10.5,fontWeight:700,color:fg,background:bg,padding:"2px 8px",borderRadius:999,whiteSpace:"nowrap"}}>{icon}{txt}</span>;
   if(!briefPerson&&!copyPerson&&!designer&&!w&&!c.brand_approver)return null;
@@ -2267,7 +2266,7 @@ function App(){
         <div style={{width:34,height:34,borderRadius:9,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={18}color="#fff"/></div>
         <div style={{lineHeight:1.15,minWidth:0}}>
           <div style={{fontWeight:800,fontSize:15,letterSpacing:-.3}}>CRM Engine</div>
-          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b116</div>
+          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b117</div>
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"12px 10px",display:"flex",flexDirection:"column",gap:3}}>
