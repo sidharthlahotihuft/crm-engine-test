@@ -179,7 +179,8 @@ const COPY_HARD_RULES = " NON-NEGOTIABLE HARD RULES (never break): "
     + "(6) Respect channel length limits, BUT the image-copy \"header\" (hook + resolve) is a SOFT guide, not a hard cap: keep it short, yet ALWAYS complete — never cut a line to fit a length, finish the phrase even if it runs a few characters longer, and never end a line on a dangling word (at, for, on, the, a, just, and). Push title and body remain hard character caps. "
     + "(7) ACTION-LED ALWAYS: every piece of copy must drive a clear action (tap, switch, try, shop, book, learn, save); even awareness copy moves the reader to act, never just informs. "
     + "(8) Push notifications: the action MUST be in the FIRST line (the title) — every push, even awareness ones, drives an action. Push has NO image, so never write image/overlay copy or image RTBs for a push. "
-    + "(9) No opt-out / unsubscribe / 'reply STOP' lines or any channel/system boilerplate — the platform adds those, not the copy.";
+    + "(9) No opt-out / unsubscribe / 'reply STOP' lines or any channel/system boilerplate — the platform adds those, not the copy. "
+    + "(10) NAME THE PRODUCT: use the exact product / sub-brand from the brief at least once, spelled correctly (e.g. \"Sara's Wholesome Broth\", \"Meowsi Crunchies\") — never reduce it to a generic \"broth\", \"kibble\", \"food\" or \"treats\" with no name. On a PUSH this is REQUIRED because there is NO image/pack to show what it is; the reader must know the product from the words alone. (The only place a bare category is acceptable is when a pack shot already carries the name on a creative — never on push.)";
 const COPY_RULEBOOK_PREAMBLE = "\n\nACTIVE RULEBOOK — EVERY rule below is a HARD, NON-NEGOTIABLE rule. There are NO soft, optional, 'preferred', or 'where possible' rules here: treat each as mandatory and apply it to EVERY option, on EVERY channel, EVERY time. Any rule added to this list later is automatically a hard rule too. Breaking ANY single rule means the copy is rejected and sent back. If two rules ever appear to conflict, satisfy both by rewriting — never drop one:\n";
 async function assembleCopySys(systemBase){
   const sys0 = (systemBase || "") + COPY_HARD_RULES;
@@ -236,7 +237,7 @@ async function reviewCopy(text, ruleStr, user) {
   } catch (e) { console.error("[review] skipped:", e.message); }
   return JSON.stringify(Array.isArray(parsed) ? arr : arr[0]);
 }
-const SERVER_BUILD = "v29.91s (b61) - clampLen is now sentence/clause-aware for push body (smart backoff to a complete thought) + strips trailing dangling function words, so clamped push bodies never end on for/with/and. Prior (b60): brief->Sonnet; (b59) push hard caps + steer clamp.";
+const SERVER_BUILD = "v29.94s (b66) - /api/usage accepts ?range=today|7d|month (IST-aware today) so spend can show live burn not just cumulative month. Prior (b64): 2-Sonnet+ChatGPT lineup, fail-loud on dead keys.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -456,6 +457,7 @@ async function generate(system, prompt, providerOverride, temperature, kind, use
       },
       body: JSON.stringify({
         model: _model, max_tokens: 4096,
+        ...(typeof temperature === "number" ? { temperature } : {}),
         system: _useCache
           ? [{ type: "text", text: system, cache_control: { type: "ephemeral", ttl: "1h" } }]
           : system,
@@ -2087,30 +2089,38 @@ app.delete("/api/reports/:id", authMiddleware, roles("admin","business"), async 
 
 // Admin: month-to-date API spend from api_usage. Read-only; never affects generation.
 app.get("/api/usage", authMiddleware, roles("admin"), async (req, res) => {
+  // b66: range filter so the screen can show TODAY / last 7 days / this month, not just the cumulative
+  // month total (which makes old one-off spend like the removed Opus look like it is happening now).
+  const range = String(req.query.range || "month").toLowerCase();
+  const WH = range === "today"
+      ? "created_at >= (date_trunc('day', now() AT TIME ZONE 'Asia/Kolkata')) AT TIME ZONE 'Asia/Kolkata'"
+    : range === "7d"
+      ? "created_at >= now() - interval '7 days'"
+      : "created_at >= date_trunc('month', now())";
   try {
     const rows = await db(
       `SELECT provider, model, kind,
          SUM(in_tokens)::bigint AS in_tokens, SUM(out_tokens)::bigint AS out_tokens,
          SUM(cost_usd) AS cost, COUNT(*)::int AS calls
-       FROM api_usage WHERE created_at >= date_trunc('month', now())
+       FROM api_usage WHERE ${WH}
        GROUP BY provider, model, kind ORDER BY SUM(cost_usd) DESC`
     );
     const byUser = await db(
       `SELECT COALESCE(NULLIF(user_name,''),'system') AS user_name,
          SUM(cost_usd) AS cost, COUNT(*)::int AS calls
-       FROM api_usage WHERE created_at >= date_trunc('month', now())
+       FROM api_usage WHERE ${WH}
        GROUP BY 1 ORDER BY SUM(cost_usd) DESC`
     );
     const byKind = await db(
       `SELECT COALESCE(NULLIF(kind,''),'other') AS kind,
          SUM(cost_usd) AS cost, COUNT(*)::int AS calls
-       FROM api_usage WHERE created_at >= date_trunc('month', now())
+       FROM api_usage WHERE ${WH}
        GROUP BY 1 ORDER BY SUM(cost_usd) DESC`
     );
     const total = rows.reduce((a, r) => a + Number(r.cost || 0), 0);
     const calls = rows.reduce((a, r) => a + Number(r.calls || 0), 0);
-    res.json({ month: new Date().toISOString().slice(0, 7), total_usd: Number(total.toFixed(4)), calls, breakdown: rows, by_user: byUser, by_kind: byKind });
-  } catch (e) { res.json({ month: new Date().toISOString().slice(0, 7), total_usd: 0, calls: 0, breakdown: [], by_user: [], by_kind: [], note: "api_usage table not found yet" }); }
+    res.json({ range, month: new Date().toISOString().slice(0, 7), total_usd: Number(total.toFixed(4)), calls, breakdown: rows, by_user: byUser, by_kind: byKind });
+  } catch (e) { res.json({ range, month: new Date().toISOString().slice(0, 7), total_usd: 0, calls: 0, breakdown: [], by_user: [], by_kind: [], note: "api_usage table not found yet" }); }
 });
 
 // Multi-model copy bake-off: Opus, Sonnet, ChatGPT, and an OpenRouter wildcard (auto-picks best model; badge shows which). Graceful Sonnet fallback if a key is missing.
@@ -2120,23 +2130,23 @@ app.post("/api/generate-variants", authMiddleware, async (req, res) => {
     const user = (req.user && (req.user.name || req.user.email)) || "system";
     const { sys } = await assembleCopySys(system || "");
     const p = (prompt || "") + "\n\nReturn EXACTLY ONE option as a JSON array containing a single object with the required fields.";
-    const sonnet = (lbl) => generate(sys, p, "claude", undefined, "copy", user, "claude-sonnet-4-6").then(raw => ({ raw, model: lbl }));
+    const mk = (raw, model) => ({ raw, model });
+    const fail = (model, error) => ({ raw: null, model, error });
     const runModel = async (which) => {
       try {
-        if (which === "opus")   return { raw: await generate(sys, p, "claude", undefined, "copy", user, "claude-opus-4-8"),   model: "Claude Opus 4.8" };
-        if (which === "sonnet") return { raw: await generate(sys, p, "claude", undefined, "copy", user, "claude-sonnet-4-6"), model: "Claude Sonnet 4.6" };
-        if (which === "haiku")  return { raw: await generate(sys, p, "claude", undefined, "copy", user, "claude-haiku-4-5"),  model: "Claude Haiku 4.5" };
-        if (which === "gemini") return { raw: await generate(sys, p, "gemini", undefined, "copy", user), model: "Gemini Flash" };
-        if (which === "qwen")   { const raw = await callQwen(sys, p, user);   return raw == null ? await sonnet("Qwen (no key \u2192 Sonnet)")    : { raw, model: "Qwen 3.7" }; }
-        if (which === "jasper") { const raw = await callJasper(sys, p); return raw == null ? await sonnet("Jasper (no key \u2192 Sonnet)") : { raw, model: "Jasper" }; }
-        if (which === "openai") { const raw = await callOpenAI(sys, p, user); return raw == null ? await sonnet("ChatGPT 4 (no key \u2192 Sonnet)") : { raw, model: "ChatGPT 4" }; }
-        const w = await callWildcard(sys, p, user); return w == null ? await sonnet("OpenRouter pick (no key \u2192 Sonnet)") : { raw: w.text, model: w.model };
-      } catch (e) { try { return await sonnet(which + " (error \u2192 Sonnet)"); } catch (e2) { return { raw: null, model: which, error: e.message }; } }
+        if (which === "opus")    return mk(await generate(sys, p, "claude", undefined, "copy", user, "claude-opus-4-8"), "Claude Opus 4.8");
+        if (which === "sonnet")  return mk(await generate(sys, p, "claude", 0.4,  "copy", user, "claude-sonnet-4-6"), "Sonnet 4.6 (focused)");
+        if (which === "sonnet2") return mk(await generate(sys, p, "claude", 0.95, "copy", user, "claude-sonnet-4-6"), "Sonnet 4.6 (creative)");
+        if (which === "haiku")   return mk(await generate(sys, p, "claude", undefined, "copy", user, "claude-haiku-4-5"), "Claude Haiku 4.5");
+        if (which === "gemini")  return mk(await generate(sys, p, "gemini", undefined, "copy", user), "Gemini Flash");
+        if (which === "qwen")   { const raw = await callQwen(sys, p, user);   return raw == null ? fail("Qwen 3.7", "OPENROUTER_API_KEY not set / not working") : mk(raw, "Qwen 3.7"); }
+        if (which === "jasper") { const raw = await callJasper(sys, p);       return raw == null ? fail("Jasper", "Jasper key not set") : mk(raw, "Jasper"); }
+        if (which === "openai") { const raw = await callOpenAI(sys, p, user); return raw == null ? fail("ChatGPT 4", "OPENAI_API_KEY not set / not working") : mk(raw, "ChatGPT 4"); }
+        const w = await callWildcard(sys, p, user); return w == null ? fail("OpenRouter", "OPENROUTER_API_KEY not set") : mk(w.text, w.model);
+      } catch (e) { return fail(which, e && e.message ? e.message : "generation failed"); } // b64: fail loudly, no silent Sonnet fallback
     };
-    // b54: default lineup drops Opus (≈$2.4/mo for copy that didn't win) and the openrouter "wildcard"
-    // (openrouter/auto kept picking a weak Gemini variant that returned non-JSON garbage). Cheaper,
-    // still a real comparison. Override with COPY_VARIANT_MODELS="opus,sonnet,openai,wildcard" to restore.
-    const _MODELS = (process.env.COPY_VARIANT_MODELS || "sonnet,openai,gemini,qwen")
+    // b64: default lineup = 2 Sonnets (different temperatures) + ChatGPT. Override via COPY_VARIANT_MODELS.
+    const _MODELS = (process.env.COPY_VARIANT_MODELS || "sonnet,sonnet2,openai")
       .split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
     const variants = await Promise.all(_MODELS.map(runModel));
     // b58: apply the same mechanical hard-rule + length clamp the single-model path uses, so the
