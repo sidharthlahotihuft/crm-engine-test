@@ -38,7 +38,8 @@ dns.setDefaultResultOrder("ipv4first");
 // Real fix for serverless is the TRANSACTION-mode pooler (port 6543) via DATABASE_URL — see note below.
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+ // ssl: { rejectUnauthorized: false },
+ ssl: process.env.PGSSL === "true" ? { rejectUnauthorized: false } : false,
   family: 4,
   max: Number(process.env.PG_POOL_MAX || 3),   // small footprint per instance (override via env)
   idleTimeoutMillis: 10000,                     // drop idle connections after 10s so slots free up
