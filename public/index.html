@@ -153,7 +153,7 @@ const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // ===== Supabase egress control (paused image library/suggestions; reversible) =====
 const ENABLE_IMAGE_SUGGESTIONS=false; // brief-form image suggestions fetch — OFF to cut egress
 const ENABLE_LIBRARY_THUMBS=false;    // auto-load full-res library thumbnails on open — OFF. Explicit preview still loads one image.
-const BUILD="v42.23 (b120) - (1) FOCUS MODE: on the Copy and Design pages, when one asset row is open the OTHER (collapsed) rows now grey out (dimmed + desaturated + neutral accent) so the open one stands out in colour and it is clear which asset you are viewing/editing. Applies to all users. (2) the creative mock in the design 3-column card is larger (320px, via a new big prop on CreativeCard) so the on-image copy is not cut off / cramped. Builds on b119 and prior.";
+const BUILD="v42.27 (b124) - AWAITING REVIEW SUBGROUP: inside the Copy 'Needs attention' section, rows already sent for brand approval (stage brand_review - the ones showing 'Waiting for copy approval' + the Remind pill) are now pulled to the BOTTOM under an 'Awaiting review' subheader, separated from the rows still on you (needs copy / pick one) which stay on top. Waiting-on-the-reviewer work no longer interleaves with your actionable work. Section total count unchanged (still counts both). Prior b123: focus-mode grey gated on anyOpen + week-strip calendar tap-to-expand. Builds on b123 and prior.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -2266,7 +2266,7 @@ function App(){
         <div style={{width:34,height:34,borderRadius:9,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={18}color="#fff"/></div>
         <div style={{lineHeight:1.15,minWidth:0}}>
           <div style={{fontWeight:800,fontSize:15,letterSpacing:-.3}}>CRM Engine</div>
-          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b120</div>
+          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b124</div>
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"12px 10px",display:"flex",flexDirection:"column",gap:3}}>
@@ -2463,6 +2463,9 @@ function ReportUploader({campaign,me,onUploaded}){
 function WeekStrip({campaigns,onOpen,readyOnly}){
   const[weekOffset,setWeekOffset]=useState(0);
   const[wf,setWf]=useState({channel:"",crm:"",category:""});
+  const[selDay,setSelDay]=useState(null); // index 0-6 of the day whose full list is expanded below
+  // Clear the expanded day when the week or filters change (the selected index would point elsewhere).
+  React.useEffect(()=>{setSelDay(null);},[weekOffset,wf.channel,wf.crm,wf.category]);
   const today=new Date();today.setHours(0,0,0,0);
   const start=new Date(today);start.setDate(today.getDate()-today.getDay()+weekOffset*7);
   const days=[];for(let i=0;i<7;i++){const d=new Date(start);d.setDate(start.getDate()+i);days.push(d);}
@@ -2498,13 +2501,33 @@ function WeekStrip({campaigns,onOpen,readyOnly}){
       <button onClick={()=>setWeekOffset(w=>w+1)}style={{background:"#fff",border:`1px solid ${C.line}`,borderRadius:8,padding:"4px 12px",cursor:"pointer",fontSize:14,fontWeight:700,color:C.ink}}>→</button>
     </div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6}}>
-      {days.map((d,i)=>{const items=byDay(d);const isToday=d.getTime()===today.getTime();return<div key={i}style={{minWidth:0,minHeight:120,border:`1px solid ${isToday?C.coral:C.line}`,borderWidth:isToday?2:1,borderRadius:10,background:isToday?"#FFF7F5":"#fff",padding:8,overflow:"hidden"}}>
+      {days.map((d,i)=>{const items=byDay(d);const isToday=d.getTime()===today.getTime();const isSel=selDay===i;return<div key={i}onClick={()=>setSelDay(s=>s===i?null:i)}style={{minWidth:0,minHeight:120,border:`1px solid ${isSel||isToday?C.coral:C.line}`,borderWidth:(isSel||isToday)?2:1,borderRadius:10,background:isSel?"#FFF1E8":isToday?"#FFF7F5":"#fff",padding:8,overflow:"hidden",cursor:"pointer"}}>
         <div style={{fontSize:10.5,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.3}}>{DOW[d.getDay()]}</div>
         <div style={{fontSize:15,fontWeight:800,color:isToday?C.coral:C.ink,marginBottom:6}}>{d.getDate()}</div>
-        {items.length===0?<div style={{fontSize:10.5,color:C.sub,opacity:.5}}>—</div>:items.slice(0,6).map(c=>{const _disabled=readyOnly&&c.stage!=="done";return<div key={c.id}onClick={()=>openAsset(c)}title={c.product||c.name}style={{fontSize:10,fontWeight:600,padding:"3px 5px",borderRadius:5,marginBottom:3,background:(stageCol[c.stage]||C.sub)+"18",color:stageCol[c.stage]||C.sub,cursor:_disabled?"default":"pointer",opacity:_disabled?.55:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.3}}>{humanizeToken(c.product)||parseName(c.name).product||"Asset"}</div>;})}
-        {items.length>6&&<div style={{fontSize:10,color:C.sub,marginTop:1}}>+{items.length-6} more</div>}
+        {items.length===0?<div style={{fontSize:10.5,color:C.sub,opacity:.5}}>—</div>:items.slice(0,6).map(c=>{const _disabled=readyOnly&&c.stage!=="done";return<div key={c.id}onClick={(e)=>{e.stopPropagation();openAsset(c);}}title={c.product||c.name}style={{fontSize:10,fontWeight:600,padding:"3px 5px",borderRadius:5,marginBottom:3,background:(stageCol[c.stage]||C.sub)+"18",color:stageCol[c.stage]||C.sub,cursor:_disabled?"default":"pointer",opacity:_disabled?.55:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.3}}>{humanizeToken(c.product)||parseName(c.name).product||"Asset"}</div>;})}
+        {items.length>6&&<div style={{fontSize:10,fontWeight:700,color:C.coral,marginTop:1,cursor:"pointer"}}>+{items.length-6} more</div>}
       </div>;})}
     </div>
+    {/* Expanded day — full list of everything going live on the tapped day (incl. overflow beyond the +N cutoff) */}
+    {selDay!=null&&(()=>{
+      const sd=days[selDay];const list=byDay(sd);
+      const dLabel=sd.toLocaleDateString("en-IN",{weekday:"long",day:"numeric",month:"short",year:"numeric"});
+      return<div style={{marginTop:14,border:`1px solid ${C.line}`,borderRadius:12,overflow:"hidden"}}>
+        <div style={{background:C.paper,padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{dLabel} · {list.length} asset{list.length===1?"":"s"}</span>
+          <button onClick={()=>setSelDay(null)}style={{fontSize:12,fontWeight:700,color:C.sub,background:"none",border:"none",cursor:"pointer"}}>Clear</button>
+        </div>
+        {list.length===0
+          ?<div style={{padding:"16px",fontSize:13,color:C.sub}}>No assets going live on this date.</div>
+          :list.map(c=>{const _disabled=readyOnly&&c.stage!=="done";return<div key={c.id}onClick={()=>openAsset(c)}style={{display:"flex",alignItems:"center",gap:10,padding:"11px 16px",borderTop:`1px solid ${C.line}`,cursor:_disabled?"default":"pointer",opacity:_disabled?.55:1,background:"#fff"}}>
+            <span style={{width:9,height:9,borderRadius:2,background:stageCol[c.stage]||C.sub,flexShrink:0}}/>
+            <span style={{fontWeight:700,fontSize:13.5,color:C.ink}}>{humanizeToken(c.product)||parseName(c.name).product||"Asset"}</span>
+            <span style={{fontSize:11.5,color:C.sub}}>· {normCrmType(c.crm_type)} · {c.channel||"WhatsApp"}</span>
+            <span style={{marginLeft:"auto",fontSize:10.5,fontWeight:700,color:stageCol[c.stage]||C.sub,background:(stageCol[c.stage]||C.sub)+"18",padding:"2px 8px",borderRadius:999}}>{c.stage==="done"?"Ready":"In progress"}</span>
+            {!_disabled&&<ChevronRight size={15}color={C.sub}/>}
+          </div>;})}
+      </div>;
+    })()}
   </div>;
 }
 
@@ -2740,6 +2763,7 @@ function ApprovalsTab({campaigns,onOpen,me,team,reload}){
               {categoryOf(c)&&<span style={{fontSize:10.5,color:C.sub,background:C.paper,border:`1px solid ${C.line}`,padding:"1px 7px",borderRadius:999}}>{categoryOf(c)}</span>}
             </div>
             <div style={{fontSize:11.5,color:s.col,fontWeight:700,marginTop:2}}>{s.t}{c.copy_author?" · writer "+c.copy_author:""}</div>
+            {c.updated_at&&<div style={{fontSize:11,color:C.sub,marginTop:2,display:"inline-flex",alignItems:"center",gap:4}}><ClockIcon size={11}/>Sent for approval · {fmtDate(c.updated_at)} · {fmtTime(c.updated_at)}</div>}
             <BriefDates c={c}/>
             <WhoChips c={c}me={me}team={team}/>
           </div>
@@ -4768,7 +4792,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
 
   const CopyRowRef=React.useRef(null);
   if(!CopyRowRef.current)CopyRowRef.current=({c,ctx})=>{
-    const {openId,setOpenId,busyMap,setBusyMap,errMap,setErrMap,setFbPopup,patch,copyRules,me,recentFeedback,saveFeedback,toast,reload,setTab,onOpen,team,onDelete}=ctx;
+    const {openId,setOpenId,anyOpen,busyMap,setBusyMap,errMap,setErrMap,setFbPopup,patch,copyRules,me,recentFeedback,saveFeedback,toast,reload,setTab,onOpen,team,onDelete}=ctx;
     const isOpen=openId===c.id;
     const activeBrief=c.data?.brief;
     const opts=c.data?.copyOptions;
@@ -5001,7 +5025,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       const o=opts?.[sel];
       const tone=c.stage==="content"?{bar:"#92400E",bg:"#FFFBEB"}:c.stage==="brand_review"?{bar:"#9333EA",bg:"#FAF5FF"}:ROW_TONE[c.stage==="done"?"done":"approved"];
       const isPush=isPushChannel(c.channel);
-      return<div id={"donerow-"+c.id} style={{borderBottom:`1px solid ${C.line}`,borderLeft:`5px solid ${rowAccent(c)}`,background:rowAccent(c)+"12"}}>
+      return<div id={"donerow-"+c.id} style={{borderBottom:`1px solid ${C.line}`,borderLeft:`5px solid ${anyOpen&&!isOpen?C.line:rowAccent(c)}`,background:anyOpen&&!isOpen?"#fff":rowAccent(c)+"12",opacity:anyOpen&&!isOpen?.5:1,filter:anyOpen&&!isOpen?"grayscale(0.85)":"none",transition:"opacity .15s, filter .15s"}}>
         {/* Collapsed header — always visible, click to expand */}
         <div id={"crmrow-"+c.id} onClick={()=>setOpenId(isOpen?null:c.id)}style={{display:"flex",alignItems:"center",gap:12,padding:"12px 18px",cursor:"pointer",userSelect:"none"}}>
           <div style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
@@ -5073,7 +5097,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       </div>;
     }
 
-    return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`5px solid ${openId&&!isOpen?C.line:rowAccent(c)}`,opacity:openId&&!isOpen?.5:1,filter:openId&&!isOpen?"grayscale(0.85)":"none",transition:"opacity .15s, filter .15s"}}>
+    return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`5px solid ${anyOpen&&!isOpen?C.line:rowAccent(c)}`,opacity:anyOpen&&!isOpen?.5:1,filter:anyOpen&&!isOpen?"grayscale(0.85)":"none",transition:"opacity .15s, filter .15s"}}>
       {/* Row header */}
       <div id={"crmrow-"+c.id} onClick={()=>setOpenId(isOpen?null:c.id)}
         style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer",background:isOpen?rowAccent(c)+"18":rowAccent(c)+"12"}}>
@@ -5209,7 +5233,10 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
 
   const[view,setView]=useState("list");
   const[fbPopup,setFbPopup]=useState(null);
-  const rowCtx={openId,setOpenId,busyMap,setBusyMap,errMap,setErrMap,setFbPopup,patch,copyRules,me,recentFeedback,saveFeedback,toast,reload,setTab,onOpen,team,onDelete};
+  // anyOpen: is the currently-open row actually still in the visible (filtered) list?
+  // Guards focus-mode dim against a STALE openId (row opened, then dropped by a poll/reload/
+  // filter) which otherwise greys every row with nothing actually expanded.
+  const rowCtx={openId,setOpenId,anyOpen:allCopy.some(x=>x.id===openId),busyMap,setBusyMap,errMap,setErrMap,setFbPopup,patch,copyRules,me,recentFeedback,saveFeedback,toast,reload,setTab,onOpen,team,onDelete};
   return<div>
     {fbPopup&&<FeedbackPopup stage={fbPopup.stage}by={me.name}onSave={saveFeedback}title="How was this copy generation?"compareModels={fbPopup.compareModels}campaignId={fbPopup.campaignId}onClose={()=>{const a=fbPopup.after;setFbPopup(null);if(a)a();}}/>}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
@@ -5230,9 +5257,23 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
           const needsAttention=allCopy.filter(c=>c.stage==="content"||c.stage==="brand_review");
           const approvedAll=allCopy.filter(c=>c.stage!=="content"&&c.stage!=="brand_review"&&c.data?.selectedCopyIdx!=null&&c.data?.copyOptions);
           return<>
-            {needsAttention.length>0&&<CollapsibleSection title="Needs attention" count={needsAttention.length} color={C.purple} icon={<ClockIcon size={15}/>} defaultOpen={true}>
-              {groupByDate(needsAttention).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.purple}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}ctx={rowCtx}/>)}</Card></div>)}
-            </CollapsibleSection>}
+            {needsAttention.length>0&&(()=>{
+              const active=needsAttention.filter(c=>c.stage==="content");        // still yours to act on (needs copy / pick one)
+              const awaiting=needsAttention.filter(c=>c.stage==="brand_review");  // already sent for approval — waiting on the reviewer
+              return<CollapsibleSection title="Needs attention" count={needsAttention.length} color={C.purple} icon={<ClockIcon size={15}/>} defaultOpen={true}>
+                {groupByDate(active).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.purple}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}ctx={rowCtx}/>)}</Card></div>)}
+                {awaiting.length>0&&<div style={{marginTop:active.length?20:0}}>
+                  {/* Awaiting review — copy sent for brand approval; grouped at the bottom since it's waiting on the reviewer, not on you */}
+                  <div style={{display:"flex",alignItems:"center",gap:8,margin:"2px 2px 10px"}}>
+                    <Eye size={14}color="#9333EA"/>
+                    <span style={{fontSize:12,fontWeight:800,color:"#9333EA",textTransform:"uppercase",letterSpacing:.5}}>Awaiting review</span>
+                    <span style={{fontSize:11,fontWeight:700,color:"#9333EA",background:"#F3E8FF",padding:"1px 8px",borderRadius:999}}>{awaiting.length}</span>
+                    <div style={{flex:1,height:1,background:C.line}}/>
+                  </div>
+                  {groupByDate(awaiting).map(([date,items])=><div key={"aw-"+date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color="#9333EA"/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}ctx={rowCtx}/>)}</Card></div>)}
+                </div>}
+              </CollapsibleSection>;
+            })()}
             {approvedAll.length>0&&<CollapsibleSection title="Approved" count={approvedAll.length} color="#5B21B6" icon={<CheckCircle2 size={15}/>} defaultOpen={approvedAll.some(c=>c.id===openId)}>
               {groupByDate(approvedAll).map(([date,items])=><div key={date}style={{marginBottom:10}}><DateGroupHeader date={date}count={items.length}color={C.purple}/><Card style={{padding:0,overflow:"hidden"}}>{items.map(c=><CopyRow key={c.id}c={c}ctx={rowCtx}/>)}</Card></div>)}
             </CollapsibleSection>}
@@ -7385,16 +7426,19 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
 
 // Compact, read-only brief summary shown to the design team/lead on the Design page.
 function BriefInShort({c}){
+  const[open,setOpen]=React.useState(true);
   const b=(c&&c.data&&c.data.brief)||{};
   const meta=[c.product&&("Product: "+c.product),c.channel,c.offer?("Offer: "+c.offer):"Offer: none",c.audience_label||c.segment,c.go_live_date&&("Live "+fmtDate(c.go_live_date))].filter(Boolean);
   const rtbs=(Array.isArray(b.proofPoints)&&b.proofPoints.length?b.proofPoints:(Array.isArray(b.rtbs)?b.rtbs:[])).filter(Boolean);
   if(!b.idea&&!b.strategicInsight&&!b.copyDirection&&!meta.length)return null;
-  return<div style={{background:"#FFF7ED",border:"1px solid #FED7AA",borderLeft:"3px solid "+C.coral,borderRadius:10,padding:"12px 14px",marginBottom:12}}>
-    <div style={{fontSize:10,fontWeight:800,color:"#C2410C",textTransform:"uppercase",letterSpacing:.5,marginBottom:6,display:"flex",alignItems:"center",gap:5}}><BookMarked size={12}/>Brief in short</div>
+  return<div style={{background:"#FFF7ED",border:"1px solid #FED7AA",borderLeft:"3px solid "+C.coral,borderRadius:10,padding:"12px 14px",marginTop:12,marginBottom:12}}>
+    <div onClick={()=>setOpen(v=>!v)} style={{fontSize:10,fontWeight:800,color:"#C2410C",textTransform:"uppercase",letterSpacing:.5,marginBottom:open?6:0,display:"flex",alignItems:"center",gap:5,cursor:"pointer",userSelect:"none"}}><BookMarked size={12}/>Brief in short<span style={{marginLeft:"auto",display:"flex",alignItems:"center"}}>{open?<ChevronDown size={14}/>:<ChevronRight size={14}/>}</span></div>
+    {open&&<React.Fragment>
     {b.idea&&<div style={{fontSize:13.5,fontWeight:700,color:C.ink,lineHeight:1.45,marginBottom:5}}>{b.idea}</div>}
     {meta.length>0&&<div style={{fontSize:11.5,color:C.sub,marginBottom:(b.strategicInsight||b.copyDirection||b.whatsappNote||rtbs.length)?6:0}}>{meta.join("  ·  ")}</div>}
     {b.copyDirection&&<div style={{fontSize:12.5,color:"#7C2D12",lineHeight:1.45,marginBottom:5}}><b style={{color:"#9A3412"}}>Direction: </b>{b.copyDirection}</div>}
     {rtbs.length>0&&<div style={{fontSize:12,color:C.sub,lineHeight:1.4}}><b>Proof points: </b>{rtbs.join(" · ")}</div>}
+    </React.Fragment>}
   </div>;
 }
 // Super-admin-only standalone composer: pick any asset, open the full composer for it.
