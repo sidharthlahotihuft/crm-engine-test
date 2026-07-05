@@ -153,7 +153,7 @@ const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // ===== Supabase egress control (paused image library/suggestions; reversible) =====
 const ENABLE_IMAGE_SUGGESTIONS=false; // brief-form image suggestions fetch — OFF to cut egress
 const ENABLE_LIBRARY_THUMBS=false;    // auto-load full-res library thumbnails on open — OFF. Explicit preview still loads one image.
-const BUILD="v42.37 (b134) - FINALIZED PUSH = TWO COLUMNS: on the finalized (done) page a push notification asset now lays out as two side-by-side columns, Title | Message, instead of leaving an empty image column that shoved the copy to the right. WhatsApp/Email finalized (image + body) and the design page are unchanged. Prior b133: hide Approved-copy label on finalized. Builds on b133 and prior.";
+const BUILD="v42.38 (b135) - FINALIZED PUSH STACKED: replaced the two-column Title|Message with a stacked layout - Title on top, Message below it, left-aligned full width - while the Preview/Copy-text CTAs stay top-right in the header. WhatsApp/Email finalized and the design page unchanged. Prior b134: two-column push (superseded). Builds on b134 and prior.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -2275,7 +2275,7 @@ function App(){
         <div style={{width:34,height:34,borderRadius:9,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={18}color="#fff"/></div>
         <div style={{lineHeight:1.15,minWidth:0}}>
           <div style={{fontWeight:800,fontSize:15,letterSpacing:-.3}}>CRM Engine</div>
-          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b134</div>
+          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b135</div>
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"12px 10px",display:"flex",flexDirection:"column",gap:3}}>
@@ -5424,12 +5424,12 @@ function ApprovedCopyCard({copy,channel,product,image,hideImageCopy,leftExtras,f
     </div>
     {/* Columns. Finalized drops the left column. Finalized PUSH (no image) = two columns Title | Message (this page only). Everything else = left | centre(image/mock) | right(body). Stacks on narrow screens. */}
     {finalized&&isPush
-      ?<div style={{display:"flex",gap:14,flexWrap:"wrap",alignItems:"flex-start"}}>
-        {copy.header&&<div style={{flex:"1 1 220px",minWidth:180}}>
+      ?<div style={{display:"flex",flexDirection:"column",gap:12}}>
+        {copy.header&&<div>
           <div style={{fontSize:9,fontWeight:800,color:"#0F766E",textTransform:"uppercase",letterSpacing:.6,marginBottom:3}}>Title</div>
           <div style={{fontSize:13,fontWeight:700,color:"#4C1D95",lineHeight:1.4,whiteSpace:"pre-line"}}>{copy.header}</div>
         </div>}
-        {copy.body&&<div style={{flex:"1 1 220px",minWidth:180}}>
+        {copy.body&&<div>
           <div style={{fontSize:9,fontWeight:800,color:"#0F766E",textTransform:"uppercase",letterSpacing:.6,marginBottom:3}}>Message</div>
           <div style={{fontSize:12.5,color:"#4C1D95",lineHeight:1.5,whiteSpace:"pre-line"}}>{copy.body}</div>
         </div>}
