@@ -153,7 +153,7 @@ const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // ===== Supabase egress control (paused image library/suggestions; reversible) =====
 const ENABLE_IMAGE_SUGGESTIONS=false; // brief-form image suggestions fetch — OFF to cut egress
 const ENABLE_LIBRARY_THUMBS=false;    // auto-load full-res library thumbnails on open — OFF. Explicit preview still loads one image.
-const BUILD="v42.35 (b132) - GOING LIVE TODAY SPOTLIGHT ON FINALIZED: the Finalized Assets list now splits into a Going live today section on top (in full colour, with the weekday/date label + count) holding assets whose go-live date is today, and an All finalized section below where every other row is greyed/desaturated. Only todays go-lives stay coloured. If nothing goes live today the list renders normally (all coloured, no split). List view only; Calendar view unchanged. Prior b131: push title+body and channel icons on finalized. Builds on b131 and prior.";
+const BUILD="v42.37 (b134) - FINALIZED PUSH = TWO COLUMNS: on the finalized (done) page a push notification asset now lays out as two side-by-side columns, Title | Message, instead of leaving an empty image column that shoved the copy to the right. WhatsApp/Email finalized (image + body) and the design page are unchanged. Prior b133: hide Approved-copy label on finalized. Builds on b133 and prior.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -2275,7 +2275,7 @@ function App(){
         <div style={{width:34,height:34,borderRadius:9,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={18}color="#fff"/></div>
         <div style={{lineHeight:1.15,minWidth:0}}>
           <div style={{fontWeight:800,fontSize:15,letterSpacing:-.3}}>CRM Engine</div>
-          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b132</div>
+          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b134</div>
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"12px 10px",display:"flex",flexDirection:"column",gap:3}}>
@@ -5414,7 +5414,7 @@ function ApprovedCopyCard({copy,channel,product,image,hideImageCopy,leftExtras,f
   </div>;
   return<div style={{background:"#F5F3FF",border:"1px solid #DDD6FE",borderLeft:"3px solid "+C.purple,borderRadius:10,padding:"10px 14px",marginBottom:12}}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,gap:8,flexWrap:"wrap"}}>
-      <span style={{fontSize:10,fontWeight:700,color:"#5B21B6",textTransform:"uppercase",letterSpacing:.6,display:"flex",alignItems:"center",gap:4}}><CheckCircle2 size={11}/>Approved copy</span>
+      {finalized?<span/>:<span style={{fontSize:10,fontWeight:700,color:"#5B21B6",textTransform:"uppercase",letterSpacing:.6,display:"flex",alignItems:"center",gap:4}}><CheckCircle2 size={11}/>Approved copy</span>}
       <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
         {!finalized&&copy.direction&&<span style={{fontSize:10.5,color:"#7C3AED",background:"#EDE9FE",padding:"2px 7px",borderRadius:5,fontWeight:600}}>{copy.direction}</span>}
         {isWA&&<button onClick={()=>setShowMock(true)}style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,fontWeight:700,color:"#0b141a",background:"#00a884",border:"none",borderRadius:7,padding:"4px 9px",cursor:"pointer"}}><MessageSquare size={12}/>Preview as WhatsApp</button>}
@@ -5422,12 +5422,23 @@ function ApprovedCopyCard({copy,channel,product,image,hideImageCopy,leftExtras,f
         <CopyBtn text={()=>copyTextFromOption(copy,channel)}/>
       </div>
     </div>
-    {/* Columns: left (RTB + notes) | centre (image/mock) | right (body copy). Finalized drops the left column — just image + copy. Stacks on narrow screens. */}
-    <div style={{display:"flex",gap:14,flexWrap:"wrap",alignItems:"flex-start"}}>
-      {!finalized&&leftCol}
-      {centerCol}
-      {rightCol}
-    </div>
+    {/* Columns. Finalized drops the left column. Finalized PUSH (no image) = two columns Title | Message (this page only). Everything else = left | centre(image/mock) | right(body). Stacks on narrow screens. */}
+    {finalized&&isPush
+      ?<div style={{display:"flex",gap:14,flexWrap:"wrap",alignItems:"flex-start"}}>
+        {copy.header&&<div style={{flex:"1 1 220px",minWidth:180}}>
+          <div style={{fontSize:9,fontWeight:800,color:"#0F766E",textTransform:"uppercase",letterSpacing:.6,marginBottom:3}}>Title</div>
+          <div style={{fontSize:13,fontWeight:700,color:"#4C1D95",lineHeight:1.4,whiteSpace:"pre-line"}}>{copy.header}</div>
+        </div>}
+        {copy.body&&<div style={{flex:"1 1 220px",minWidth:180}}>
+          <div style={{fontSize:9,fontWeight:800,color:"#0F766E",textTransform:"uppercase",letterSpacing:.6,marginBottom:3}}>Message</div>
+          <div style={{fontSize:12.5,color:"#4C1D95",lineHeight:1.5,whiteSpace:"pre-line"}}>{copy.body}</div>
+        </div>}
+      </div>
+      :<div style={{display:"flex",gap:14,flexWrap:"wrap",alignItems:"flex-start"}}>
+        {!finalized&&leftCol}
+        {centerCol}
+        {rightCol}
+      </div>}
     {showMock&&<WhatsAppMockup o={copy}image={imgSrc}product={product}imageHasCopy={!!imgSrc}onClose={()=>setShowMock(false)}/>}
     {showPush&&<PushMockup o={copy}image={imgSrc}product={product}onClose={()=>setShowPush(false)}/>}
   </div>;
