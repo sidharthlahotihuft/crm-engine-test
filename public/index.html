@@ -153,7 +153,7 @@ const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // ===== Supabase egress control (paused image library/suggestions; reversible) =====
 const ENABLE_IMAGE_SUGGESTIONS=false; // brief-form image suggestions fetch — OFF to cut egress
 const ENABLE_LIBRARY_THUMBS=false;    // auto-load full-res library thumbnails on open — OFF. Explicit preview still loads one image.
-const BUILD="v42.32 (b129) - CALENDAR VIEW ON FINALIZED ASSETS: the Done & ready (Finalized Assets) page now has the same List / Calendar toggle as Copy. Calendar shows the month grid (defaults to the current month, e.g. July) with finalized assets placed on their go-live date; tap a day to expand its full list, tap an asset to open it. Reuses the existing CalendarView; filters/sort show in List view only. Prior b128: finalized asset shows real creative. Builds on b128 and prior.";
+const BUILD="v42.35 (b132) - GOING LIVE TODAY SPOTLIGHT ON FINALIZED: the Finalized Assets list now splits into a Going live today section on top (in full colour, with the weekday/date label + count) holding assets whose go-live date is today, and an All finalized section below where every other row is greyed/desaturated. Only todays go-lives stay coloured. If nothing goes live today the list renders normally (all coloured, no split). List view only; Calendar view unchanged. Prior b131: push title+body and channel icons on finalized. Builds on b131 and prior.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -2275,7 +2275,7 @@ function App(){
         <div style={{width:34,height:34,borderRadius:9,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={18}color="#fff"/></div>
         <div style={{lineHeight:1.15,minWidth:0}}>
           <div style={{fontWeight:800,fontSize:15,letterSpacing:-.3}}>CRM Engine</div>
-          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b129</div>
+          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b132</div>
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"12px 10px",display:"flex",flexDirection:"column",gap:3}}>
@@ -5402,6 +5402,10 @@ function ApprovedCopyCard({copy,channel,product,image,hideImageCopy,leftExtras,f
       :(!isPush&&copy.header&&<div style={{width:320,flexShrink:0}}><CreativeCard o={copy} product={product} big/></div>)}
   </div>;
   const rightCol=<div style={{flex:"1 1 220px",minWidth:200,display:"flex",flexDirection:"column",gap:10}}>
+    {isPush&&copy.header&&<div>
+      <div style={{fontSize:9,fontWeight:800,color:"#0F766E",textTransform:"uppercase",letterSpacing:.6,marginBottom:3}}>Title</div>
+      <div style={{fontSize:13,fontWeight:700,color:"#4C1D95",lineHeight:1.4,whiteSpace:"pre-line"}}>{copy.header}</div>
+    </div>}
     {copy.body&&<div>
       <div style={{fontSize:9,fontWeight:800,color:"#0F766E",textTransform:"uppercase",letterSpacing:.6,marginBottom:3}}>{isPush?"Message":"Body copy"}</div>
       <div style={{fontSize:12.5,color:"#4C1D95",lineHeight:1.5,whiteSpace:"pre-line"}}>{copy.body}</div>
@@ -5412,15 +5416,15 @@ function ApprovedCopyCard({copy,channel,product,image,hideImageCopy,leftExtras,f
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,gap:8,flexWrap:"wrap"}}>
       <span style={{fontSize:10,fontWeight:700,color:"#5B21B6",textTransform:"uppercase",letterSpacing:.6,display:"flex",alignItems:"center",gap:4}}><CheckCircle2 size={11}/>Approved copy</span>
       <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-        {copy.direction&&<span style={{fontSize:10.5,color:"#7C3AED",background:"#EDE9FE",padding:"2px 7px",borderRadius:5,fontWeight:600}}>{copy.direction}</span>}
+        {!finalized&&copy.direction&&<span style={{fontSize:10.5,color:"#7C3AED",background:"#EDE9FE",padding:"2px 7px",borderRadius:5,fontWeight:600}}>{copy.direction}</span>}
         {isWA&&<button onClick={()=>setShowMock(true)}style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,fontWeight:700,color:"#0b141a",background:"#00a884",border:"none",borderRadius:7,padding:"4px 9px",cursor:"pointer"}}><MessageSquare size={12}/>Preview as WhatsApp</button>}
         {isPush&&<button onClick={()=>setShowPush(true)}style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,fontWeight:700,color:"#fff",background:C.navy,border:"none",borderRadius:7,padding:"4px 9px",cursor:"pointer"}}><BellIcon size={12}/>Preview as notification</button>}
         <CopyBtn text={()=>copyTextFromOption(copy,channel)}/>
       </div>
     </div>
-    {/* Three columns — left: RTB + notes | center: creative mockup | right: body copy. Stacks on narrow screens. */}
+    {/* Columns: left (RTB + notes) | centre (image/mock) | right (body copy). Finalized drops the left column — just image + copy. Stacks on narrow screens. */}
     <div style={{display:"flex",gap:14,flexWrap:"wrap",alignItems:"flex-start"}}>
-      {leftCol}
+      {!finalized&&leftCol}
       {centerCol}
       {rightCol}
     </div>
@@ -7936,7 +7940,7 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate,active})
   };
   const[openId,setOpenId]=useState(null);
   React.useEffect(()=>{if(active&&active.id&&active.stage==="done"){setOpenId(active.id);setTimeout(()=>{const el=document.getElementById("donerow-"+active.id);if(el)el.scrollIntoView({behavior:"smooth",block:"center"});},150);}},[active&&active.id]);
-  const DoneRow=({c})=>{
+  const DoneRow=({c,dim})=>{
     const isOpen=openId===c.id;
     const brief=c.data?.brief;
     const opts=c.data?.copyOptions;
@@ -7973,9 +7977,10 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate,active})
       }catch(e){if(typeof toast!=="undefined"&&toast)toast("Couldn't send the alert — try again","error");}
       setEmailing(false);
     };
-    return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`5px solid ${rowAccent(c)}`,background:rowAccent(c)+"12"}}>
+    return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`5px solid ${dim?C.line:rowAccent(c)}`,background:dim?"#fff":rowAccent(c)+"12",opacity:dim?.55:1,filter:dim?"grayscale(0.85)":"none"}}>
       {/* Collapsed header — click to expand */}
       <div id={"crmrow-"+c.id} onClick={()=>setOpenId(isOpen?null:c.id)}style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer"}}>
+        <ChannelIcon channel={c.channel}/>
         <div style={{flex:1,minWidth:0}}>
           <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3,flexWrap:"wrap"}}>
             <span style={{fontWeight:800,fontSize:14,color:C.ink}}>{c.product||p.product||"—"}</span>
@@ -8079,9 +8084,31 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate,active})
       ?<CalendarView campaigns={allDone}onOpen={onOpen}readyOnly={isBusiness(me)}/>
       :allDone.length===0
       ?<Card><Empty icon={<CheckCircle2 size={26}color={C.sub}/>}title="Nothing done yet"sub="Completed, ready-to-go-live assets appear here. Archived assets live in the Archive tab."/></Card>
-      :<Card style={{padding:0,overflow:"hidden"}}>
-        {allDone.map(c=><DoneRow key={c.id}c={c}/>)}
-      </Card>}
+      :(()=>{
+        // Spotlight what's going live TODAY: those stay in colour on top; everything else greys out below.
+        const _t=new Date();_t.setHours(0,0,0,0);
+        const _isToday=(c)=>{if(!c.go_live_date)return false;const g=new Date(c.go_live_date);g.setHours(0,0,0,0);return g.getTime()===_t.getTime();};
+        const liveToday=allDone.filter(_isToday);
+        const rest=allDone.filter(c=>!_isToday(c));
+        const todayLabel=_t.toLocaleDateString("en-IN",{weekday:"long",day:"numeric",month:"short"});
+        const hasToday=liveToday.length>0;
+        return<>
+          {hasToday&&<div style={{marginBottom:16}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,margin:"2px 2px 8px"}}>
+              <Send size={14}color={C.coral}/>
+              <span style={{fontSize:12,fontWeight:800,color:C.coral,textTransform:"uppercase",letterSpacing:.5}}>Going live today</span>
+              <span style={{fontSize:11.5,fontWeight:700,color:C.ink,background:"#FEF3C7",padding:"1px 8px",borderRadius:999}}>{todayLabel}</span>
+              <span style={{fontSize:11,fontWeight:700,color:C.coral,background:C.coral+"18",padding:"1px 8px",borderRadius:999}}>{liveToday.length}</span>
+              <div style={{flex:1,height:1,background:C.line}}/>
+            </div>
+            <Card style={{padding:0,overflow:"hidden"}}>{liveToday.map(c=><DoneRow key={c.id}c={c}/>)}</Card>
+          </div>}
+          {rest.length>0&&<div>
+            {hasToday&&<div style={{fontSize:11.5,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.5,margin:"2px 2px 8px"}}>All finalized</div>}
+            <Card style={{padding:0,overflow:"hidden"}}>{rest.map(c=><DoneRow key={c.id}c={c}dim={hasToday}/>)}</Card>
+          </div>}
+        </>;
+      })()}
   </div>;
 }
 
