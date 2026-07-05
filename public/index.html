@@ -153,7 +153,7 @@ const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // ===== Supabase egress control (paused image library/suggestions; reversible) =====
 const ENABLE_IMAGE_SUGGESTIONS=false; // brief-form image suggestions fetch — OFF to cut egress
 const ENABLE_LIBRARY_THUMBS=false;    // auto-load full-res library thumbnails on open — OFF. Explicit preview still loads one image.
-const BUILD="v42.27 (b124) - AWAITING REVIEW SUBGROUP: inside the Copy 'Needs attention' section, rows already sent for brand approval (stage brand_review - the ones showing 'Waiting for copy approval' + the Remind pill) are now pulled to the BOTTOM under an 'Awaiting review' subheader, separated from the rows still on you (needs copy / pick one) which stay on top. Waiting-on-the-reviewer work no longer interleaves with your actionable work. Section total count unchanged (still counts both). Prior b123: focus-mode grey gated on anyOpen + week-strip calendar tap-to-expand. Builds on b123 and prior.";
+const BUILD="v42.29 (b126) - COPY EMPTY-STATE DE-CLUTTER: the no-copy-yet state showed four overlapping prompts (Generate directions CTA, a Ready-when-you-are card, a separate Add-manually button, and a No-copy-generated-yet card, some with stale Generate options wording). Now it is one CTA row: Generate directions + Add manually (pencil) side by side. Removed the Ready-when-you-are card; the standalone Add-manually now only appears in the directions-pick state (so it is never duplicated); the No-copy-yet red card is kept only for business users (who cannot generate) with corrected wording. Prior b125: focus spotlight default. Builds on b125 and prior.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -2266,7 +2266,7 @@ function App(){
         <div style={{width:34,height:34,borderRadius:9,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={18}color="#fff"/></div>
         <div style={{lineHeight:1.15,minWidth:0}}>
           <div style={{fontWeight:800,fontSize:15,letterSpacing:-.3}}>CRM Engine</div>
-          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b124</div>
+          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b126</div>
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"12px 10px",display:"flex",flexDirection:"column",gap:3}}>
@@ -4296,7 +4296,7 @@ function BriefSection({label,content}){
 }
 
 /* ===== Brief Summary Card (used in Copy + Design tabs) ================== */
-function BriefSummaryCard({active,activeBrief,copyRules,busy,refineFor,gen,genDirections,opts,patch,me,onPreview}){
+function BriefSummaryCard({active,activeBrief,copyRules,busy,refineFor,gen,genDirections,opts,patch,me,onPreview,onAddManual}){
   const[expanded,setExpanded]=useState(false);
   const[userToggled,setUserToggled]=useState(false);
   const[editBrief,setEditBrief]=useState(false);
@@ -4339,9 +4339,9 @@ function BriefSummaryCard({active,activeBrief,copyRules,busy,refineFor,gen,genDi
       </Card>}
       </React.Fragment>}
 
-      {/* CTA — Generate directions (only until directions exist and no options yet) */}
-      {!active?.data?.directions&&!opts&&<div style={{display:"flex",justifyContent:"center",marginTop:10,marginBottom:2}}>
-        {busy&&!refineFor?<Spin label="Finding directions…"/>:<Btn onClick={e=>{e.stopPropagation();genDirections();}}style={{background:C.coral}}><Sparkles size={13}/>Generate directions</Btn>}
+      {/* CTA — Generate directions + Add manually side by side (only until directions/options exist) */}
+      {!active?.data?.directions&&!opts&&<div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:10,flexWrap:"wrap",marginTop:10,marginBottom:2}}>
+        {busy&&!refineFor?<Spin label="Finding directions…"/>:<><Btn onClick={e=>{e.stopPropagation();genDirections();}}style={{background:C.coral}}><Sparkles size={13}/>Generate directions</Btn>{onAddManual&&!isBusiness(me)&&<Btn variant="ghost"onClick={e=>{e.stopPropagation();onAddManual();}}><PenLine size={13}/>Add manually</Btn>}</>}
       </div>}
       </React.Fragment>}
   </div>;
@@ -4792,7 +4792,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
 
   const CopyRowRef=React.useRef(null);
   if(!CopyRowRef.current)CopyRowRef.current=({c,ctx})=>{
-    const {openId,setOpenId,anyOpen,busyMap,setBusyMap,errMap,setErrMap,setFbPopup,patch,copyRules,me,recentFeedback,saveFeedback,toast,reload,setTab,onOpen,team,onDelete}=ctx;
+    const {openId,setOpenId,activeId,busyMap,setBusyMap,errMap,setErrMap,setFbPopup,patch,copyRules,me,recentFeedback,saveFeedback,toast,reload,setTab,onOpen,team,onDelete}=ctx;
     const isOpen=openId===c.id;
     const activeBrief=c.data?.brief;
     const opts=c.data?.copyOptions;
@@ -5025,7 +5025,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       const o=opts?.[sel];
       const tone=c.stage==="content"?{bar:"#92400E",bg:"#FFFBEB"}:c.stage==="brand_review"?{bar:"#9333EA",bg:"#FAF5FF"}:ROW_TONE[c.stage==="done"?"done":"approved"];
       const isPush=isPushChannel(c.channel);
-      return<div id={"donerow-"+c.id} style={{borderBottom:`1px solid ${C.line}`,borderLeft:`5px solid ${anyOpen&&!isOpen?C.line:rowAccent(c)}`,background:anyOpen&&!isOpen?"#fff":rowAccent(c)+"12",opacity:anyOpen&&!isOpen?.5:1,filter:anyOpen&&!isOpen?"grayscale(0.85)":"none",transition:"opacity .15s, filter .15s"}}>
+      return<div id={"donerow-"+c.id} style={{borderBottom:`1px solid ${C.line}`,borderLeft:`5px solid ${activeId&&c.id!==activeId?C.line:rowAccent(c)}`,background:activeId&&c.id!==activeId?"#fff":rowAccent(c)+"12",opacity:activeId&&c.id!==activeId?.5:1,filter:activeId&&c.id!==activeId?"grayscale(0.85)":"none",transition:"opacity .15s, filter .15s"}}>
         {/* Collapsed header — always visible, click to expand */}
         <div id={"crmrow-"+c.id} onClick={()=>setOpenId(isOpen?null:c.id)}style={{display:"flex",alignItems:"center",gap:12,padding:"12px 18px",cursor:"pointer",userSelect:"none"}}>
           <div style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
@@ -5097,7 +5097,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
       </div>;
     }
 
-    return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`5px solid ${anyOpen&&!isOpen?C.line:rowAccent(c)}`,opacity:anyOpen&&!isOpen?.5:1,filter:anyOpen&&!isOpen?"grayscale(0.85)":"none",transition:"opacity .15s, filter .15s"}}>
+    return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`5px solid ${activeId&&c.id!==activeId?C.line:rowAccent(c)}`,opacity:activeId&&c.id!==activeId?.5:1,filter:activeId&&c.id!==activeId?"grayscale(0.85)":"none",transition:"opacity .15s, filter .15s"}}>
       {/* Row header */}
       <div id={"crmrow-"+c.id} onClick={()=>setOpenId(isOpen?null:c.id)}
         style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer",background:isOpen?rowAccent(c)+"18":rowAccent(c)+"12"}}>
@@ -5143,8 +5143,7 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
             </div>}
           </div>
         </div>}
-        <BriefSummaryCard active={c}activeBrief={activeBrief}copyRules={copyRules}busy={busy}refineFor={refineFor}gen={gen}genDirections={genDirections}opts={opts}patch={patch}me={me}onPreview={(o)=>setMockupOpt(o)}/>
-        {!c.data?.directions&&!opts&&!manualMode&&activeBrief&&<Card style={{padding:"14px 16px",marginBottom:12,display:"flex",alignItems:"center",gap:12}}><div style={{width:34,height:34,borderRadius:9,background:"#FFF4ED",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={17}color={C.coral}/></div><div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:800,color:C.ink}}>Ready when you are</div><div style={{fontSize:12,color:C.sub,marginTop:1}}>Hit <b>Generate directions</b> above to get 3 creative angles from the brief — or add copy manually.</div></div></Card>}
+        <BriefSummaryCard active={c}activeBrief={activeBrief}copyRules={copyRules}busy={busy}refineFor={refineFor}gen={gen}genDirections={genDirections}opts={opts}patch={patch}me={me}onPreview={(o)=>setMockupOpt(o)}onAddManual={()=>setManualMode(manualMode==="add"?null:"add")}/>
         {c.data?.directions&&!opts&&!manualMode&&<Card style={{padding:"14px 16px",marginBottom:12}}><div style={{fontSize:12.5,fontWeight:800,color:C.ink,marginBottom:10}}>Pick a direction <span style={{fontWeight:600,color:C.sub}}>— or edit one first</span></div><div style={{display:"flex",flexDirection:"column",gap:8}}>{c.data.directions.map((d,i)=>editDirIdx===i
           ? <div key={i}style={{background:"#fff",border:`1px solid ${C.coral}66`,borderRadius:10,padding:"10px 12px"}}>
               <input value={dirLabelDraft}onChange={e=>setDirLabelDraft(e.target.value)}placeholder="Direction title"style={{width:"100%",boxSizing:"border-box",fontSize:13,fontWeight:700,padding:"7px 9px",border:`1px solid ${C.line}`,borderRadius:8,marginBottom:6,fontFamily:"inherit",color:C.coral}}/>
@@ -5171,11 +5170,11 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
           </div>{busy&&<div style={{marginTop:10}}><Spin label="Writing copy"/></div>}</Card>}
         {c.copy_approver&&<div style={{marginBottom:10,display:"flex",alignItems:"center",gap:8}}><ApproverChip name={c.brand_approver?`Copy approved · ${c.brand_approver}`:`Sent for approval · ${c.copy_approver}`}at={c.copy_approved_at}color={C.purple}/>{sel!=null&&<span style={{fontSize:12,color:C.sub}}>· {opts[sel]?.direction}</span>}</div>}
         {err&&<div style={{color:C.coral,fontSize:13,marginBottom:8}}>{err}</div>}
-        {!isBusiness(me)&&!opts&&<div style={{display:"flex",justifyContent:"flex-end",gap:8,marginBottom:8}}>
+        {!isBusiness(me)&&!opts&&c.data?.directions&&<div style={{display:"flex",justifyContent:"flex-end",gap:8,marginBottom:8}}>
           <Btn small variant="ghost"onClick={()=>setManualMode(manualMode==="add"?null:"add")}><PenLine size={12}/>Add manually</Btn>
         </div>}
         {!isBusiness(me)&&manualMode==="add"&&<ManualCopyForm initial={null}channel={c.channel}onSave={saveManual}onCancel={()=>setManualMode(null)}/>}
-        {!opts&&!busy&&!manualMode&&!c.data?.directions&&<div style={{background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:10,padding:"12px 16px",marginBottom:10,display:"flex",alignItems:"center",gap:10}}><MessageSquare size={18}color="#B91C1C"/><div><div style={{fontSize:13,fontWeight:700,color:"#B91C1C"}}>No copy generated yet</div><div style={{fontSize:12,color:"#7F1D1D",marginTop:2}}>{isBusiness(me)?"Hit \"Generate options\" in the brief panel above and the team takes it from there.":"Hit \"Generate options\" in the brief panel above, or add copy manually."}</div></div></div>}
+        {isBusiness(me)&&!opts&&!busy&&!manualMode&&!c.data?.directions&&<div style={{background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:10,padding:"12px 16px",marginBottom:10,display:"flex",alignItems:"center",gap:10}}><MessageSquare size={18}color="#B91C1C"/><div><div style={{fontSize:13,fontWeight:700,color:"#B91C1C"}}>No copy generated yet</div><div style={{fontSize:12,color:"#7F1D1D",marginTop:2}}>Hit "Generate directions" in the brief panel above and the team takes it from there.</div></div></div>}
         {busy&&!refineFor&&<div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12,padding:"44px 20px",background:C.paper,border:`1px solid ${C.line}`,borderRadius:12,marginBottom:10}}>
           <Loader2 size={46}style={{animation:"spin 1s linear infinite",color:C.coral}}/>
           <div style={{fontSize:14.5,fontWeight:800,color:C.ink}}>{genPhase==="directions"?"Finding creative directions…":opts?"Regenerating copy…":"Generating copy…"}</div>
@@ -5233,10 +5232,13 @@ function ContentTab({active,patch,copyRules,addRule,setTab,me,recentFeedback,sav
 
   const[view,setView]=useState("list");
   const[fbPopup,setFbPopup]=useState(null);
-  // anyOpen: is the currently-open row actually still in the visible (filtered) list?
-  // Guards focus-mode dim against a STALE openId (row opened, then dropped by a poll/reload/
-  // filter) which otherwise greys every row with nothing actually expanded.
-  const rowCtx={openId,setOpenId,anyOpen:allCopy.some(x=>x.id===openId),busyMap,setBusyMap,errMap,setErrMap,setFbPopup,patch,copyRules,me,recentFeedback,saveFeedback,toast,reload,setTab,onOpen,team,onDelete};
+  // FOCUS SPOTLIGHT: exactly one row is "active" (full colour) at a time; every other row is
+  // greyed. Default = the top row of Needs attention (first content row, else first sent-for-
+  // approval row). Opening any row makes it the active one. If the open row is filtered/reloaded
+  // out of the visible list, we fall back to the top row so there's always exactly one lit.
+  const _naFirstId=(allCopy.filter(c=>c.stage==="content")[0]||allCopy.filter(c=>c.stage==="brand_review")[0]||{}).id;
+  const activeId=allCopy.some(c=>c.id===openId)?openId:_naFirstId;
+  const rowCtx={openId,setOpenId,activeId,busyMap,setBusyMap,errMap,setErrMap,setFbPopup,patch,copyRules,me,recentFeedback,saveFeedback,toast,reload,setTab,onOpen,team,onDelete};
   return<div>
     {fbPopup&&<FeedbackPopup stage={fbPopup.stage}by={me.name}onSave={saveFeedback}title="How was this copy generation?"compareModels={fbPopup.compareModels}campaignId={fbPopup.campaignId}onClose={()=>{const a=fbPopup.after;setFbPopup(null);if(a)a();}}/>}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
@@ -7511,7 +7513,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
 
   const DesignRowRef=React.useRef(null);
   if(!DesignRowRef.current)DesignRowRef.current=({c,ctx})=>{
-    const {openId,setOpenId,imageModes,setImageModes,imageThreads,setImageThreads,designBusyMap,setDesignBusyMap,designErrMap,setDesignErrMap,getImageMode,setImageModeFor,patch,recentFeedback,saveFeedback,onOpen,onDelete,onDuplicate,team,promptRules,addRule,me,active,campaigns}=ctx;
+    const {openId,setOpenId,activeId,imageModes,setImageModes,imageThreads,setImageThreads,designBusyMap,setDesignBusyMap,designErrMap,setDesignErrMap,getImageMode,setImageModeFor,patch,recentFeedback,saveFeedback,onOpen,onDelete,onDuplicate,team,promptRules,addRule,me,active,campaigns}=ctx;
     const isOpen=openId===c.id;
     const copyOpts=c.data?.copyOptions||[];
     const selIdx=c.data?.selectedCopyIdx;
@@ -7650,7 +7652,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
       setEmailing(false);
     };
     const _dtone=(d.sentBack&&!d.pendingApproval)?ROW_TONE.attention:(_imgReady?ROW_TONE.design:ROW_TONE.attention);
-    return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`5px solid ${openId&&!isOpen?C.line:rowAccent(c)}`,opacity:openId&&!isOpen?.5:1,filter:openId&&!isOpen?"grayscale(0.85)":"none",transition:"opacity .15s, filter .15s"}}>
+    return<div style={{borderBottom:`1px solid ${C.line}`,borderLeft:`5px solid ${activeId&&c.id!==activeId?C.line:rowAccent(c)}`,opacity:activeId&&c.id!==activeId?.5:1,filter:activeId&&c.id!==activeId?"grayscale(0.85)":"none",transition:"opacity .15s, filter .15s"}}>
       {/* Row header */}
       <div id={"crmrow-"+c.id} onClick={()=>setOpenId(isOpen?null:c.id)}
         style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer",background:isOpen?rowAccent(c)+"18":rowAccent(c)+"12"}}>
@@ -7840,7 +7842,13 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
     </div>;
   };
   const DesignRow=DesignRowRef.current;
-  const designRowCtx={openId,setOpenId,imageModes,setImageModes,imageThreads,setImageThreads,designBusyMap,setDesignBusyMap,designErrMap,setDesignErrMap,getImageMode,setImageModeFor,patch,recentFeedback,saveFeedback,onOpen,onDelete,onDuplicate,team,promptRules,addRule,me,active,campaigns};
+  // FOCUS SPOTLIGHT (same as Copy): one active row lit, all others greyed. Default = top row of
+  // design Needs attention (first not-in-approval row, else first in-approval row). Opening a row
+  // makes it active; falls back to the top row if the open row leaves the visible list.
+  const _dInApp=(c)=>{const _d=c.data?.design||{};return !!(_d.pendingApproval||_d.assetReview||_d.brandReview||_d.finalReview);};
+  const _dnaFirstId=(allDesign.filter(c=>!_dInApp(c))[0]||allDesign.filter(c=>_dInApp(c))[0]||{}).id;
+  const activeId=allDesign.some(c=>c.id===openId)?openId:_dnaFirstId;
+  const designRowCtx={openId,setOpenId,activeId,imageModes,setImageModes,imageThreads,setImageThreads,designBusyMap,setDesignBusyMap,designErrMap,setDesignErrMap,getImageMode,setImageModeFor,patch,recentFeedback,saveFeedback,onOpen,onDelete,onDuplicate,team,promptRules,addRule,me,active,campaigns};
 
   const[view,setView]=useState("list");
   return<div>
