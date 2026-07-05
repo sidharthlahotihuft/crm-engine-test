@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>HUFT CRM Creative Engine</title>
+<title>HUFT CRM - Creative</title>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.10/babel.min.js"></script>
@@ -153,7 +153,7 @@ const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // ===== Supabase egress control (paused image library/suggestions; reversible) =====
 const ENABLE_IMAGE_SUGGESTIONS=false; // brief-form image suggestions fetch — OFF to cut egress
 const ENABLE_LIBRARY_THUMBS=false;    // auto-load full-res library thumbnails on open — OFF. Explicit preview still loads one image.
-const BUILD="v42.38 (b135) - FINALIZED PUSH STACKED: replaced the two-column Title|Message with a stacked layout - Title on top, Message below it, left-aligned full width - while the Preview/Copy-text CTAs stay top-right in the header. WhatsApp/Email finalized and the design page unchanged. Prior b134: two-column push (superseded). Builds on b134 and prior.";
+const BUILD="v42.39 (b136) - RENAME: the engine is now CRM - Creative (was CRM Engine). Updated the sidebar brand, the login-screen heading, and the browser tab title (HUFT CRM - Creative). AI prompt text that references HUFT CRM left untouched. Prior b135: finalized push stacked layout. Builds on b135 and prior.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -1911,7 +1911,7 @@ function Login({onAuth}){
     <div style={{background:"#fff",borderRadius:18,padding:"40px 36px",width:400,boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
       <div style={{textAlign:"center",marginBottom:28}}>
         <div style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:48,height:48,borderRadius:14,background:C.coral,color:"#fff",marginBottom:14}}><Sparkles size={24}/></div>
-        <h1 style={{margin:"0 0 6px",fontSize:22,fontWeight:800,color:C.ink}}>CRM Creative Engine</h1>
+        <h1 style={{margin:"0 0 6px",fontSize:22,fontWeight:800,color:C.ink}}>CRM - Creative</h1>
         <div style={{color:C.sub,fontSize:14}}>Sign in to your HUFT account</div>
       </div>
       <Field label="Email" value={email} onChange={setEmail} placeholder="you@headsupfortails.com"/>
@@ -2274,8 +2274,8 @@ function App(){
       <div style={{padding:"18px 16px 16px",display:"flex",alignItems:"center",gap:10,borderBottom:"1px solid rgba(255,255,255,.08)"}}>
         <div style={{width:34,height:34,borderRadius:9,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={18}color="#fff"/></div>
         <div style={{lineHeight:1.15,minWidth:0}}>
-          <div style={{fontWeight:800,fontSize:15,letterSpacing:-.3}}>CRM Engine</div>
-          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b135</div>
+          <div style={{fontWeight:800,fontSize:15,letterSpacing:-.3}}>CRM - Creative</div>
+          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b136</div>
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"12px 10px",display:"flex",flexDirection:"column",gap:3}}>
