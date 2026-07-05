@@ -153,7 +153,7 @@ const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // ===== Supabase egress control (paused image library/suggestions; reversible) =====
 const ENABLE_IMAGE_SUGGESTIONS=false; // brief-form image suggestions fetch — OFF to cut egress
 const ENABLE_LIBRARY_THUMBS=false;    // auto-load full-res library thumbnails on open — OFF. Explicit preview still loads one image.
-const BUILD="v42.29 (b126) - COPY EMPTY-STATE DE-CLUTTER: the no-copy-yet state showed four overlapping prompts (Generate directions CTA, a Ready-when-you-are card, a separate Add-manually button, and a No-copy-generated-yet card, some with stale Generate options wording). Now it is one CTA row: Generate directions + Add manually (pencil) side by side. Removed the Ready-when-you-are card; the standalone Add-manually now only appears in the directions-pick state (so it is never duplicated); the No-copy-yet red card is kept only for business users (who cannot generate) with corrected wording. Prior b125: focus spotlight default. Builds on b125 and prior.";
+const BUILD="v42.32 (b129) - CALENDAR VIEW ON FINALIZED ASSETS: the Done & ready (Finalized Assets) page now has the same List / Calendar toggle as Copy. Calendar shows the month grid (defaults to the current month, e.g. July) with finalized assets placed on their go-live date; tap a day to expand its full list, tap an asset to open it. Reuses the existing CalendarView; filters/sort show in List view only. Prior b128: finalized asset shows real creative. Builds on b128 and prior.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -1227,7 +1227,16 @@ const BRIEF_STEPS = [
     question:"Which product, sub-brand, or category?",
     hint:"Tap a quick option or type any brand/category/SKU from headsupfortails.com. Each HUFT sub-brand has a different tone — Sara's is warm and home-style, Meowsi is witty and feline-first, Hearty is bold and energetic.",
     options:[
-      "Sara's Wholesome Food","Hearty","Meowsi","Meowsi Food","Meowsi Treats","NutriMeow","NutriMeow Wet Food","NutriMeow Dry Food","NutriWag","Yakies","DashDog",
+      // HUFT-owned edibles — canonical product / sub-brand names (dogs first, then cats). One name
+      // per variant only (e.g. "Hearty Gravy", never also "Hearty W" / "Hearty Wet"). Free text
+      // below still lets anyone add a SKU or variant that isn't in this list, exactly as before.
+      "Sara's SWF Food","SWF Broth","Sara's Probiotic Chews","Sara's Boosters","Sara's Treats","Sara's Gravy",
+      "Hearty","Hearty Dry","Hearty Gravy","Hearty Biscuits",
+      "Nutriwag","Nutriwag Dry","Nutriwag Wet","Nutriwag Pro","Nutriwag Treats",
+      "Yakies","Yum Nums","YIMT","Chew Barks","Barkery Treats",
+      "Meowsi Food","Meowsi Wet Food","Meowsi Treats","Meowsi Crunchy Treats","Meowsi Soft Treats",
+      "Nutrimeow","Nutrimeow Dry","Nutrimeow Wet / Gravy",
+      "DashDog",
       "HUFT Originals (Accessories)","HUFT Spa / Grooming","HUFT Foundation","HUFT Stores / Retail",
       "Dog Food","Cat Food","Treats & Chews","Toys","Beds & Furniture","Collars & Leashes","Apparel & Raincoats","Cat Litter & Hygiene","Bowls & Feeders","Health & Supplements",
       "All 3P Cat Food","All 3P Dog Food","Royal Canin","Pedigree","Farmina","Sheba","Whiskas","Drools","Orijen","Trixie","KONG","Himalaya",
@@ -2266,7 +2275,7 @@ function App(){
         <div style={{width:34,height:34,borderRadius:9,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={18}color="#fff"/></div>
         <div style={{lineHeight:1.15,minWidth:0}}>
           <div style={{fontWeight:800,fontSize:15,letterSpacing:-.3}}>CRM Engine</div>
-          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b126</div>
+          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b129</div>
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"12px 10px",display:"flex",flexDirection:"column",gap:3}}>
@@ -5369,11 +5378,13 @@ function ManualCopyForm({initial,channel,onSave,onCancel}){
   </div>;
 }
 
-function ApprovedCopyCard({copy,channel,product,image,hideImageCopy,leftExtras}){
+function ApprovedCopyCard({copy,channel,product,image,hideImageCopy,leftExtras,finalized}){
   const[showMock,setShowMock]=useState(false);
   const[showPush,setShowPush]=useState(false);
   const isWA=/whatsapp/i.test(channel||"");
   const isPush=isPushChannel(channel);
+  // image can arrive as a dataURL string (design page) or a finalFile object (finalized view)
+  const imgSrc=typeof image==="string"?image:(image&&image.dataUrl)||null;
   if(!copy)return null;
   const hasRtb=!hideImageCopy&&Array.isArray(copy.rtbsSelected)&&copy.rtbsSelected.length>0;
   const leftCol=<div style={{flex:"1 1 200px",minWidth:180,display:"flex",flexDirection:"column",gap:8}}>
@@ -5385,7 +5396,10 @@ function ApprovedCopyCard({copy,channel,product,image,hideImageCopy,leftExtras})
     {!hasRtb&&!leftExtras&&<div style={{fontSize:11.5,color:C.sub,fontStyle:"italic",padding:"6px 2px"}}>No RTB or notes for this asset.</div>}
   </div>;
   const centerCol=<div style={{flex:"0 0 320px",width:320,display:"flex",flexDirection:"column",gap:10,alignItems:"center"}}>
-    {!isPush&&copy.header&&<div style={{width:320,flexShrink:0}}><CreativeCard o={copy} product={product} big/></div>}
+    {finalized
+      /* Finalized view: show the ACTUAL uploaded/generated creative, never the mock. Push has no image → nothing here, so the row is just notes + message copy. */
+      ?(imgSrc&&<div style={{width:320,flexShrink:0}}><img src={imgSrc}alt={product||"Final creative"}style={{width:"100%",borderRadius:12,border:`1px solid ${C.line}`,display:"block"}}/></div>)
+      :(!isPush&&copy.header&&<div style={{width:320,flexShrink:0}}><CreativeCard o={copy} product={product} big/></div>)}
   </div>;
   const rightCol=<div style={{flex:"1 1 220px",minWidth:200,display:"flex",flexDirection:"column",gap:10}}>
     {copy.body&&<div>
@@ -5410,8 +5424,8 @@ function ApprovedCopyCard({copy,channel,product,image,hideImageCopy,leftExtras})
       {centerCol}
       {rightCol}
     </div>
-    {showMock&&<WhatsAppMockup o={copy}image={image}product={product}imageHasCopy={!!image}onClose={()=>setShowMock(false)}/>}
-    {showPush&&<PushMockup o={copy}image={image}product={product}onClose={()=>setShowPush(false)}/>}
+    {showMock&&<WhatsAppMockup o={copy}image={imgSrc}product={product}imageHasCopy={!!imgSrc}onClose={()=>setShowMock(false)}/>}
+    {showPush&&<PushMockup o={copy}image={imgSrc}product={product}onClose={()=>setShowPush(false)}/>}
   </div>;
 }
 
@@ -7982,7 +7996,7 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate,active})
       {/* Expanded detail */}
       {isOpen&&<div style={{padding:"0 18px 16px"}}>
         {brief&&<div style={{fontSize:12.5,color:C.ink,marginBottom:8,lineHeight:1.5,fontWeight:600}}>{asText(brief.idea)}</div>}
-        {copy&&<ApprovedCopyCard copy={copy}channel={c.channel}product={c.product}image={c.data?.design?.generatedImage||c.data?.design?.finalFile||null}hideImageCopy={/whatsapp/i.test(c.channel||"")}/>}
+        {copy&&<ApprovedCopyCard copy={copy}channel={c.channel}product={c.product}image={c.data?.design?.finalFile||c.data?.design?.generatedImage||null}hideImageCopy={/whatsapp/i.test(c.channel||"")}finalized/>}
         {approvedPrompt&&!/whatsapp/i.test(c.channel||"")&&<div style={{marginBottom:8,background:"#fff",borderRadius:8,padding:"10px 13px",borderLeft:"3px solid "+C.teal,border:`1px solid ${C.line}`}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
             <div style={{fontSize:10,fontWeight:700,color:C.teal,textTransform:"uppercase",letterSpacing:.5}}>Image prompt — {approvedPrompt.label}</div>
@@ -8044,6 +8058,10 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate,active})
     </div>}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
       <div><Eyebrow color={C.green}>Done</Eyebrow><h1 style={{margin:"4px 0 0",fontSize:24,fontWeight:800}}>Done & ready</h1></div>
+      <div style={{display:"flex",border:`1px solid ${C.line}`,borderRadius:8,overflow:"hidden"}}>
+        <button onClick={()=>setView("list")}style={{padding:"6px 14px",border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:view==="list"?C.navy:"#fff",color:view==="list"?"#fff":C.sub,display:"flex",alignItems:"center",gap:5}}><LayoutDashboard size={13}/>List</button>
+        <button onClick={()=>setView("calendar")}style={{padding:"6px 14px",border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:view==="calendar"?C.navy:"#fff",color:view==="calendar"?"#fff":C.sub,display:"flex",alignItems:"center",gap:5}}><CalendarIcon size={13}/>Calendar</button>
+      </div>
     </div>
     {canFinal&&pendingFinal.length>0&&<Card style={{padding:0,overflow:"hidden",marginBottom:16,border:`1.5px solid #9333EA`}}>
       <div style={{padding:"11px 16px",background:"#F5F3FF",borderBottom:`1px solid ${C.line}`,fontWeight:800,fontSize:13,color:"#6D28D9"}}>Pending your final sign-off · {pendingFinal.length}</div>
@@ -8056,8 +8074,10 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate,active})
       </div>)}
     </Card>}
     {finalReviewing&&<ReviewModal c={finalReviewing}me={me}kind="Final sign-off"action="final"tab="done"onApprove={async()=>{await api.post("/api/campaigns/"+finalReviewing.id+"/final-approve",{});window.location.reload();}}onSendBackDone={()=>window.location.reload()}onEdit={()=>onOpen(finalReviewing.id,"done")}onClose={()=>setFinalReviewing(null)}/>}
-    {allDoneAll.length>0&&<TileFilters items={allDoneAll} f={tf} setF={setTf}/>}{allDoneAll.length>0&&<SortBar value={doneSort}onChange={setDoneSort}/>}
-    {allDone.length===0
+    {allDoneAll.length>0&&view==="list"&&<TileFilters items={allDoneAll} f={tf} setF={setTf}/>}{allDoneAll.length>0&&view==="list"&&<SortBar value={doneSort}onChange={setDoneSort}/>}
+    {view==="calendar"
+      ?<CalendarView campaigns={allDone}onOpen={onOpen}readyOnly={isBusiness(me)}/>
+      :allDone.length===0
       ?<Card><Empty icon={<CheckCircle2 size={26}color={C.sub}/>}title="Nothing done yet"sub="Completed, ready-to-go-live assets appear here. Archived assets live in the Archive tab."/></Card>
       :<Card style={{padding:0,overflow:"hidden"}}>
         {allDone.map(c=><DoneRow key={c.id}c={c}/>)}
