@@ -38,8 +38,7 @@ dns.setDefaultResultOrder("ipv4first");
 // Real fix for serverless is the TRANSACTION-mode pooler (port 6543) via DATABASE_URL — see note below.
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
- // ssl: { rejectUnauthorized: false },
- ssl: process.env.PGSSL === "true" ? { rejectUnauthorized: false } : false,
+  ssl: { rejectUnauthorized: false },
   family: 4,
   max: Number(process.env.PG_POOL_MAX || 3),   // small footprint per instance (override via env)
   idleTimeoutMillis: 10000,                     // drop idle connections after 10s so slots free up
@@ -250,7 +249,7 @@ async function reviewCopy(text, ruleStr, user) {
   } catch (e) { console.error("[review] skipped:", e.message); }
   return JSON.stringify(Array.isArray(parsed) ? arr : arr[0]);
 }
-const SERVER_BUILD = "v30.1s (b75) - PUSH SKIPS DESIGN: brand-approve now sends push notifications straight to done (finalized) instead of the design stage (push has no creative to design). Non-push still goes to design. Plus one-time cleanup endpoint POST /api/cleanup/push-in-design to move push assets already stuck in design. Prior (b74): DB pool cap. DB POOL CAPPED: connection pool now max=3 (env PG_POOL_MAX) + 10s idle release + allowExitOnIdle, so serverless instances stop exhausting Supabase session-pooler 15-client limit that was causing 500s on campaigns/stats/etc. Prior (b73): Opus temperature fix.";
+const SERVER_BUILD = "v30.2s (b76) - DIRECTIONS ON HAIKU + GPT FALLBACK: /api/generate with kind='directions' now runs on claude-haiku-4-5 (override via env DIRECTIONS_MODEL) instead of Sonnet; if the Claude call throws, it falls back to OpenAI (gpt-4o via callOpenAI). Copy/steer/brief routing unchanged. Prior (b75) - PUSH SKIPS DESIGN: brand-approve now sends push notifications straight to done (finalized) instead of the design stage (push has no creative to design). Non-push still goes to design. Plus one-time cleanup endpoint POST /api/cleanup/push-in-design to move push assets already stuck in design. Prior (b74): DB pool cap. DB POOL CAPPED: connection pool now max=3 (env PG_POOL_MAX) + 10s idle release + allowExitOnIdle, so serverless instances stop exhausting Supabase session-pooler 15-client limit that was causing 500s on campaigns/stats/etc. Prior (b73): Opus temperature fix.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -452,7 +451,7 @@ async function generate(system, prompt, providerOverride, temperature, kind, use
     return (data.candidates?.[0]?.content?.parts || []).map(p => p.text || "").join("").trim();
   }
   if (PV === "claude") {
-    const _model = modelOverride || ((kind === "steer" || kind === "directions" || kind === "brief") ? "claude-sonnet-4-6" : CLAUDE_MODEL);
+    const _model = modelOverride || ((kind === "steer" || kind === "brief") ? "claude-sonnet-4-6" : (kind === "directions") ? (process.env.DIRECTIONS_MODEL || "claude-haiku-4-5") : CLAUDE_MODEL);
     // b54: prompt caching REMOVED. It was net-negative here: in the 4-model bake-off each Claude
     // model is called once per generate (no intra-call reuse), and the cached prefix carried volatile
     // content (per-channel rules, the live rulebook, accumulated feedback) so it changed almost every
@@ -2238,7 +2237,19 @@ app.post("/api/generate", authMiddleware, async (req, res) => {
   if (kind === "copy") { const _a = await assembleCopySys(system); sys = _a.sys; ruleText = _a.ruleText; }
   try {
     const _user = (req.user && (req.user.name || req.user.email)) || "system";
-    let text = await generate(sys, prompt, want, undefined, kind, _user);
+    let text;
+    if (kind === "directions") {
+      // Directions run on Haiku for speed/cost; if the Claude call fails, fall back to GPT (OpenAI).
+      try {
+        text = await generate(sys, prompt, want, undefined, kind, _user);
+      } catch (e1) {
+        console.error("Directions: Haiku failed, falling back to GPT:", e1.message);
+        text = await callOpenAI(sys, prompt, _user);
+        if (text == null) throw e1; // no OpenAI key configured → surface the original Claude error
+      }
+    } else {
+      text = await generate(sys, prompt, want, undefined, kind, _user);
+    }
     if (kind === "copy") {
       text = await reviewCopy(text, ruleText, _user);   // FLAGS possible language errors as _warn (rulebook-aware) — never edits the copy
     }
