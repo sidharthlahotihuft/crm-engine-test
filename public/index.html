@@ -153,7 +153,7 @@ const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // ===== Supabase egress control (paused image library/suggestions; reversible) =====
 const ENABLE_IMAGE_SUGGESTIONS=false; // brief-form image suggestions fetch — OFF to cut egress
 const ENABLE_LIBRARY_THUMBS=false;    // auto-load full-res library thumbnails on open — OFF. Explicit preview still loads one image.
-const BUILD="v42.49 (b146) - DESIGN PAGE: added a Copy running late section at the TOP (copy-in-progress, non-push, whose design deadline = go-live minus 2 days has already passed; red Running late tag + Remind), and moved Copy in progress - coming for design to the BOTTOM (the on-time remainder). Both list-view only, both show the writer + Remind. Prior b145: routed writer name. Builds on b145 and prior.";
+const BUILD="v42.51 (b148) - APPROVALS FIXES: (1) the Approvals views now use the FULL (unscoped) campaigns list, so approvers - incl. Shrutie (head_marketing) for final sign-off - see everything awaiting them regardless of sub-brand scoping (fixes Shrutie seeing no pending). (2) The mobile approvals page is now pending-only (pendingOnly): the Recently-approved section is hidden, leaving a clean list of just what needs sign-off. Prior b147: editable go-live in Edit brief. Builds on b147 and prior.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -1971,7 +1971,7 @@ function MobileApprovals({me,campaigns,team,onOpen,reload,onLogout}){
       <button onClick={onLogout}style={{background:"rgba(255,255,255,.1)",border:"none",color:"#fff",borderRadius:8,padding:"7px 11px",fontSize:12,fontWeight:700,cursor:"pointer"}}>Log out</button>
     </div>
     <div style={{maxWidth:660,margin:"0 auto",padding:"16px 12px 70px"}}>
-      <ApprovalsTab campaigns={campaigns}onOpen={onOpen}me={me}team={team}reload={reload}/>
+      <ApprovalsTab campaigns={campaigns}onOpen={onOpen}me={me}team={team}reload={reload}pendingOnly/>
     </div>
   </div>;
 }
@@ -2269,7 +2269,7 @@ function App(){
   const sideBtn={display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:9,border:"none",cursor:"pointer",background:"transparent",color:"rgba(255,255,255,.7)",fontSize:13,fontWeight:600,width:"100%",textAlign:"left"};
 
   const _mobileApprovals=(()=>{try{const q=new URLSearchParams(window.location.search);const wantApprovals=q.get("view")==="approvals"||window.location.hash==="#approvals";const isMobile=(window.innerWidth||999)<=768||/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent||"");return wantApprovals&&isMobile;}catch(e){return false;}})();
-  if(_mobileApprovals)return<MobileApprovals me={me}campaigns={scoped}team={team}onOpen={open}reload={loadAll}onLogout={logout}/>;
+  if(_mobileApprovals)return<MobileApprovals me={me}campaigns={campaigns}team={team}onOpen={open}reload={loadAll}onLogout={logout}/>;
   return<div style={{minHeight:"100vh",background:C.paper,display:"flex"}}>
     {/* ===== LEFT SIDEBAR ===== */}
     <div style={{width:230,flexShrink:0,background:C.navy,color:"#fff",position:"sticky",top:0,height:"100vh",display:"flex",flexDirection:"column",boxShadow:"2px 0 14px rgba(0,0,0,.14)",zIndex:30}}>
@@ -2277,7 +2277,7 @@ function App(){
         <div style={{width:34,height:34,borderRadius:9,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={18}color="#fff"/></div>
         <div style={{lineHeight:1.15,minWidth:0}}>
           <div style={{fontWeight:800,fontSize:15,letterSpacing:-.3}}>CRM - Creative</div>
-          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b146</div>
+          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b148</div>
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"12px 10px",display:"flex",flexDirection:"column",gap:3}}>
@@ -2310,7 +2310,7 @@ function App(){
     <div style={{maxWidth:1120,margin:"0 auto",padding:"28px 28px"}}>
       {(()=>{const _allowed=visibleTabKeys(me);const _eff=_allowed.has(tab)||((tab==="content"||tab==="brand_review")&&_allowed.has("content"))?tab:"dashboard";return<>
       {_eff==="dashboard"&&<Dashboard campaigns={scoped}onNew={newCampaign}onOpen={open}me={me}setTab={setTab}reload={loadAll}/>}
-      {_eff==="approvals"&&<ApprovalsTab campaigns={scoped}onOpen={open}me={me}team={team}reload={loadAll}/>}
+      {_eff==="approvals"&&<ApprovalsTab campaigns={campaigns}onOpen={open}me={me}team={team}reload={loadAll}/>}
       {_eff==="brief"&&<BriefTab active={active}patch={patch}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={scoped}onOpen={open}audiences={audiences}onDelete={delCampaign}onNew={newCampaign}onBulkImport={bulkImportBriefs}onBulkGenerate={bulkGenerate}toast={toast}catRules={catRules}/>}
       {(_eff==="content"||_eff==="brand_review")&&<ContentTab active={active}patch={patch}copyRules={copyRules}addRule={addRule}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={scoped}onOpen={open}toast={toast}onDelete={delCampaign}onSplit={splitCopyAssets}catRules={catRules}team={team}reload={loadAll}/>}
       {_eff==="design"&&<DesignTab active={active}patch={patch}promptRules={promptRules}addRule={addRule}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={scoped}onOpen={open}onDelete={delCampaign}onDuplicate={duplicateCampaign}team={team}catRules={catRules}/>}
@@ -2735,7 +2735,7 @@ function ReviewModal({c,me,kind,action,tab,onApprove,onSendBackDone,onEdit,onClo
     </div>
   </div>;
 }
-function ApprovalsTab({campaigns,onOpen,me,team,reload}){
+function ApprovalsTab({campaigns,onOpen,me,team,reload,pendingOnly}){
   const[approving,setApproving]=useState("");
   const[reviewing,setReviewing]=useState(null);
   const approvals=computeApprovals(campaigns,me);
@@ -2785,7 +2785,7 @@ function ApprovalsTab({campaigns,onOpen,me,team,reload}){
           <button onClick={()=>setReviewing({c,kind,action,tab})}style={{fontSize:12,fontWeight:800,color:"#fff",background:"#9333EA",border:"none",borderRadius:7,padding:"6px 14px",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5,flexShrink:0}}><Eye size={13}/>Review</button>
         </div>;})}
       </Card>}
-    {recentlyApproved.length>0&&<div style={{marginTop:18}}><CollapsibleSection title="Recently approved (last 7 days)" count={recentlyApproved.length} color="#5B21B6" icon={<CheckCircle2 size={15}/>} defaultOpen={false}>
+    {!pendingOnly&&recentlyApproved.length>0&&<div style={{marginTop:18}}><CollapsibleSection title="Recently approved (last 7 days)" count={recentlyApproved.length} color="#5B21B6" icon={<CheckCircle2 size={15}/>} defaultOpen={false}>
       <Card style={{padding:0,overflow:"hidden"}}>
         {recentlyApproved.map(c=>{const s=stateOfCampaign(c);const when=_lastApproval(c);return<div key={c.id}style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:`1px solid ${C.line}`}}>
           <div style={{minWidth:0,flex:1}}>
@@ -4153,8 +4153,14 @@ function EditBriefForm({brief,active,patch,onDone}){
     whatsappNote:brief.whatsappNote||"",
     pillar:brief.pillar||"Importance",
   });
+  const[goLive,setGoLive]=useState((active.go_live_date||"").slice(0,10)); // YYYY-MM-DD for the date input
   const save=()=>{
-    patch(active.id,{data:{...(active.data||{}),brief:{...brief,...b}}});
+    patch(active.id,{
+      go_live_date:goLive||null,
+      campaign_week:goLive?weekOfMonth(goLive):null,
+      campaign_month:goLive?monthLabel(goLive):null,
+      data:{...(active.data||{}),brief:{...brief,...b}},
+    });
     onDone();
   };
   return<div>
@@ -4168,6 +4174,10 @@ function EditBriefForm({brief,active,patch,onDone}){
       <select value={b.pillar}onChange={e=>setB(x=>({...x,pillar:e.target.value}))}style={{border:`1px solid ${C.line}`,borderRadius:10,padding:"9px 11px",fontSize:14,width:"100%"}}>
         {["Importance","Trust","Edutainment","Brand Values"].map(p=><option key={p}value={p}>{p}</option>)}
       </select>
+    </label>
+    <label style={{display:"block",marginBottom:14}}>
+      <div style={{fontSize:12.5,fontWeight:600,color:C.sub,marginBottom:5}}>Go-live date</div>
+      <input type="date"value={goLive}onChange={e=>setGoLive(e.target.value)}style={{border:`1px solid ${C.line}`,borderRadius:10,padding:"9px 11px",fontSize:14,width:"100%",fontFamily:"inherit"}}/>
     </label>
     <div style={{display:"flex",gap:8}}>
       <Btn onClick={save}><Check size={14}/>Save changes</Btn>
