@@ -140,7 +140,7 @@ const canDesignApprove=(me)=>["super_admin","design_lead"].includes(_r(me));    
 const TAB_VIS={
   super_admin:["dashboard","approvals","brief","content","design","composer","library","done","analytics","spend","archive"],
   brand_lead:["dashboard","approvals","brief","content","design","library","done","analytics","archive"],
-  design_lead:["dashboard","brief","content","design","library","done","analytics","archive"],
+  design_lead:["dashboard","brief","design","library","done","analytics","archive"],
   cxo:["dashboard","done"],
   head_marketing:["dashboard","approvals","done","analytics"],
   brand_team:["dashboard","content","library","done","analytics"],
@@ -153,7 +153,7 @@ const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // ===== Supabase egress control (paused image library/suggestions; reversible) =====
 const ENABLE_IMAGE_SUGGESTIONS=false; // brief-form image suggestions fetch — OFF to cut egress
 const ENABLE_LIBRARY_THUMBS=false;    // auto-load full-res library thumbnails on open — OFF. Explicit preview still loads one image.
-const BUILD="v42.46 (b143) - APPROVALS ROWS ALSO SHOW COPY BY + DESIGN BY: recently-approved rows now show Requested by, Copy by (copy_author), Design by (design_approver, non-push only, when a designer is on it), and Approved by. Prior b142: requester + approved-by. Builds on b142 and prior.";
+const BUILD="v42.47 (b144) - (1) design_lead (Anmol) no longer sees the Copy tab (removed content from its tab set; the _eff guard also blocks direct URL). He still sees whats coming via the Design page. (2) COMING-FOR-DESIGN shows the writer: each row now shows Writer: X (claimed copy_author) or Routed to: X (writer routed to the category via catRules) so design knows who to chase. Prior b143: approvals copy-by/design-by. Builds on b143 and prior.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -2277,7 +2277,7 @@ function App(){
         <div style={{width:34,height:34,borderRadius:9,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={18}color="#fff"/></div>
         <div style={{lineHeight:1.15,minWidth:0}}>
           <div style={{fontWeight:800,fontSize:15,letterSpacing:-.3}}>CRM - Creative</div>
-          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b143</div>
+          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b144</div>
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"12px 10px",display:"flex",flexDirection:"column",gap:3}}>
@@ -2313,7 +2313,7 @@ function App(){
       {_eff==="approvals"&&<ApprovalsTab campaigns={scoped}onOpen={open}me={me}team={team}reload={loadAll}/>}
       {_eff==="brief"&&<BriefTab active={active}patch={patch}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={scoped}onOpen={open}audiences={audiences}onDelete={delCampaign}onNew={newCampaign}onBulkImport={bulkImportBriefs}onBulkGenerate={bulkGenerate}toast={toast}catRules={catRules}/>}
       {(_eff==="content"||_eff==="brand_review")&&<ContentTab active={active}patch={patch}copyRules={copyRules}addRule={addRule}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={scoped}onOpen={open}toast={toast}onDelete={delCampaign}onSplit={splitCopyAssets}catRules={catRules}team={team}reload={loadAll}/>}
-      {_eff==="design"&&<DesignTab active={active}patch={patch}promptRules={promptRules}addRule={addRule}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={scoped}onOpen={open}onDelete={delCampaign}onDuplicate={duplicateCampaign}team={team}/>}
+      {_eff==="design"&&<DesignTab active={active}patch={patch}promptRules={promptRules}addRule={addRule}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={scoped}onOpen={open}onDelete={delCampaign}onDuplicate={duplicateCampaign}team={team}catRules={catRules}/>}
       {_eff==="composer"&&<ComposerTab campaigns={scoped}me={me}patch={patch}promptRules={promptRules}toast={toast}/>}
       {_eff==="library"&&<BrandAssetsTab me={me}toast={toast}copyRules={copyRules}promptRules={promptRules}addRule={addRule}toggleRule={toggleRule}delRule={delRule}feedback={feedback}audiences={audiences}setAudiences={setAudiences}/>}
       {_eff==="done"&&<DoneTab campaigns={scoped}patch={patch}onOpen={open}me={me}setTab={setTab}onDelete={delCampaign}onDuplicate={duplicateCampaign}active={active}/>}
@@ -7541,10 +7541,14 @@ function ComposerTab({campaigns,me,patch,promptRules,toast}){
 // A copy-in-progress asset shown on the Design page so the design team sees what's coming.
 // Remind = email Ilena (brand lead), the copy author, and the business team that we're running
 // late because the task before this (the copy) hasn't finished.
-function ComingForDesignRow({c,me,team,onOpen}){
+function ComingForDesignRow({c,me,team,onOpen,catRules}){
   const[reminded,setReminded]=useState(false);
   const[sending,setSending]=useState(false);
   const canRemindHere=isDesignTeam(me)||canDesignApprove(me)||isSuper(me);
+  // Which writer is on this — the claimed copy_author, else the writer routed to this category.
+  const _routedName=(()=>{if(c.copy_author)return null;const cat=normCat(categoryOf(c));const rule=(catRules||[]).find(r=>normCat(r.category)===cat&&(r.user_id!=null||r.user_email));if(!rule)return null;const u=(team||[]).find(x=>String(x.id)===String(rule.user_id)||(x.email&&rule.user_email&&String(x.email).toLowerCase()===String(rule.user_email).toLowerCase()));return u?u.name:(rule.user_email||null);})();
+  const _writer=c.copy_author||_routedName;
+  const _writerLabel=c.copy_author?"Writer":"Routed to";
   const doRemind=async(e)=>{
     e.stopPropagation();
     if(reminded||sending)return;
@@ -7563,7 +7567,7 @@ function ComingForDesignRow({c,me,team,onOpen}){
     <ChannelIcon channel={c.channel}/>
     <div style={{flex:1,minWidth:0}}>
       <div style={{fontWeight:700,fontSize:13.5,color:C.ink}}>{humanizeToken(c.product)||parseName(c.name).product||c.name||"Asset"}</div>
-      <div style={{fontSize:11.5,color:C.sub,display:"flex",gap:6,flexWrap:"wrap"}}><span>{c.channel}</span><span>·</span><span>{normCrmType(c.crm_type)}</span>{c.copy_author&&<><span>·</span><span>Copy: {c.copy_author}</span></>}{c.go_live_date&&<><span>·</span><span style={{color:C.ink,fontWeight:700}}>Live {fmtDate(c.go_live_date)}</span></>}</div>
+      <div style={{fontSize:11.5,color:C.sub,display:"flex",gap:6,flexWrap:"wrap"}}><span>{c.channel}</span><span>·</span><span>{normCrmType(c.crm_type)}</span>{_writer&&<><span>·</span><span style={{color:c.copy_author?C.ink:C.sub,fontWeight:c.copy_author?700:600}}>{_writerLabel}: {_writer}</span></>}{c.go_live_date&&<><span>·</span><span style={{color:C.ink,fontWeight:700}}>Live {fmtDate(c.go_live_date)}</span></>}</div>
     </div>
     <span style={{fontSize:10.5,fontWeight:700,color:"#7C3AED",background:"#EDE9FE",padding:"2px 8px",borderRadius:999,flexShrink:0}}>Copy in progress</span>
     {canRemindHere&&(reminded
@@ -7571,7 +7575,7 @@ function ComingForDesignRow({c,me,team,onOpen}){
       :<button onClick={doRemind}disabled={sending}style={{fontSize:11,fontWeight:800,color:"#B45309",background:"#fff",border:"1px solid #FCD34D",borderRadius:999,padding:"4px 11px",cursor:sending?"wait":"pointer",display:"inline-flex",alignItems:"center",gap:4,flexShrink:0}}><ClockIcon size={11}/>{sending?"Sending…":"Remind"}</button>)}
   </div>;
 }
-function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedback,campaigns:_allCampaigns,onOpen,onDelete,onDuplicate,team}){
+function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedback,campaigns:_allCampaigns,onOpen,onDelete,onDuplicate,team,catRules}){
   const[period,setPeriod]=useState("all");
   const campaigns=(_allCampaigns||[]).filter(c=>inPeriod(c,period));
   const allDesignRaw=(campaigns||[]).filter(c=>c.stage==="design"&&(c.channel!=="Push notification"||c.data?.selfMade)&&!isArchived(c));
@@ -7943,7 +7947,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
       const coming=applyTileFilters((_allCampaigns||[]).filter(c=>(c.stage==="content"||c.stage==="brand_review")&&!isPushChannel(c.channel)&&!isArchived(c)),tf).sort(_byGoLive);
       if(!coming.length)return null;
       return<div style={{marginBottom:14}}><CollapsibleSection title="Copy in progress · coming for design" count={coming.length} color="#7C3AED" icon={<ClockIcon size={15}/>} defaultOpen={false}>
-        <Card style={{padding:0,overflow:"hidden"}}>{coming.map(c=><ComingForDesignRow key={c.id}c={c}me={me}team={team}onOpen={onOpen}/>)}</Card>
+        <Card style={{padding:0,overflow:"hidden"}}>{coming.map(c=><ComingForDesignRow key={c.id}c={c}me={me}team={team}onOpen={onOpen}catRules={catRules}/>)}</Card>
       </CollapsibleSection></div>;
     })()}
     {view==="calendar"
