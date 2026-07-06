@@ -153,7 +153,7 @@ const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // ===== Supabase egress control (paused image library/suggestions; reversible) =====
 const ENABLE_IMAGE_SUGGESTIONS=false; // brief-form image suggestions fetch — OFF to cut egress
 const ENABLE_LIBRARY_THUMBS=false;    // auto-load full-res library thumbnails on open — OFF. Explicit preview still loads one image.
-const BUILD="v42.48 (b145) - COMING-FOR-DESIGN writer shows a NAME not an email: the routed-writer resolver now prefers the users record name, and if that lookup fails (e.g. the team list the viewer gets doesnt include that user) it derives a readable name from the routing-rule email (ritika.sharma@... -> Ritika Sharma) instead of printing the raw address. Prior b144: hide Copy tab from design_lead + show writer. Builds on b144 and prior.";
+const BUILD="v42.49 (b146) - DESIGN PAGE: added a Copy running late section at the TOP (copy-in-progress, non-push, whose design deadline = go-live minus 2 days has already passed; red Running late tag + Remind), and moved Copy in progress - coming for design to the BOTTOM (the on-time remainder). Both list-view only, both show the writer + Remind. Prior b145: routed writer name. Builds on b145 and prior.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -2277,7 +2277,7 @@ function App(){
         <div style={{width:34,height:34,borderRadius:9,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={18}color="#fff"/></div>
         <div style={{lineHeight:1.15,minWidth:0}}>
           <div style={{fontWeight:800,fontSize:15,letterSpacing:-.3}}>CRM - Creative</div>
-          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b145</div>
+          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b146</div>
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"12px 10px",display:"flex",flexDirection:"column",gap:3}}>
@@ -7541,7 +7541,7 @@ function ComposerTab({campaigns,me,patch,promptRules,toast}){
 // A copy-in-progress asset shown on the Design page so the design team sees what's coming.
 // Remind = email Ilena (brand lead), the copy author, and the business team that we're running
 // late because the task before this (the copy) hasn't finished.
-function ComingForDesignRow({c,me,team,onOpen,catRules}){
+function ComingForDesignRow({c,me,team,onOpen,catRules,late}){
   const[reminded,setReminded]=useState(false);
   const[sending,setSending]=useState(false);
   const canRemindHere=isDesignTeam(me)||canDesignApprove(me)||isSuper(me);
@@ -7569,7 +7569,7 @@ function ComingForDesignRow({c,me,team,onOpen,catRules}){
       <div style={{fontWeight:700,fontSize:13.5,color:C.ink}}>{humanizeToken(c.product)||parseName(c.name).product||c.name||"Asset"}</div>
       <div style={{fontSize:11.5,color:C.sub,display:"flex",gap:6,flexWrap:"wrap"}}><span>{c.channel}</span><span>·</span><span>{normCrmType(c.crm_type)}</span>{_writer&&<><span>·</span><span style={{color:c.copy_author?C.ink:C.sub,fontWeight:c.copy_author?700:600}}>{_writerLabel}: {_writer}</span></>}{c.go_live_date&&<><span>·</span><span style={{color:C.ink,fontWeight:700}}>Live {fmtDate(c.go_live_date)}</span></>}</div>
     </div>
-    <span style={{fontSize:10.5,fontWeight:700,color:"#7C3AED",background:"#EDE9FE",padding:"2px 8px",borderRadius:999,flexShrink:0}}>Copy in progress</span>
+    <span style={{fontSize:10.5,fontWeight:700,color:late?"#DC2626":"#7C3AED",background:late?"#FEE2E2":"#EDE9FE",padding:"2px 8px",borderRadius:999,flexShrink:0}}>{late?"Running late":"Copy in progress"}</span>
     {canRemindHere&&(reminded
       ?<span style={{fontSize:11,fontWeight:800,color:"#16A34A",flexShrink:0}}>Reminded ✓</span>
       :<button onClick={doRemind}disabled={sending}style={{fontSize:11,fontWeight:800,color:"#B45309",background:"#fff",border:"1px solid #FCD34D",borderRadius:999,padding:"4px 11px",cursor:sending?"wait":"pointer",display:"inline-flex",alignItems:"center",gap:4,flexShrink:0}}><ClockIcon size={11}/>{sending?"Sending…":"Remind"}</button>)}
@@ -7942,12 +7942,14 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
     {/* KEY legend removed */}
     {view==="list"&&<TileFilters items={allDesignAll} f={tf} setF={setTf}/>}{view==="list"&&<SortBar value={designSort}onChange={setDesignSort}/>}
     {view==="list"&&(()=>{
-      // Copy-in-progress assets (non-push) heading toward design, so the design team sees what's coming.
+      // Copy running late: copy-in-progress (non-push) whose design deadline (go-live minus 2 days) has already passed.
+      const _lead=2,_t=new Date();_t.setHours(0,0,0,0);
       const _byGoLive=(a,b)=>{const ga=a.go_live_date?new Date(a.go_live_date).getTime():Infinity;const gb=b.go_live_date?new Date(b.go_live_date).getTime():Infinity;return ga-gb;};
-      const coming=applyTileFilters((_allCampaigns||[]).filter(c=>(c.stage==="content"||c.stage==="brand_review")&&!isPushChannel(c.channel)&&!isArchived(c)),tf).sort(_byGoLive);
-      if(!coming.length)return null;
-      return<div style={{marginBottom:14}}><CollapsibleSection title="Copy in progress · coming for design" count={coming.length} color="#7C3AED" icon={<ClockIcon size={15}/>} defaultOpen={false}>
-        <Card style={{padding:0,overflow:"hidden"}}>{coming.map(c=><ComingForDesignRow key={c.id}c={c}me={me}team={team}onOpen={onOpen}catRules={catRules}/>)}</Card>
+      const _isLate=(c)=>{if(!c.go_live_date)return false;const g=new Date(c.go_live_date);g.setHours(0,0,0,0);return (g.getTime()-_lead*86400000)<=_t.getTime();};
+      const late=applyTileFilters((_allCampaigns||[]).filter(c=>(c.stage==="content"||c.stage==="brand_review")&&!isPushChannel(c.channel)&&!isArchived(c)&&_isLate(c)),tf).sort(_byGoLive);
+      if(!late.length)return null;
+      return<div style={{marginBottom:14}}><CollapsibleSection title="Copy running late" count={late.length} color="#DC2626" icon={<ClockIcon size={15}/>} defaultOpen={true}>
+        <Card style={{padding:0,overflow:"hidden"}}>{late.map(c=><ComingForDesignRow key={c.id}c={c}me={me}team={team}onOpen={onOpen}catRules={catRules}late/>)}</Card>
       </CollapsibleSection></div>;
     })()}
     {view==="calendar"
@@ -7969,6 +7971,17 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
           </>;
         })()}
       </div>}
+    {view==="list"&&(()=>{
+      // Coming for design (bottom): copy-in-progress (non-push) still within the design lead time — not yet late.
+      const _lead=2,_t=new Date();_t.setHours(0,0,0,0);
+      const _byGoLive=(a,b)=>{const ga=a.go_live_date?new Date(a.go_live_date).getTime():Infinity;const gb=b.go_live_date?new Date(b.go_live_date).getTime():Infinity;return ga-gb;};
+      const _isLate=(c)=>{if(!c.go_live_date)return false;const g=new Date(c.go_live_date);g.setHours(0,0,0,0);return (g.getTime()-_lead*86400000)<=_t.getTime();};
+      const coming=applyTileFilters((_allCampaigns||[]).filter(c=>(c.stage==="content"||c.stage==="brand_review")&&!isPushChannel(c.channel)&&!isArchived(c)&&!_isLate(c)),tf).sort(_byGoLive);
+      if(!coming.length)return null;
+      return<div style={{marginTop:16}}><CollapsibleSection title="Copy in progress · coming for design" count={coming.length} color="#7C3AED" icon={<ClockIcon size={15}/>} defaultOpen={false}>
+        <Card style={{padding:0,overflow:"hidden"}}>{coming.map(c=><ComingForDesignRow key={c.id}c={c}me={me}team={team}onOpen={onOpen}catRules={catRules}/>)}</Card>
+      </CollapsibleSection></div>;
+    })()}
   </div>;
 }
 
