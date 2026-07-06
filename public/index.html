@@ -140,9 +140,9 @@ const canDesignApprove=(me)=>["super_admin","design_lead"].includes(_r(me));    
 const TAB_VIS={
   super_admin:["dashboard","approvals","brief","content","design","composer","library","done","analytics","spend","archive"],
   brand_lead:["dashboard","approvals","brief","content","design","library","done","analytics","archive"],
-  design_lead:["dashboard","approvals","brief","content","design","library","done","analytics","archive"],
-  cxo:["dashboard","approvals","done"],
-  head_marketing:["done","analytics"],
+  design_lead:["dashboard","brief","content","design","library","done","analytics","archive"],
+  cxo:["dashboard","done"],
+  head_marketing:["dashboard","approvals","done","analytics"],
   brand_team:["dashboard","content","library","done","analytics"],
   design_team:["dashboard","design","library","done","analytics"],
   business:["dashboard","brief","done","analytics","archive"],
@@ -153,7 +153,7 @@ const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // ===== Supabase egress control (paused image library/suggestions; reversible) =====
 const ENABLE_IMAGE_SUGGESTIONS=false; // brief-form image suggestions fetch — OFF to cut egress
 const ENABLE_LIBRARY_THUMBS=false;    // auto-load full-res library thumbnails on open — OFF. Explicit preview still loads one image.
-const BUILD="v42.39 (b136) - RENAME: the engine is now CRM - Creative (was CRM Engine). Updated the sidebar brand, the login-screen heading, and the browser tab title (HUFT CRM - Creative). AI prompt text that references HUFT CRM left untouched. Prior b135: finalized push stacked layout. Builds on b135 and prior.";
+const BUILD="v42.43 (b140) - BRIEF-RAISED ALERT: handing a brief to the creative team now notifies the routed copy writer(s) (resolved from category routing / catRules, falling back to all writers) AND the design team + design lead (skipped for push, which has no design step). The other three requested alerts were already wired: copy-approved->design_team+design_lead (server brand-approve), asset-submitted->Ilena/brand_lead (b137), Ilena-approved->Shrutie/head_marketing (server brand-asset-approve). All are in-app now; they email once SMTP_* is set. Prior b139: yellow Design-in-progress column. Builds on b139 and prior.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -2275,7 +2275,7 @@ function App(){
         <div style={{width:34,height:34,borderRadius:9,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={18}color="#fff"/></div>
         <div style={{lineHeight:1.15,minWidth:0}}>
           <div style={{fontWeight:800,fontSize:15,letterSpacing:-.3}}>CRM - Creative</div>
-          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b136</div>
+          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b140</div>
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"12px 10px",display:"flex",flexDirection:"column",gap:3}}>
@@ -2309,7 +2309,7 @@ function App(){
       {(()=>{const _allowed=visibleTabKeys(me);const _eff=_allowed.has(tab)||((tab==="content"||tab==="brand_review")&&_allowed.has("content"))?tab:"dashboard";return<>
       {_eff==="dashboard"&&<Dashboard campaigns={scoped}onNew={newCampaign}onOpen={open}me={me}setTab={setTab}reload={loadAll}/>}
       {_eff==="approvals"&&<ApprovalsTab campaigns={scoped}onOpen={open}me={me}team={team}reload={loadAll}/>}
-      {_eff==="brief"&&<BriefTab active={active}patch={patch}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={scoped}onOpen={open}audiences={audiences}onDelete={delCampaign}onNew={newCampaign}onBulkImport={bulkImportBriefs}onBulkGenerate={bulkGenerate}toast={toast}/>}
+      {_eff==="brief"&&<BriefTab active={active}patch={patch}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={scoped}onOpen={open}audiences={audiences}onDelete={delCampaign}onNew={newCampaign}onBulkImport={bulkImportBriefs}onBulkGenerate={bulkGenerate}toast={toast}catRules={catRules}/>}
       {(_eff==="content"||_eff==="brand_review")&&<ContentTab active={active}patch={patch}copyRules={copyRules}addRule={addRule}setTab={setTab}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={scoped}onOpen={open}toast={toast}onDelete={delCampaign}onSplit={splitCopyAssets}catRules={catRules}team={team}reload={loadAll}/>}
       {_eff==="design"&&<DesignTab active={active}patch={patch}promptRules={promptRules}addRule={addRule}me={me}recentFeedback={recentFeedback}saveFeedback={saveFeedback}campaigns={scoped}onOpen={open}onDelete={delCampaign}onDuplicate={duplicateCampaign}team={team}/>}
       {_eff==="composer"&&<ComposerTab campaigns={scoped}me={me}patch={patch}promptRules={promptRules}toast={toast}/>}
@@ -2532,7 +2532,7 @@ function WeekStrip({campaigns,onOpen,readyOnly}){
             <span style={{width:9,height:9,borderRadius:2,background:stageCol[c.stage]||C.sub,flexShrink:0}}/>
             <span style={{fontWeight:700,fontSize:13.5,color:C.ink}}>{humanizeToken(c.product)||parseName(c.name).product||"Asset"}</span>
             <span style={{fontSize:11.5,color:C.sub}}>· {normCrmType(c.crm_type)} · {c.channel||"WhatsApp"}</span>
-            <span style={{marginLeft:"auto",fontSize:10.5,fontWeight:700,color:stageCol[c.stage]||C.sub,background:(stageCol[c.stage]||C.sub)+"18",padding:"2px 8px",borderRadius:999}}>{c.stage==="done"?"Ready":"In progress"}</span>
+            <span style={{marginLeft:"auto",fontSize:10.5,fontWeight:700,color:stageCol[c.stage]||C.sub,background:(stageCol[c.stage]||C.sub)+"18",padding:"2px 8px",borderRadius:999}}>{c.stage==="done"?"Ready":(c.stage==="design"&&!isPushChannel(c.channel))?"Needs design":"Copy in progress"}</span>
             {!_disabled&&<ChevronRight size={15}color={C.sub}/>}
           </div>;})}
       </div>;
@@ -2629,7 +2629,7 @@ function CalendarView({campaigns,onOpen,filterStage,readyOnly}){
           <span style={{width:9,height:9,borderRadius:2,background:stageCol[c.stage]||C.sub,flexShrink:0}}/>
           <span style={{fontWeight:700,fontSize:13.5,color:C.ink}}>{humanizeToken(c.product)||parseName(c.name).product||"Asset"}</span>
           <span style={{fontSize:11.5,color:C.sub}}>· {normCrmType(c.crm_type)} · {c.channel||"WhatsApp"}</span>
-          <span style={{marginLeft:"auto",fontSize:10.5,fontWeight:700,color:stageCol[c.stage]||C.sub,background:(stageCol[c.stage]||C.sub)+"18",padding:"2px 8px",borderRadius:999}}>{_ready?"Ready":"In progress"}</span>
+          <span style={{marginLeft:"auto",fontSize:10.5,fontWeight:700,color:stageCol[c.stage]||C.sub,background:(stageCol[c.stage]||C.sub)+"18",padding:"2px 8px",borderRadius:999}}>{_ready?"Ready":(c.stage==="design"&&!isPushChannel(c.channel))?"Needs design":"Copy in progress"}</span>
           {!_click&&<ChevronRight size={15}color={C.sub}/>}
         </div>;})}
     </div>}
@@ -3002,10 +3002,11 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
       const _naMonth=_na.filter(_inMonth);
       const _pf=applyTileFilters(_naMonth,pf).filter(c=>!pf.category||normCat(categoryOf(c))===pf.category);
       const chans=[...new Set(_na.map(c=>c.channel).filter(Boolean))].sort();
+      const _byGoLive=(a,b)=>{const ga=a.go_live_date?new Date(a.go_live_date).getTime():Infinity;const gb=b.go_live_date?new Date(b.go_live_date).getTime():Infinity;return ga-gb;};
       const cols=[
-        {k:"cp",title:"Copy in progress",color:C.purple,items:_pf.filter(c=>c.stage==="content"||(c.stage==="brand_review"))},
-        {k:"dp",title:"Design in progress",color:C.teal,items:_pf.filter(c=>c.stage==="design"&&!isPushChannel(c.channel))},
-        {k:"dr",title:"Asset Ready",color:C.green,items:_pf.filter(c=>c.stage==="done")},
+        {k:"cp",title:"Copy in progress",color:C.purple,items:_pf.filter(c=>c.stage==="content"||(c.stage==="brand_review")).sort(_byGoLive)},
+        {k:"dp",title:"Design in progress",color:"#CA8A04",items:_pf.filter(c=>c.stage==="design"&&!isPushChannel(c.channel)).sort(_byGoLive)},
+        {k:"dr",title:"Asset Ready",color:C.green,items:_pf.filter(c=>c.stage==="done").sort(_byGoLive)},
       ];
       const selSx={fontSize:12,fontWeight:600,color:C.ink,border:`1px solid ${C.line}`,borderRadius:8,padding:"5px 8px",background:"#fff",cursor:"pointer",fontFamily:"inherit"};
       return<Card style={{padding:0,overflow:"hidden",marginBottom:18}}>
@@ -3772,7 +3773,7 @@ function BriefChat({campaignId,patch,onBriefReady,me,recentFeedback,product}){
 const AlertCircle=p=><Svg{...p}><circle cx="12"cy="12"r="10"/><path d="M12 8v4M12 16h.01"/></Svg>;
 
 /* ===== Brief Tab ======================================================== */
-function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns:_allCampaigns,onOpen,onDelete,onNew,onBulkImport,onBulkGenerate,toast,audiences}){
+function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns:_allCampaigns,onOpen,onDelete,onNew,onBulkImport,onBulkGenerate,toast,audiences,catRules}){
   const _knownProducts=[...new Set((_allCampaigns||[]).map(x=>(x&&x.product||"").trim()).filter(Boolean))];
   const[period,setPeriod]=useState("all");
   const campaigns=(_allCampaigns||[]).filter(c=>inPeriod(c,period));
@@ -4010,7 +4011,16 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns:
               <div style={{fontSize:13,fontWeight:800,color:C.ink,marginBottom:3}}>{isSuper(me)?"How is this asset getting made?":"Hand this to the creative team"}</div>
               <div style={{fontSize:11.5,color:C.sub,marginBottom:11}}>{isSuper(me)?<>Templatized post? Build it yourself from a template. Bespoke creative? Hand it to the team. <button onClick={()=>setTab("library")}style={{background:"none",border:"none",color:C.teal,fontWeight:700,cursor:"pointer",padding:0,fontSize:11.5,textDecoration:"underline"}}>Browse the image library</button> first to reuse an unused image.</>:<>The creative team picks it up in <b>Copy</b> next and builds the asset for you.</>}</div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-                {!c.data?.draft&&<Btn onClick={()=>{patch(c.id,{stage:"content",data:{...(c.data||{}),selfMade:false}});setTab("content");onOpen(c.id,"content");}}>Hand to the creative team <ArrowRight size={14}/></Btn>}
+                {!c.data?.draft&&<Btn onClick={()=>{patch(c.id,{stage:"content",data:{...(c.data||{}),selfMade:false}});
+                  const _prod=c.product||c.name||"A brief";const _cat=categoryOf(c);
+                  const _wids=(catRules||[]).filter(r=>normCat(r.category)===normCat(_cat)&&r.user_id!=null).map(r=>r.user_id);
+                  const _cbody=_prod+" — new brief raised"+(_cat?(" · "+_cat):"")+(c.go_live_date?(" · live "+fmtDate(c.go_live_date)):"")+". Copy needed.";
+                  if(_wids.length)api.post("/api/notify",{toUserIds:_wids,campaignId:c.id,kind:"New brief — copy needed",body:_cbody}).catch(()=>{});
+                  else api.post("/api/notify",{toRole:"brand_team",campaignId:c.id,kind:"New brief — copy needed",body:_cbody}).catch(()=>{});
+                  if(!isPushChannel(c.channel)){const _dbody=_prod+" — new brief raised"+(c.go_live_date?(" · live "+fmtDate(c.go_live_date)):"")+". Design will be needed once the copy is ready.";
+                    api.post("/api/notify",{toRole:"design_team",campaignId:c.id,kind:"New brief — design incoming",body:_dbody}).catch(()=>{});
+                    api.post("/api/notify",{toRole:"design_lead",campaignId:c.id,kind:"New brief — design incoming",body:_dbody}).catch(()=>{});}
+                  setTab("content");onOpen(c.id,"content");}}>Hand to the creative team <ArrowRight size={14}/></Btn>}
                 {isSuper(me)&&<Btn variant="ghost"onClick={()=>{patch(c.id,{stage:"content",data:{...(c.data||{}),selfMade:true}});setTab("content");onOpen(c.id,"content");}}><PenLine size={13}/>I'll make it myself</Btn>}
                 <Btn variant="ghost"onClick={()=>setM(c.id,"edit")}><PenLine size={13}/>Edit brief</Btn>
               </div>
@@ -6148,7 +6158,7 @@ function FinalDesignUpload({c,d,patch,me}){
     {d.finalLink&&<div style={{fontSize:11.5,marginBottom:10}}><a href={d.finalLink}target="_blank"rel="noreferrer"style={{color:C.teal,fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}><ExternalLink size={12}/>{d.finalLink.slice(0,60)}{d.finalLink.length>60?"…":""}</a></div>}
 
     {pending&&<div style={{fontSize:12,fontWeight:600,color:"#6D28D9",background:"#F5F3FF",border:"1px solid #DDD6FE",borderRadius:8,padding:"8px 11px",marginBottom:10,display:"flex",alignItems:"center",gap:6}}><CheckCircle2 size={13}/>Sent for approval — waiting for the design lead. It can only be sent once.</div>}
-    <Btn variant="dark"disabled={!ready||pending}onClick={()=>{if(!ready||pending)return;if(window.confirm("Send this design to Anmol (design lead) for approval?")){patch(c.id,{data:{...(c.data||{}),design:{...d,pendingApproval:true,assetReview:false,finalReview:false,sentBack:false,submittedForApprovalAt:new Date().toISOString(),approvalStage:"design"}},design_approver:me.name});api.post("/api/notify",{toRole:"design_lead",campaignId:c.id,kind:"Design needs review",body:(c.product||c.name||"A design")+" — submitted for design approval."}).catch(()=>{});}}}>
+    <Btn variant="dark"disabled={!ready||pending}onClick={()=>{if(!ready||pending)return;if(window.confirm("Send this asset to Ilena (brand lead) for approval?")){patch(c.id,{data:{...(c.data||{}),design:{...d,pendingApproval:false,assetReview:false,brandReview:true,finalReview:false,sentBack:false,submittedForApprovalAt:new Date().toISOString(),approvalStage:"brand"}}});api.post("/api/notify",{toRole:"brand_lead",campaignId:c.id,kind:"Full asset needs approval",body:(c.product||c.name||"An asset")+" — submitted for full-asset approval."}).catch(()=>{});}}}>
       <Send size={15}/>{pending?"Sent for approval ✓":ready?(d.sentBack?"Send again for approval":"Send design for approval"):"Upload a file or link to finish"}
     </Btn>
   </div>;
@@ -6974,7 +6984,7 @@ function CreativeComposer({c,copy,toast,me,approvedPrompt,patch,d,promptRules}){
     }
   };
   const useAsFinal=()=>{const cv=ref.current;if(!cv||!patch)return;setFinalSaving(true);
-    try{const dataUrl=cv.toDataURL("image/png");patch(c.id,{data:{...(c.data||{}),design:{...(d||{}),finalFile:{name:(c.product||"creative")+"_composed.png",type:"image/png",dataUrl},finalSource:"composer",pendingApproval:true,submittedForApprovalAt:new Date().toISOString(),approvalStage:"design"}}});
+    try{const dataUrl=cv.toDataURL("image/png");patch(c.id,{data:{...(c.data||{}),design:{...(d||{}),finalFile:{name:(c.product||"creative")+"_composed.png",type:"image/png",dataUrl},finalSource:"composer",pendingApproval:false,assetReview:false,brandReview:true,finalReview:false,submittedForApprovalAt:new Date().toISOString(),approvalStage:"brand"}}});
       // rest the scene/mockup used here so it isn't reused for ~3 months
       if((bgMode==="library"||bgMode==="mockup")&&bgId){api.post("/api/image-library/mark-used",{ids:[bgId]}).then(()=>reloadLib&&reloadLib()).catch(()=>{});}
       if(toast)toast("Submitted for approval ✓ — stays here, marked Pending approval","success");
@@ -7523,6 +7533,39 @@ function ComposerTab({campaigns,me,patch,promptRules,toast}){
         </div>}
   </div>;
 }
+// A copy-in-progress asset shown on the Design page so the design team sees what's coming.
+// Remind = email Ilena (brand lead), the copy author, and the business team that we're running
+// late because the task before this (the copy) hasn't finished.
+function ComingForDesignRow({c,me,team,onOpen}){
+  const[reminded,setReminded]=useState(false);
+  const[sending,setSending]=useState(false);
+  const canRemindHere=isDesignTeam(me)||canDesignApprove(me)||isSuper(me);
+  const doRemind=async(e)=>{
+    e.stopPropagation();
+    if(reminded||sending)return;
+    setSending(true);
+    const prod=humanizeToken(c.product)||parseName(c.name).product||c.name||"An asset";
+    const body=prod+" — design is blocked because the copy before it isn't finished, and we're running late. Please prioritise finishing the copy so design can start. Flagged by "+((me&&me.name)||"the design team")+".";
+    try{
+      const author=(team||[]).find(u=>_nameEq(u.name,c.copy_author));
+      await api.post("/api/notify",{toRole:"brand_lead",campaignId:c.id,kind:"Running late — design is blocked",body}).catch(()=>{});
+      await api.post("/api/notify",{toRole:"business",campaignId:c.id,kind:"Running late — design is blocked",body}).catch(()=>{});
+      if(author&&author.id)await api.post("/api/notify",{toUserIds:[author.id],campaignId:c.id,kind:"Running late — design is blocked",body}).catch(()=>{});
+    }catch(err){}
+    setReminded(true);setSending(false);
+  };
+  return<div onClick={()=>onOpen&&onOpen(c.id)}style={{display:"flex",alignItems:"center",gap:10,padding:"11px 16px",borderBottom:`1px solid ${C.line}`,cursor:"pointer",background:"#fff"}}>
+    <ChannelIcon channel={c.channel}/>
+    <div style={{flex:1,minWidth:0}}>
+      <div style={{fontWeight:700,fontSize:13.5,color:C.ink}}>{humanizeToken(c.product)||parseName(c.name).product||c.name||"Asset"}</div>
+      <div style={{fontSize:11.5,color:C.sub,display:"flex",gap:6,flexWrap:"wrap"}}><span>{c.channel}</span><span>·</span><span>{normCrmType(c.crm_type)}</span>{c.copy_author&&<><span>·</span><span>Copy: {c.copy_author}</span></>}{c.go_live_date&&<><span>·</span><span style={{color:C.ink,fontWeight:700}}>Live {fmtDate(c.go_live_date)}</span></>}</div>
+    </div>
+    <span style={{fontSize:10.5,fontWeight:700,color:"#7C3AED",background:"#EDE9FE",padding:"2px 8px",borderRadius:999,flexShrink:0}}>Copy in progress</span>
+    {canRemindHere&&(reminded
+      ?<span style={{fontSize:11,fontWeight:800,color:"#16A34A",flexShrink:0}}>Reminded ✓</span>
+      :<button onClick={doRemind}disabled={sending}style={{fontSize:11,fontWeight:800,color:"#B45309",background:"#fff",border:"1px solid #FCD34D",borderRadius:999,padding:"4px 11px",cursor:sending?"wait":"pointer",display:"inline-flex",alignItems:"center",gap:4,flexShrink:0}}><ClockIcon size={11}/>{sending?"Sending…":"Remind"}</button>)}
+  </div>;
+}
 function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedback,campaigns:_allCampaigns,onOpen,onDelete,onDuplicate,team}){
   const[period,setPeriod]=useState("all");
   const campaigns=(_allCampaigns||[]).filter(c=>inPeriod(c,period));
@@ -7651,13 +7694,12 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
       setBusy("");
     };
     const _imgReady=(d.approvedPromptIdx!=null||d.libraryPick);
-    // Top-of-tile submit: send the current design (composed file or generated image) for design + brand approval.
+    // Top-of-tile submit: send the full asset straight to Ilena (brand lead) for full-asset approval.
     const submitForApproval=()=>{
-      const nd={...d,pendingApproval:true,assetReview:false,finalReview:false,sentBack:false,submittedForApprovalAt:new Date().toISOString(),approvalStage:"design"};
+      const nd={...d,pendingApproval:false,assetReview:false,brandReview:true,finalReview:false,sentBack:false,submittedForApprovalAt:new Date().toISOString(),approvalStage:"brand"};
       if(!d.finalFile&&d.generatedImage){nd.finalFile={name:(c.product||"creative")+"_generated.png",type:"image/png",dataUrl:d.generatedImage};nd.finalSource="generated";}
-      patch(c.id,{data:{...(c.data||{}),design:nd},design_approver:me.name});
-      api.post("/api/notify",{toRole:"design_lead",campaignId:c.id,kind:"Design needs review",body:(c.product||c.name||"A design")+" — submitted for design approval."}).catch(()=>{});
-      api.post("/api/notify",{toRole:"brand_lead",campaignId:c.id,kind:"Design submitted",body:(c.product||c.name||"A design")+" — a design was submitted for approval."}).catch(()=>{});
+      patch(c.id,{data:{...(c.data||{}),design:nd}});
+      api.post("/api/notify",{toRole:"brand_lead",campaignId:c.id,kind:"Full asset needs approval",body:(c.product||c.name||"An asset")+" — submitted for full-asset approval."}).catch(()=>{});
       if(typeof toast!=="undefined"&&toast)toast("Submitted for approval ✓ — Anmol & Ilena notified","success");
     };
     const requestDesignTeam=()=>{
@@ -7890,6 +7932,15 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
     </div>
     {/* KEY legend removed */}
     {view==="list"&&<TileFilters items={allDesignAll} f={tf} setF={setTf}/>}{view==="list"&&<SortBar value={designSort}onChange={setDesignSort}/>}
+    {view==="list"&&(()=>{
+      // Copy-in-progress assets (non-push) heading toward design, so the design team sees what's coming.
+      const _byGoLive=(a,b)=>{const ga=a.go_live_date?new Date(a.go_live_date).getTime():Infinity;const gb=b.go_live_date?new Date(b.go_live_date).getTime():Infinity;return ga-gb;};
+      const coming=(_allCampaigns||[]).filter(c=>(c.stage==="content"||c.stage==="brand_review")&&!isPushChannel(c.channel)&&!isArchived(c)).sort(_byGoLive);
+      if(!coming.length)return null;
+      return<div style={{marginBottom:14}}><CollapsibleSection title="Copy in progress · coming for design" count={coming.length} color="#7C3AED" icon={<ClockIcon size={15}/>} defaultOpen={false}>
+        <Card style={{padding:0,overflow:"hidden"}}>{coming.map(c=><ComingForDesignRow key={c.id}c={c}me={me}team={team}onOpen={onOpen}/>)}</Card>
+      </CollapsibleSection></div>;
+    })()}
     {view==="calendar"
       ?<CalendarView campaigns={allDesign}onOpen={onOpen}readyOnly={isBusiness(me)}/>
       :allDesign.length===0
@@ -7998,6 +8049,7 @@ function DoneTab({campaigns,patch,onOpen,me,setTab,onDelete,onDuplicate,active})
             <span style={{fontSize:11,fontWeight:700,color:C.coral}}>{normCrmType(c.crm_type)}</span>
             {c.channel?<span style={{fontSize:11,fontWeight:700,color:C.teal}}>· {c.channel}</span>:<span style={{fontSize:11,fontWeight:700,color:C.coral}}>· set channel</span>}
             <span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,color:C.green,background:C.green+"18",padding:"3px 9px",borderRadius:999}}><CheckCircle2 size={11}/>Done</span>
+            {c.data?.design?.autoApproved&&<span title={c.data?.design?.autoApprovedAt?("Auto-approved at "+fmtDate(c.data.design.autoApprovedAt)):"Auto-approved by System"}style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:10.5,fontWeight:700,color:"#B45309",background:"#FEF3C7",border:"1px solid #FDE68A",padding:"2px 8px",borderRadius:999}}><ClockIcon size={10}/>Auto-approved by System</span>}
             {c.created_at&&<span style={{marginLeft:"auto",fontSize:11,color:C.sub,background:"#F3F4F6",padding:"2px 7px",borderRadius:5}}>Brief {fmtDate(c.created_at)}</span>}{c.go_live_date&&<span style={{fontSize:11,color:C.ink,fontWeight:700,background:"#FEF3C7",padding:"2px 7px",borderRadius:5}}>Live {fmtDate(c.go_live_date)}</span>}
           </div>
           <div style={{fontSize:12,color:C.sub,display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
