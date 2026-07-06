@@ -153,7 +153,7 @@ const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // ===== Supabase egress control (paused image library/suggestions; reversible) =====
 const ENABLE_IMAGE_SUGGESTIONS=false; // brief-form image suggestions fetch — OFF to cut egress
 const ENABLE_LIBRARY_THUMBS=false;    // auto-load full-res library thumbnails on open — OFF. Explicit preview still loads one image.
-const BUILD="v42.47 (b144) - (1) design_lead (Anmol) no longer sees the Copy tab (removed content from its tab set; the _eff guard also blocks direct URL). He still sees whats coming via the Design page. (2) COMING-FOR-DESIGN shows the writer: each row now shows Writer: X (claimed copy_author) or Routed to: X (writer routed to the category via catRules) so design knows who to chase. Prior b143: approvals copy-by/design-by. Builds on b143 and prior.";
+const BUILD="v42.48 (b145) - COMING-FOR-DESIGN writer shows a NAME not an email: the routed-writer resolver now prefers the users record name, and if that lookup fails (e.g. the team list the viewer gets doesnt include that user) it derives a readable name from the routing-rule email (ritika.sharma@... -> Ritika Sharma) instead of printing the raw address. Prior b144: hide Copy tab from design_lead + show writer. Builds on b144 and prior.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -2277,7 +2277,7 @@ function App(){
         <div style={{width:34,height:34,borderRadius:9,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={18}color="#fff"/></div>
         <div style={{lineHeight:1.15,minWidth:0}}>
           <div style={{fontWeight:800,fontSize:15,letterSpacing:-.3}}>CRM - Creative</div>
-          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b144</div>
+          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b145</div>
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"12px 10px",display:"flex",flexDirection:"column",gap:3}}>
@@ -7546,7 +7546,7 @@ function ComingForDesignRow({c,me,team,onOpen,catRules}){
   const[sending,setSending]=useState(false);
   const canRemindHere=isDesignTeam(me)||canDesignApprove(me)||isSuper(me);
   // Which writer is on this — the claimed copy_author, else the writer routed to this category.
-  const _routedName=(()=>{if(c.copy_author)return null;const cat=normCat(categoryOf(c));const rule=(catRules||[]).find(r=>normCat(r.category)===cat&&(r.user_id!=null||r.user_email));if(!rule)return null;const u=(team||[]).find(x=>String(x.id)===String(rule.user_id)||(x.email&&rule.user_email&&String(x.email).toLowerCase()===String(rule.user_email).toLowerCase()));return u?u.name:(rule.user_email||null);})();
+  const _routedName=(()=>{if(c.copy_author)return null;const cat=normCat(categoryOf(c));const rule=(catRules||[]).find(r=>normCat(r.category)===cat&&(r.user_id!=null||r.user_email));if(!rule)return null;const u=(team||[]).find(x=>String(x.id)===String(rule.user_id)||(x.email&&rule.user_email&&String(x.email).toLowerCase()===String(rule.user_email).toLowerCase()));if(u&&u.name)return u.name;const em=rule.user_email;if(em){const local=String(em).split("@")[0];if(local)return local.split(/[._+-]+/).filter(Boolean).map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(" ");}return null;})();
   const _writer=c.copy_author||_routedName;
   const _writerLabel=c.copy_author?"Writer":"Routed to";
   const doRemind=async(e)=>{
