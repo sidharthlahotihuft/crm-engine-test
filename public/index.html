@@ -153,7 +153,7 @@ const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // ===== Supabase egress control (paused image library/suggestions; reversible) =====
 const ENABLE_IMAGE_SUGGESTIONS=false; // brief-form image suggestions fetch — OFF to cut egress
 const ENABLE_LIBRARY_THUMBS=false;    // auto-load full-res library thumbnails on open — OFF. Explicit preview still loads one image.
-const BUILD="v42.43 (b140) - BRIEF-RAISED ALERT: handing a brief to the creative team now notifies the routed copy writer(s) (resolved from category routing / catRules, falling back to all writers) AND the design team + design lead (skipped for push, which has no design step). The other three requested alerts were already wired: copy-approved->design_team+design_lead (server brand-approve), asset-submitted->Ilena/brand_lead (b137), Ilena-approved->Shrutie/head_marketing (server brand-asset-approve). All are in-app now; they email once SMTP_* is set. Prior b139: yellow Design-in-progress column. Builds on b139 and prior.";
+const BUILD="v42.45 (b142) - APPROVALS SHOW REQUESTER + APPROVED BY: each Recently-approved row now shows Requested by (created_by_name / brief raiser) and Approved by (the name behind the most recent approval gate, via new _lastApprover helper). Prior b141: calendar day colours + design-page filter. Builds on b141 and prior.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -1379,6 +1379,8 @@ const displayName=(name)=>{
   return[date,product,hook].filter(Boolean).join(" · ");
 };
 const STAGE_LABEL={brief:"Brief",content:"Copy",brand_review:"Brand review",design:"Design",done:"Ready"};
+// Day-panel / calendar tag — label + colour by what the asset needs next: copy=purple, design=yellow, ready=green.
+const dayTag=(c)=>c.stage==="done"?{t:"Ready",col:C.green}:(c.stage==="design"&&!isPushChannel(c.channel))?{t:"Needs design",col:"#CA8A04"}:{t:"Copy in progress",col:C.purple};
 // Stage colour system — single source of truth for tile tints + the colour legend on each page.
 const STAGE_COLORS={
   brief:{label:"Brief",color:"#E8632A"},
@@ -2275,7 +2277,7 @@ function App(){
         <div style={{width:34,height:34,borderRadius:9,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={18}color="#fff"/></div>
         <div style={{lineHeight:1.15,minWidth:0}}>
           <div style={{fontWeight:800,fontSize:15,letterSpacing:-.3}}>CRM - Creative</div>
-          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b140</div>
+          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b142</div>
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"12px 10px",display:"flex",flexDirection:"column",gap:3}}>
@@ -2528,11 +2530,11 @@ function WeekStrip({campaigns,onOpen,readyOnly}){
         </div>
         {list.length===0
           ?<div style={{padding:"16px",fontSize:13,color:C.sub}}>No assets going live on this date.</div>
-          :list.map(c=>{const _disabled=readyOnly&&c.stage!=="done";return<div key={c.id}onClick={()=>openAsset(c)}style={{display:"flex",alignItems:"center",gap:10,padding:"11px 16px",borderTop:`1px solid ${C.line}`,cursor:_disabled?"default":"pointer",opacity:_disabled?.55:1,background:"#fff"}}>
-            <span style={{width:9,height:9,borderRadius:2,background:stageCol[c.stage]||C.sub,flexShrink:0}}/>
+          :list.map(c=>{const _disabled=readyOnly&&c.stage!=="done";const _dt=dayTag(c);return<div key={c.id}onClick={()=>openAsset(c)}style={{display:"flex",alignItems:"center",gap:10,padding:"11px 16px",borderTop:`1px solid ${C.line}`,cursor:_disabled?"default":"pointer",opacity:_disabled?.55:1,background:"#fff"}}>
+            <span style={{width:9,height:9,borderRadius:2,background:_dt.col,flexShrink:0}}/>
             <span style={{fontWeight:700,fontSize:13.5,color:C.ink}}>{humanizeToken(c.product)||parseName(c.name).product||"Asset"}</span>
             <span style={{fontSize:11.5,color:C.sub}}>· {normCrmType(c.crm_type)} · {c.channel||"WhatsApp"}</span>
-            <span style={{marginLeft:"auto",fontSize:10.5,fontWeight:700,color:stageCol[c.stage]||C.sub,background:(stageCol[c.stage]||C.sub)+"18",padding:"2px 8px",borderRadius:999}}>{c.stage==="done"?"Ready":(c.stage==="design"&&!isPushChannel(c.channel))?"Needs design":"Copy in progress"}</span>
+            <span style={{marginLeft:"auto",fontSize:10.5,fontWeight:700,color:_dt.col,background:_dt.col+"18",padding:"2px 8px",borderRadius:999}}>{_dt.t}</span>
             {!_disabled&&<ChevronRight size={15}color={C.sub}/>}
           </div>;})}
       </div>;
@@ -2625,11 +2627,11 @@ function CalendarView({campaigns,onOpen,filterStage,readyOnly}){
       </div>
       {(byDate[selDay]||[]).length===0
         ?<div style={{padding:"16px",fontSize:13,color:C.sub}}>No assets going live on this date.</div>
-        :[...(byDate[selDay]||[])].sort((a,b)=>(b.stage==="done"?1:0)-(a.stage==="done"?1:0)).map(c=>{const _ready=c.stage==="done";const _click=readyOnly&&!_ready;return<div key={c.id}onClick={()=>{if(_click)return;onOpen(c.id,readyOnly?"done":undefined);}}style={{display:"flex",alignItems:"center",gap:10,padding:"11px 16px",borderTop:`1px solid ${C.line}`,cursor:_click?"default":"pointer",opacity:_click?.55:1,background:"#fff"}}>
-          <span style={{width:9,height:9,borderRadius:2,background:stageCol[c.stage]||C.sub,flexShrink:0}}/>
+        :[...(byDate[selDay]||[])].sort((a,b)=>(b.stage==="done"?1:0)-(a.stage==="done"?1:0)).map(c=>{const _ready=c.stage==="done";const _click=readyOnly&&!_ready;const _dt=dayTag(c);return<div key={c.id}onClick={()=>{if(_click)return;onOpen(c.id,readyOnly?"done":undefined);}}style={{display:"flex",alignItems:"center",gap:10,padding:"11px 16px",borderTop:`1px solid ${C.line}`,cursor:_click?"default":"pointer",opacity:_click?.55:1,background:"#fff"}}>
+          <span style={{width:9,height:9,borderRadius:2,background:_dt.col,flexShrink:0}}/>
           <span style={{fontWeight:700,fontSize:13.5,color:C.ink}}>{humanizeToken(c.product)||parseName(c.name).product||"Asset"}</span>
           <span style={{fontSize:11.5,color:C.sub}}>· {normCrmType(c.crm_type)} · {c.channel||"WhatsApp"}</span>
-          <span style={{marginLeft:"auto",fontSize:10.5,fontWeight:700,color:stageCol[c.stage]||C.sub,background:(stageCol[c.stage]||C.sub)+"18",padding:"2px 8px",borderRadius:999}}>{_ready?"Ready":(c.stage==="design"&&!isPushChannel(c.channel))?"Needs design":"Copy in progress"}</span>
+          <span style={{marginLeft:"auto",fontSize:10.5,fontWeight:700,color:_dt.col,background:_dt.col+"18",padding:"2px 8px",borderRadius:999}}>{_dt.t}</span>
           {!_click&&<ChevronRight size={15}color={C.sub}/>}
         </div>;})}
     </div>}
@@ -2753,6 +2755,8 @@ function ApprovalsTab({campaigns,onOpen,me,team,reload}){
   const slotLabel={copy:"Copy",design:"Design",asset:"Your review",brand:"Full asset",final:"Final sign-off"};
   const _approvedTimes=(c)=>[c.copy_approved_at,c.design_approved_at,c.brand_approved_at,c.went_live_at,c.data?.gates?.asset?.at,c.data?.gates?.final?.at].filter(Boolean).map(t=>new Date(t).getTime()).filter(t=>!isNaN(t));
   const _lastApproval=(c)=>{const ts=_approvedTimes(c);return ts.length?Math.max(...ts):0;};
+  // Who did the most recent approval (pairs each approval timestamp with its approver name).
+  const _lastApprover=(c)=>{const pairs=[[c.copy_approved_at,c.copy_approver],[c.design_approved_at,c.design_approver],[c.brand_approved_at,c.brand_approver],[c.data?.gates?.asset?.at,c.data?.gates?.asset?.by],[c.data?.gates?.final?.at,c.data?.gates?.final?.by],[c.went_live_at,(c.data?.gates?.final?.by)||c.brand_approver]].filter(p=>p[0]&&p[1]).map(p=>[new Date(p[0]).getTime(),p[1]]).filter(p=>!isNaN(p[0]));if(!pairs.length)return null;pairs.sort((a,b)=>b[0]-a[0]);return pairs[0][1];};
   const _7d=Date.now()-7*864e5;
   const recentlyApproved=(campaigns||[]).filter(c=>!isArchived(c)&&_lastApproval(c)>=_7d).sort((a,b)=>_lastApproval(b)-_lastApproval(a));
   const undoApproval=async(c)=>{if(!window.confirm("Undo the most recent approval on \""+(humanizeToken(c.product)||parseName(c.name)||"this asset")+"\"? It steps back one gate."))return;setApproving(c.id);try{await api.post("/api/campaigns/"+c.id+"/undo-approval",{});if(reload)await reload();}catch(e){alert("Couldn\u0027t undo: "+(e.message||"error"));}setApproving("");};
@@ -2787,6 +2791,7 @@ function ApprovalsTab({campaigns,onOpen,me,team,reload}){
           <div style={{minWidth:0,flex:1}}>
             <span onClick={()=>onOpen(c.id)}style={{fontWeight:800,fontSize:13.5,color:C.ink,cursor:"pointer"}}>{humanizeToken(c.product)||parseName(c.name)}</span>
             <div style={{fontSize:11.5,color:C.sub,marginTop:2}}>{c.stage==="done"?"Finalized":s.t}{when?" \u00b7 "+new Date(when).toLocaleDateString("en-IN",{day:"numeric",month:"short"}):""}</div>
+            {(c.created_by_name||_lastApprover(c))&&<div style={{fontSize:11,color:C.sub,marginTop:2,display:"flex",gap:10,flexWrap:"wrap"}}>{c.created_by_name&&<span>Requested by <b style={{color:C.ink,fontWeight:700}}>{c.created_by_name}</b></span>}{_lastApprover(c)&&<span>Approved by <b style={{color:C.ink,fontWeight:700}}>{_lastApprover(c)}</b></span>}</div>}
           </div>
           <button onClick={()=>undoApproval(c)}disabled={approving===c.id}title="Step this asset back one approval gate"style={{fontSize:11.5,fontWeight:800,color:"#B91C1C",background:"#FEE2E2",border:"none",borderRadius:7,padding:"5px 12px",cursor:"pointer",flexShrink:0}}>{approving===c.id?"\u2026":"Undo"}</button>
         </div>;})}
@@ -7935,7 +7940,7 @@ function DesignTab({active,patch,promptRules,addRule,me,recentFeedback,saveFeedb
     {view==="list"&&(()=>{
       // Copy-in-progress assets (non-push) heading toward design, so the design team sees what's coming.
       const _byGoLive=(a,b)=>{const ga=a.go_live_date?new Date(a.go_live_date).getTime():Infinity;const gb=b.go_live_date?new Date(b.go_live_date).getTime():Infinity;return ga-gb;};
-      const coming=(_allCampaigns||[]).filter(c=>(c.stage==="content"||c.stage==="brand_review")&&!isPushChannel(c.channel)&&!isArchived(c)).sort(_byGoLive);
+      const coming=applyTileFilters((_allCampaigns||[]).filter(c=>(c.stage==="content"||c.stage==="brand_review")&&!isPushChannel(c.channel)&&!isArchived(c)),tf).sort(_byGoLive);
       if(!coming.length)return null;
       return<div style={{marginBottom:14}}><CollapsibleSection title="Copy in progress · coming for design" count={coming.length} color="#7C3AED" icon={<ClockIcon size={15}/>} defaultOpen={false}>
         <Card style={{padding:0,overflow:"hidden"}}>{coming.map(c=><ComingForDesignRow key={c.id}c={c}me={me}team={team}onOpen={onOpen}/>)}</Card>
