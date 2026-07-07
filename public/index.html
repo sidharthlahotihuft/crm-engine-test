@@ -153,7 +153,7 @@ const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // ===== Supabase egress control (paused image library/suggestions; reversible) =====
 const ENABLE_IMAGE_SUGGESTIONS=false; // brief-form image suggestions fetch — OFF to cut egress
 const ENABLE_LIBRARY_THUMBS=false;    // auto-load full-res library thumbnails on open — OFF. Explicit preview still loads one image.
-const BUILD="v42.52 (b149) - BRIEF FORM FIX: the compulsory single-message (rtbs / one-message-takeaway) question now accepts a TYPED value - it commits to the answer live as you type, instead of only on Enter. Previously typing the message and hitting generate was blocked with Please fill the required fields (the value was never saved). Picking a chip clears the typed buffer so they stay consistent. Prior b148: approvals unscoped + mobile pending-only. Builds on b148 and prior.";
+const BUILD="v42.53 (b150) - SEND-BACK FIX: sending a full-asset (brand/asset) or final review back now actually leaves the approval queue. The server design-reject/final-reject endpoints did not clear the brandReview/finalReview flags (and design-reject needs the design slot which the brand approver lacks), so the asset stayed in Pending your approval. Now, like the copy gate, the send-back also writes the cleared approval sub-flags + sentBack client-side, so it drops out of the queue and goes back for revision. Prior b149: brief single-message typed value. Builds on b149 and prior.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -2277,7 +2277,7 @@ function App(){
         <div style={{width:34,height:34,borderRadius:9,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={18}color="#fff"/></div>
         <div style={{lineHeight:1.15,minWidth:0}}>
           <div style={{fontWeight:800,fontSize:15,letterSpacing:-.3}}>CRM - Creative</div>
-          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b149</div>
+          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b150</div>
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"12px 10px",display:"flex",flexDirection:"column",gap:3}}>
@@ -2666,9 +2666,13 @@ function ReviewModal({c,me,kind,action,tab,onApprove,onSendBackDone,onEdit,onClo
         // Same feedback loop as copy↔brand: send the design back to the design team with the reason.
         await api.post(`/api/campaigns/${c.id}/design-reject`,{reason:r});
       }else if(action==="asset"||action==="brand"){
-        await api.post(`/api/campaigns/${c.id}/design-reject`,{reason:r});
+        await api.post(`/api/campaigns/${c.id}/design-reject`,{reason:r}).catch(()=>{});
+        // design-reject doesn't clear brandReview/finalReview, so the asset would stay in the queue.
+        // Clear all approval sub-flags + mark sentBack client-side so it actually leaves the queue and goes back for revision.
+        await api.put(`/api/campaigns/${c.id}`,{data:{...(c.data||{}),design:{...(c.data?.design||{}),pendingApproval:false,assetReview:false,brandReview:false,finalReview:false,sentBack:true,lastRejectReason:r,sentBackBy:me.name,sentBackAt:new Date().toISOString()}}}).catch(()=>{});
       }else if(action==="final"){
-        await api.post(`/api/campaigns/${c.id}/final-reject`,{reason:r});
+        await api.post(`/api/campaigns/${c.id}/final-reject`,{reason:r}).catch(()=>{});
+        await api.put(`/api/campaigns/${c.id}`,{data:{...(c.data||{}),design:{...(c.data?.design||{}),finalReview:false,brandReview:false,sentBack:true,lastRejectReason:r,sentBackBy:me.name,sentBackAt:new Date().toISOString()}}}).catch(()=>{});
       }else{
         await api.post(`/api/campaigns/${c.id}/comments`,{body:"Sent back: "+(r||"please revise"),context:ctx}).catch(()=>{});
       }
