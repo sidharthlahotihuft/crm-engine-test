@@ -2669,6 +2669,7 @@ function ReviewModal({c,me,kind,action,tab,onApprove,onSendBackDone,onEdit,onClo
         await api.post(`/api/campaigns/${c.id}/design-reject`,{reason:r}).catch(()=>{});
         if(isPushC){
           // Push has no design stage — send-back goes back to the writer (Copy) and reopens the copy pick.
+          // Write reason/sentBack at TOP LEVEL of data (where the Copy tab reads them), not inside design.
           await api.put(`/api/campaigns/${c.id}`,{stage:"content",data:{...(c.data||{}),selectedCopyIdx:null,sentBack:true,lastRejectReason:r,sentBackBy:me.name,sentBackAt:new Date().toISOString(),design:{...(c.data?.design||{}),pendingApproval:false,assetReview:false,brandReview:false,finalReview:false}}}).catch(()=>{});
         }else{
           await api.put(`/api/campaigns/${c.id}`,{data:{...(c.data||{}),design:{...(c.data?.design||{}),pendingApproval:false,assetReview:false,brandReview:false,finalReview:false,sentBack:true,lastRejectReason:r,sentBackBy:me.name,sentBackAt:new Date().toISOString()}}}).catch(()=>{});
