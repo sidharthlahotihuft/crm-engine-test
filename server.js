@@ -38,8 +38,7 @@ dns.setDefaultResultOrder("ipv4first");
 // Real fix for serverless is the TRANSACTION-mode pooler (port 6543) via DATABASE_URL — see note below.
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
- // ssl: { rejectUnauthorized: false },
- ssl: process.env.PGSSL === "true" ? { rejectUnauthorized: false } : false,
+  ssl: process.env.PGSSL === "true" ? { rejectUnauthorized: false } : false,
   family: 4,
   max: Number(process.env.PG_POOL_MAX || 3),   // small footprint per instance (override via env)
   idleTimeoutMillis: 10000,                     // drop idle connections after 10s so slots free up
@@ -250,7 +249,7 @@ async function reviewCopy(text, ruleStr, user) {
   } catch (e) { console.error("[review] skipped:", e.message); }
   return JSON.stringify(Array.isArray(parsed) ? arr : arr[0]);
 }
-const SERVER_BUILD = "v30.2s (b76) - DIRECTIONS ON HAIKU + GPT FALLBACK: /api/generate with kind='directions' now runs on claude-haiku-4-5 (override via env DIRECTIONS_MODEL) instead of Sonnet; if the Claude call throws, it falls back to OpenAI (gpt-4o via callOpenAI). Copy/steer/brief routing unchanged. Prior (b75) - PUSH SKIPS DESIGN: brand-approve now sends push notifications straight to done (finalized) instead of the design stage (push has no creative to design). Non-push still goes to design. Plus one-time cleanup endpoint POST /api/cleanup/push-in-design to move push assets already stuck in design. Prior (b74): DB pool cap. DB POOL CAPPED: connection pool now max=3 (env PG_POOL_MAX) + 10s idle release + allowExitOnIdle, so serverless instances stop exhausting Supabase session-pooler 15-client limit that was causing 500s on campaigns/stats/etc. Prior (b73): Opus temperature fix.";
+const SERVER_BUILD = "v30.4s (b78) - CAMPAIGN DELETE AUDIT TRAIL: DELETE /api/campaigns/:id was a hard delete with zero logging (no soft-delete, no who/what/when captured) - once deleted, a campaign was unrecoverable and undetectable after the fact. Now wrapped in an explicit transaction (single client via pool.connect(), not pool.query() per call - SET LOCAL only holds within one connection) that sets app.current_user before deleting, so a DB-level BEFORE DELETE trigger (see campaigns_deletion_log migration) can capture the full row + actor + timestamp. The trigger fires on ANY delete regardless of source (app, direct SQL, future code paths), not just this endpoint. Prior (b77): DB SSL env-controlled. Prior (b76): directions on Haiku + GPT fallback. Prior (b75): push skips design + one-time push-in-design cleanup endpoint. Prior (b74): DB pool cap.";
 
 const authMiddleware = async (req, res, next) => {
   const h = req.headers.authorization || "";
@@ -912,8 +911,23 @@ app.put("/api/campaigns/:id", authMiddleware, async (req, res) => {
 });
 
 app.delete("/api/campaigns/:id", authMiddleware, roles("admin","business","brand"), async (req, res) => {
-  try { await db("DELETE FROM campaigns WHERE id=$1", [req.params.id]); res.json({ ok: true }); }
-  catch (e) { res.status(500).json({ error: e.message }); }
+  // Uses a single dedicated client + explicit transaction so SET LOCAL and DELETE
+  // run on the SAME connection — pool.query() per call does NOT guarantee that,
+  // since the pool can hand out a different connection for each call.
+  const client = await pool.connect();
+  try {
+    const actor = (req.user && (req.user.email || req.user.name)) || "unknown";
+    await client.query("BEGIN");
+    await client.query("SELECT set_config('app.current_user', $1, true)", [actor]);
+    await client.query("DELETE FROM campaigns WHERE id=$1", [req.params.id]);
+    await client.query("COMMIT");
+    res.json({ ok: true });
+  } catch (e) {
+    await client.query("ROLLBACK").catch(() => {});
+    res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
+  }
 });
 
 // ── RULES ─────────────────────────────────────────────────────────────────────
