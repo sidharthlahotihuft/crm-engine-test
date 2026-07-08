@@ -153,7 +153,7 @@ const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // ===== Supabase egress control (paused image library/suggestions; reversible) =====
 const ENABLE_IMAGE_SUGGESTIONS=false; // brief-form image suggestions fetch — OFF to cut egress
 const ENABLE_LIBRARY_THUMBS=false;    // auto-load full-res library thumbnails on open — OFF. Explicit preview still loads one image.
-const BUILD="v42.57 (b154) - THREE CHANGES: (1) Removed the hidden creation-date period filter on the Dashboard entirely (was defaulting to 7d, silently hiding older assets from pipeline/calendar) - the date picker in the pipeline/calendar is now the ONLY date scoping. (2) Copy tab brief card now shows Channel, CRM type, Audience, Objective/goal, Offer, Go-live as read-only Brief-inputs context for writers - the same inputs brand_lead (Ilena) sees, so writers no longer write blind. (3) Edit brief form now loads and shows EVERY field the brief was raised with (channel, CRM, product, audience, objective, offer + all copy fields), word-for-word - previously only 7 of ~15 fields were surfaced. Structural fields are editable by leads/business and read-only for writers; copy-craft fields editable by all. Builds on b153 and prior.";
+const BUILD="v42.60 (b157) - RTB RELEVANCE FIX: spa/grooming products were getting FOOD RTBs (e.g. slow-cooked). Root cause: rtbsForProduct ran a raw-substring loop over food keys FIRST and returned the first key found anywhere in the name, so \"Grooming mat\"->mat, \"Spa bed\"->bed, and spa products matched food keys before the spa/grooming fallback (which ran LAST) could win. Fix: (1) check spa/grooming/pawdicure/bath FIRST (they have no food RTBs so must win); (2) replace raw substring with WORD-BOUNDARY matching (+optional plural s) so short keys like mat/bed/sara dont leak into unrelated names; (3) try longer/more-specific keys first (\"sara's wholesome food\" before \"sara\"). Food/apparel products (Beds, Mats, Collars, Nutriwag Dry, etc.) still match correctly. Builds on b156 and prior.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -1201,9 +1201,20 @@ const RTB_LIBRARY = {
 };
 function rtbsForProduct(prod){
   const p=(prod||"").toLowerCase().trim();
-  for(const k of Object.keys(RTB_LIBRARY)){if(k!=="_default"&&p.includes(k))return RTB_LIBRARY[k];}
+  // b157: SERVICE / NON-FOOD categories are checked FIRST. Previously the generic substring loop
+  // below ran first and returned the first food key found ANYWHERE in the name — so "Grooming mat"
+  // matched "mat", "Spa bed" matched "bed", and spa/grooming products got food RTBs (e.g. slow-cooked).
+  // Spa/grooming has no food RTBs, so it must win before any food key can substring-match.
+  if(p.includes("spa")||p.includes("groom")||p.includes("pawdicure")||p.includes("bath"))return RTB_LIBRARY["huft spa / grooming"];
+  // Word-boundary match (not raw substring) so short keys like "mat"/"bed"/"sara" don't leak into
+  // names that merely CONTAIN those letters. Longer/more specific keys are tried first.
+  const keysByLen=Object.keys(RTB_LIBRARY).filter(k=>k!=="_default").sort((a,b)=>b.length-a.length);
+  for(const k of keysByLen){
+    const esc=k.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+    const rx=new RegExp("(^|[^a-z])"+esc+"s?($|[^a-z])","i"); // trailing s? matches plurals (Beds, Mats, Collars)
+    if(rx.test(p))return RTB_LIBRARY[k];
+  }
   // sub-brand keyword fallbacks
-  if(p.includes("spa")||p.includes("groom"))return RTB_LIBRARY["huft spa / grooming"];
   if(p.includes("cat")||p.includes("meow"))return RTB_LIBRARY["meowsi"];
   return RTB_LIBRARY._default;
 }
@@ -1284,7 +1295,7 @@ const BRIEF_STEPS = [
   },
   {
     key:"objective", question:"What's the objective?",
-    hint:"Pick the one that best fits your audience. Win-back = lapsed buyers. Conversion = new/trial. Upsell = existing buyers. Retention = loyalists.",
+    hint:"Pick the one that best fits your audience. Win-back = lapsed buyers only. Conversion = new/trial. Upsell = existing buyers. Retention = loyalists. A broad 'all customers' audience can't be win-back or retention — narrow the audience first, or pick Awareness/Education.",
     options:[
       "Win-back / Reactivation",
       "Conversion (first purchase)",
@@ -1296,21 +1307,57 @@ const BRIEF_STEPS = [
     ],
     freeText:true,
     placeholder:"Or describe your own…",
+    // b156: universal objectives fit any audience; the audience-specific ones (win-back, conversion,
+    // retention, upsell) are ONLY offered when the audience actually implies that stage. A broad or
+    // unrecognised audience ("all customers", "all cat parents") no longer shows Win-back/Retention,
+    // which was the logic gap that let wrong briefs through.
     filterByAudience:(aud)=>{
       const a=(aud||"").toLowerCase();
-      // Universal objectives that fit any audience
       const universal=["Product education","Seasonal / topical","Awareness / Brand"];
-      if(a.includes("lapsed")||a.includes("win")||a.includes("reactivat")||a.includes("churn"))
+      // BROAD / MIXED audience → cannot be win-back or retention (the group includes new+lapsed+loyal).
+      // Offer conversion + universals only. This is the key fix for "all cat customers → win-back".
+      const isBroad=/\ball\b|\beveryone\b|\bentire\b|\bfull base\b|\bbroad\b/.test(a) && !/lapsed|loyal|repeat|new|first/.test(a);
+      if(isBroad) return ["Awareness / Brand","Product education","Conversion (first purchase)","Seasonal / topical"];
+      if(a.includes("lapsed")||a.includes("win")||a.includes("reactivat")||a.includes("churn")||a.includes("dormant")||a.includes("inactive"))
         return ["Win-back / Reactivation",...universal];
-      if(a.includes("first-time")||a.includes("first time")||a.includes("new ")||a.includes("trial")||a.includes("acqui")||a.includes("nso")||a.includes("store opening"))
+      if(a.includes("first-time")||a.includes("first time")||a.includes("new ")||a.includes("trial")||a.includes("acqui")||a.includes("nso")||a.includes("store opening")||a.includes("prospect")||a.includes("cold"))
         return ["Conversion (first purchase)",...universal];
-      if(a.includes("loyal")||a.includes("high-value")||a.includes("high value")||a.includes("repeat"))
+      if(a.includes("loyal")||a.includes("high-value")||a.includes("high value")||a.includes("repeat")||a.includes("vip")||a.includes("subscriber"))
         return ["Retention / Loyalty","Upsell / Cross-sell",...universal];
-      if(a.includes("post-purchase")||a.includes("post purchase")||a.includes("existing")||a.includes("follow-up")||a.includes("follow up"))
+      if(a.includes("post-purchase")||a.includes("post purchase")||a.includes("existing")||a.includes("follow-up")||a.includes("follow up")||a.includes("recent buyer"))
         return ["Upsell / Cross-sell","Retention / Loyalty",...universal];
       if(a.includes("post-spa")||a.includes("grooming"))
         return ["Retention / Loyalty","Upsell / Cross-sell","Conversion (first purchase)",...universal];
-      return null; // null = show all
+      // UNKNOWN audience → no longer "show everything". Safe default: universals + conversion,
+      // never win-back/retention (which require a KNOWN lapsed/loyal segment).
+      return ["Awareness / Brand","Product education","Conversion (first purchase)","Seasonal / topical"];
+    },
+    // Recommended default given the audience (auto-selected to guide the user).
+    recommend:(aud)=>{
+      const a=(aud||"").toLowerCase();
+      if(/\ball\b|\beveryone\b|\bentire\b/.test(a) && !/lapsed|loyal|repeat|new|first/.test(a)) return "Awareness / Brand";
+      if(a.includes("lapsed")||a.includes("win")||a.includes("reactivat")||a.includes("churn")||a.includes("dormant")||a.includes("inactive")) return "Win-back / Reactivation";
+      if(a.includes("first")||a.includes("new ")||a.includes("trial")||a.includes("acqui")||a.includes("prospect")||a.includes("cold")) return "Conversion (first purchase)";
+      if(a.includes("loyal")||a.includes("high-value")||a.includes("high value")||a.includes("vip")||a.includes("subscriber")) return "Retention / Loyalty";
+      if(a.includes("repeat")||a.includes("existing")||a.includes("post-purchase")||a.includes("recent buyer")) return "Upsell / Cross-sell";
+      return null;
+    },
+    // Returns a warning string if the chosen objective clashes with the audience, else null.
+    mismatch:(aud,obj)=>{
+      const a=(aud||"").toLowerCase(), o=(obj||"").toLowerCase();
+      if(!a||!o)return null;
+      const isBroad=/\ball\b|\beveryone\b|\bentire\b|\bfull base\b/.test(a) && !/lapsed|loyal|repeat|new|first/.test(a);
+      if(isBroad&&(o.includes("win-back")||o.includes("reactivat")))
+        return "This audience looks broad (\"all customers\"), but Win-back only fits LAPSED buyers. Either narrow the audience to lapsed users, or pick Awareness / Conversion.";
+      if(isBroad&&o.includes("retention"))
+        return "Retention fits loyalists, not a broad audience. Narrow to loyal/repeat buyers, or pick Awareness.";
+      if((a.includes("new ")||a.includes("first")||a.includes("prospect"))&&(o.includes("win-back")||o.includes("retention")||o.includes("upsell")))
+        return "This is a NEW / first-time audience — they can't be won back, retained, or upsold yet. Conversion (first purchase) fits.";
+      if(a.includes("lapsed")&&(o.includes("conversion")||o.includes("first purchase")))
+        return "This audience is LAPSED (they've bought before) — \"first purchase\" doesn't fit. Win-back / Reactivation is the right call.";
+      if(a.includes("loyal")&&(o.includes("win-back")||o.includes("conversion")))
+        return "This is a LOYAL audience — win-back/first-purchase don't apply. Retention or Upsell fits.";
+      return null;
     },
   },
   {
@@ -2277,7 +2324,7 @@ function App(){
         <div style={{width:34,height:34,borderRadius:9,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={18}color="#fff"/></div>
         <div style={{lineHeight:1.15,minWidth:0}}>
           <div style={{fontWeight:800,fontSize:15,letterSpacing:-.3}}>CRM - Creative</div>
-          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b154</div>
+          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b157</div>
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"12px 10px",display:"flex",flexDirection:"column",gap:3}}>
@@ -2747,6 +2794,72 @@ function ReviewModal({c,me,kind,action,tab,onApprove,onSendBackDone,onEdit,onClo
     </div>
   </div>;
 }
+// b155: full approval-status ladder — each gate in sequence with done / pending-now / waiting.
+// Push chain: Copy approval → Done. Non-push chain: Copy approval → Full-asset → Final sign-off → Done.
+function ApprovalLadder({c,team}){
+  if(!c)return null;
+  const d=(c.data&&c.data.design)||{};
+  const g=(c.data&&c.data.gates)||{};
+  const isPush=isPushChannel(c.channel);
+  const holders=(slot,fb)=>{const n=slotHolders(team,slot);return n.length?n.join(", "):fb;};
+  // Determine which single gate is "active" right now.
+  const activeGate=
+    c.stage==="brand_review"?"copy":
+    (c.stage==="design"&&d.brandReview)?"brand":
+    (c.stage==="design"&&d.finalReview)?"final":
+    (c.stage==="design"&&d.pendingApproval)?"design":
+    (c.stage==="design"&&d.assetReview)?"asset":
+    c.stage==="done"?"done":null;
+  // Build the ordered step list for this asset's chain.
+  const steps=isPush
+    ?[
+      {key:"copy",label:"Copy approval",who:holders("copy",c.brand_approver||"Brand lead")},
+     ]
+    :[
+      {key:"copy",label:"Copy approval",who:holders("copy",c.brand_approver||"Brand lead")},
+      {key:"brand",label:"Full-asset approval",who:holders("brand","Brand lead")},
+      {key:"final",label:"Final sign-off",who:holders("final","Head of Marketing")},
+     ];
+  const order=isPush?["copy"]:["copy","brand","final"];
+  const activeIdx=activeGate==="done"?order.length:order.indexOf(activeGate);
+  const stateFor=(i)=>{
+    if(activeGate==="done")return "done";
+    if(activeIdx<0)return i===0?"now":"wait";      // fallback: first step active
+    if(i<activeIdx)return "done";
+    if(i===activeIdx)return "now";
+    return "wait";
+  };
+  // Who/when for completed gates (for the "done" tooltip line).
+  const doneBy=(key)=>{
+    if(key==="copy")return c.brand_approver||null;
+    if(key==="brand")return (g.brand&&g.brand.by)||c.design_approver||null;
+    if(key==="final")return (g.final&&g.final.by)||null;
+    return null;
+  };
+  const dot=(st)=>st==="done"?{bg:C.green,fg:"#fff",ic:<Check size={9}/>}
+    :st==="now"?{bg:"#9333EA",fg:"#fff",ic:<ClockIcon size={9}/>}
+    :{bg:"#E5E7EB",fg:C.sub,ic:null};
+  return<div style={{display:"flex",flexWrap:"wrap",alignItems:"center",gap:6,marginTop:6}}>
+    {steps.map((s,i)=>{const st=stateFor(i);const dd=dot(st);const by=st==="done"?doneBy(s.key):null;
+      return<React.Fragment key={s.key}>
+        <span title={st==="done"?(by?s.label+" — approved by "+by:s.label+" — approved"):st==="now"?s.label+" — pending "+(s.who||""):s.label+" — waiting"}
+          style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:10.5,fontWeight:700,
+            color:st==="wait"?C.sub:st==="now"?"#9333EA":C.green,
+            background:st==="wait"?"#F3F4F6":st==="now"?"#9333EA14":C.green+"14",
+            border:`1px solid ${st==="wait"?C.line:st==="now"?"#9333EA55":C.green+"55"}`,
+            borderRadius:999,padding:"2px 9px",opacity:st==="wait"?.75:1}}>
+          <span style={{width:14,height:14,borderRadius:999,background:dd.bg,color:dd.fg,display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{dd.ic||<span style={{fontSize:8,fontWeight:800}}>{i+1}</span>}</span>
+          <span>{s.label}{s.who?<span style={{fontWeight:600,opacity:.85}}> · {st==="done"&&by?by:s.who}</span>:null}</span>
+        </span>
+        {i<steps.length-1&&<ChevronRight size={12}color={C.sub}style={{opacity:.5,flexShrink:0}}/>}
+      </React.Fragment>;
+    })}
+    <span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:10.5,fontWeight:700,color:activeGate==="done"?C.green:C.sub,marginLeft:2}}>
+      <ChevronRight size={12}color={C.sub}style={{opacity:.5}}/>
+      <span style={{padding:"2px 9px",borderRadius:999,background:activeGate==="done"?C.green+"14":"#F3F4F6",border:`1px solid ${activeGate==="done"?C.green+"55":C.line}`,color:activeGate==="done"?C.green:C.sub}}>Done</span>
+    </span>
+  </div>;
+}
 function ApprovalsTab({campaigns,onOpen,me,team,reload,pendingOnly}){
   const[approving,setApproving]=useState("");
   const[reviewing,setReviewing]=useState(null);
@@ -2791,6 +2904,7 @@ function ApprovalsTab({campaigns,onOpen,me,team,reload,pendingOnly}){
             {c.updated_at&&<div style={{fontSize:11,color:C.sub,marginTop:2,display:"inline-flex",alignItems:"center",gap:4}}><ClockIcon size={11}/>Sent for approval · {fmtDate(c.updated_at)} · {fmtTime(c.updated_at)}</div>}
             <BriefDates c={c}/>
             <WhoChips c={c}me={me}team={team}/>
+            <ApprovalLadder c={c}team={team}/>
           </div>
           {u&&<span style={{fontSize:10.5,fontWeight:800,color:u.col,background:u.bg,padding:"2px 8px",borderRadius:999,flexShrink:0}}>{u.t}</span>}
           {isSuper(me)&&<button onClick={()=>forceFinalize(c)}disabled={approving===c.id}title="Approve all remaining gates and send straight to Finalized"style={{fontSize:12,fontWeight:800,color:"#fff",background:C.green,border:"none",borderRadius:7,padding:"6px 12px",cursor:"pointer",flexShrink:0,marginRight:6}}>{approving===c.id?"\u2026":"Finalize"}</button>}
@@ -3304,6 +3418,23 @@ function BriefFastForm({campaignId,c,patch,onBriefReady,onDraftSaved,me,recentFe
               {many&&<button onClick={()=>setMoreFor(m=>({...m,[s.key]:!showAll}))}style={{fontSize:12,fontWeight:600,padding:"5px 11px",borderRadius:999,cursor:"pointer",border:`1px dashed ${C.line}`,background:"#fff",color:C.sub}}>{showAll?"Show fewer":"+ "+(chipOpts.length-CAP)+" more"}</button>}
             </div>;})()}
             {s.freeText&&<input value={val&&!chipOpts.includes(val)?val:""}onChange={e=>set(s.key,e.target.value)}placeholder={s.placeholder||"Or type your own…"}style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 10px",fontSize:13,boxSizing:"border-box"}}/>}
+            {/* b156: objective↔audience guidance — recommend the right one, warn on a clash */}
+            {s.key==="objective"&&(()=>{
+              const aud=answers.audience||"";
+              const rec=s.recommend?s.recommend(aud):null;
+              const cur=answers.objective||"";
+              const warn=s.mismatch?s.mismatch(aud,cur):null;
+              return<React.Fragment>
+                {rec&&aud&&!cur&&<div style={{marginTop:8,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:9,padding:"8px 11px"}}>
+                  <span style={{fontSize:11.5,color:"#166534",fontWeight:600}}>For <b>{aud}</b>, the right objective is usually <b>{rec}</b>.</span>
+                  <button onClick={()=>set("objective",rec)}style={{fontSize:11.5,fontWeight:700,color:"#fff",background:C.green,border:"none",borderRadius:7,padding:"4px 11px",cursor:"pointer"}}>Use {rec}</button>
+                </div>}
+                {warn&&<div style={{marginTop:8,display:"flex",alignItems:"flex-start",gap:8,background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:9,padding:"9px 12px"}}>
+                  <AlertTriangle size={14}color="#B91C1C"style={{flexShrink:0,marginTop:1}}/>
+                  <div style={{fontSize:11.5,color:"#B91C1C",fontWeight:600,lineHeight:1.45}}>{warn}{rec&&<> <button onClick={()=>set("objective",rec)}style={{fontSize:11,fontWeight:800,color:"#B91C1C",background:"#fff",border:"1px solid #FCA5A5",borderRadius:6,padding:"2px 8px",cursor:"pointer",marginLeft:4}}>Switch to {rec}</button></>}</div>
+                </div>}
+              </React.Fragment>;
+            })()}
           </div>}
       </div>;
     })}
