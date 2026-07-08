@@ -153,7 +153,7 @@ const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // ===== Supabase egress control (paused image library/suggestions; reversible) =====
 const ENABLE_IMAGE_SUGGESTIONS=false; // brief-form image suggestions fetch — OFF to cut egress
 const ENABLE_LIBRARY_THUMBS=false;    // auto-load full-res library thumbnails on open — OFF. Explicit preview still loads one image.
-const BUILD="v42.54 (b151) - PUSH SEND-BACK ROUTES TO COPY: sending a PUSH asset back at the full-asset/final gate now moves it to stage=content (back to the writer) and reopens the copy pick, instead of leaving it stranded in stage=design where push assets are filtered out (the went-missing bug). Non-push send-back still goes back to the design team as before. Prior b150: send-back clears approval flags. Builds on b150 and prior.";
+const BUILD="v42.55 (b152) - DASHBOARD PIPELINE MONTH-SCOPE BUGFIX: (1) items with no go_live_date set were being silently dropped from every Task pipeline column in every month (_inMonth returned false for undated items) — they now always show regardless of month selected. (2) 'Asset Ready' column was scoped to the selected month while the Finalized Assets tab shows ALL done assets unscoped, so counts diverged; Asset Ready now mirrors DoneTab's unscoped done-set exactly so the two can never disagree again. Copy/Design-in-progress columns remain month-scoped by design. Prior b151: push send-back routes to copy. Builds on b151 and prior.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -2277,7 +2277,7 @@ function App(){
         <div style={{width:34,height:34,borderRadius:9,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={18}color="#fff"/></div>
         <div style={{lineHeight:1.15,minWidth:0}}>
           <div style={{fontWeight:800,fontSize:15,letterSpacing:-.3}}>CRM - Creative</div>
-          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b151</div>
+          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b152</div>
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"12px 10px",display:"flex",flexDirection:"column",gap:3}}>
@@ -3015,15 +3015,22 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
       const _monthBase=new Date();_monthBase.setDate(1);_monthBase.setMonth(_monthBase.getMonth()+pipeMonth);
       const _pMonth=_monthBase.getMonth(),_pYear=_monthBase.getFullYear();
       const _monthLabel=_monthBase.toLocaleDateString("en-IN",{month:"long",year:"numeric"});
-      const _inMonth=(c)=>{if(!c.go_live_date)return false;const g=new Date(c.go_live_date);return g.getMonth()===_pMonth&&g.getFullYear()===_pYear;};
+      // BUGFIX b152: undated items (no go_live_date yet) used to be silently dropped from every
+      // column in every month — `if(!c.go_live_date) return false`. A brief/copy/design item with
+      // no go-live date assigned now always shows instead of vanishing.
+      const _inMonth=(c)=>{if(!c.go_live_date)return true;const g=new Date(c.go_live_date);return g.getMonth()===_pMonth&&g.getFullYear()===_pYear;};
       const _naMonth=_na.filter(_inMonth);
       const _pf=applyTileFilters(_naMonth,pf).filter(c=>!pf.category||normCat(categoryOf(c))===pf.category);
+      // BUGFIX b152: "Asset Ready" no longer goes through the month filter at all — it mirrors
+      // DoneTab's own unscoped set (all stage==='done', not archived) so this count can never
+      // drift from the Finalized Assets tab again, regardless of which month is selected here.
+      const _pfDone=applyTileFilters(_na,pf).filter(c=>!pf.category||normCat(categoryOf(c))===pf.category);
       const chans=[...new Set(_na.map(c=>c.channel).filter(Boolean))].sort();
       const _byGoLive=(a,b)=>{const ga=a.go_live_date?new Date(a.go_live_date).getTime():Infinity;const gb=b.go_live_date?new Date(b.go_live_date).getTime():Infinity;return ga-gb;};
       const cols=[
         {k:"cp",title:"Copy in progress",color:C.purple,items:_pf.filter(c=>c.stage==="content"||(c.stage==="brand_review")).sort(_byGoLive)},
         {k:"dp",title:"Design in progress",color:"#CA8A04",items:_pf.filter(c=>c.stage==="design"&&!isPushChannel(c.channel)).sort(_byGoLive)},
-        {k:"dr",title:"Asset Ready",color:C.green,items:_pf.filter(c=>c.stage==="done").sort(_byGoLive)},
+        {k:"dr",title:"Asset Ready",color:C.green,items:_pfDone.filter(c=>c.stage==="done").sort(_byGoLive)},
       ];
       const selSx={fontSize:12,fontWeight:600,color:C.ink,border:`1px solid ${C.line}`,borderRadius:8,padding:"5px 8px",background:"#fff",cursor:"pointer",fontFamily:"inherit"};
       return<Card style={{padding:0,overflow:"hidden",marginBottom:18}}>
