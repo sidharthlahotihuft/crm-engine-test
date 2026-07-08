@@ -153,7 +153,7 @@ const visibleTabKeys=(me)=>new Set(TAB_VIS[_r(me)]||["dashboard","done"]);
 // ===== Supabase egress control (paused image library/suggestions; reversible) =====
 const ENABLE_IMAGE_SUGGESTIONS=false; // brief-form image suggestions fetch — OFF to cut egress
 const ENABLE_LIBRARY_THUMBS=false;    // auto-load full-res library thumbnails on open — OFF. Explicit preview still loads one image.
-const BUILD="v42.55 (b152) - DASHBOARD PIPELINE MONTH-SCOPE BUGFIX: (1) items with no go_live_date set were being silently dropped from every Task pipeline column in every month (_inMonth returned false for undated items) — they now always show regardless of month selected. (2) 'Asset Ready' column was scoped to the selected month while the Finalized Assets tab shows ALL done assets unscoped, so counts diverged; Asset Ready now mirrors DoneTab's unscoped done-set exactly so the two can never disagree again. Copy/Design-in-progress columns remain month-scoped by design. Prior b151: push send-back routes to copy. Builds on b151 and prior.";
+const BUILD="v42.57 (b154) - THREE CHANGES: (1) Removed the hidden creation-date period filter on the Dashboard entirely (was defaulting to 7d, silently hiding older assets from pipeline/calendar) - the date picker in the pipeline/calendar is now the ONLY date scoping. (2) Copy tab brief card now shows Channel, CRM type, Audience, Objective/goal, Offer, Go-live as read-only Brief-inputs context for writers - the same inputs brand_lead (Ilena) sees, so writers no longer write blind. (3) Edit brief form now loads and shows EVERY field the brief was raised with (channel, CRM, product, audience, objective, offer + all copy fields), word-for-word - previously only 7 of ~15 fields were surfaced. Structural fields are editable by leads/business and read-only for writers; copy-craft fields editable by all. Builds on b153 and prior.";
 
 // British English grammar/spelling proofread. Returns {hasIssues, issues:[{wrong,right,why}], corrected:{header,body,subject,cta}}
 async function grammarCheckCopy(fields){
@@ -2277,7 +2277,7 @@ function App(){
         <div style={{width:34,height:34,borderRadius:9,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={18}color="#fff"/></div>
         <div style={{lineHeight:1.15,minWidth:0}}>
           <div style={{fontWeight:800,fontSize:15,letterSpacing:-.3}}>CRM - Creative</div>
-          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b152</div>
+          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>Launch V1 · b154</div>
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"12px 10px",display:"flex",flexDirection:"column",gap:3}}>
@@ -2877,30 +2877,21 @@ function Dashboard({campaigns:allCampaigns,onNew,onOpen,me,setTab,reload}){
   const[hoverStat,setHoverStat]=useState(null);
   const[pf,setPf]=useState({channel:"",crm:"",category:""});
   const[pipeMonth,setPipeMonth]=useState(0); // 0 = current month; +/- to navigate
-  const[period,setPeriod]=useState("7d");
+  const[period,setPeriod]=useState("all");
   const[cFrom,setCFrom]=useState("");
   const[cTo,setCTo]=useState("");
-  // ── Time-period filter (by asset creation date) ──
-  const periodRange=(()=>{
-    if(period==="all")return null;
-    if(period==="custom"){
-      return {f:cFrom?new Date(cFrom+"T00:00:00"):null, t:cTo?new Date(cTo+"T23:59:59"):null};
-    }
-    const days=period==="7d"?7:period==="30d"?30:90;
-    const f=new Date();f.setHours(0,0,0,0);f.setDate(f.getDate()-(days-1));
-    return {f,t:null};
-  })();
-  const inRange=(c)=>{
-    if(!periodRange)return true;
-    const d=c.created_at?new Date(c.created_at):null;
-    if(!d)return true; // keep undated assets visible
-    if(periodRange.f&&d<periodRange.f)return false;
-    if(periodRange.t&&d>periodRange.t)return false;
-    return true;
-  };
-  // Overview (stat cards + activity lists) is scoped to the period; approvals stay unscoped so nothing actionable is hidden.
+  // b154: the hidden creation-date period filter is REMOVED. It previously defaulted to "7d" with
+  // no visible selector and silently hid anything created >7 days ago from the pipeline, calendar
+  // and ready cards (the b152/b153 bug). Per product decision, the Dashboard no longer scopes by
+  // created_at at all — the date picker inside the Task pipeline / calendar is the ONLY date
+  // control. `inRange` is kept as a passthrough (always true) so downstream code that references
+  // `campaigns` keeps working; `period`/`periodRange` are retained only for the (removed) label.
+  const periodRange=null;
+  const inRange=()=>true; // no creation-date scoping — date picker is the single source of date truth
+  // NOTE: `campaigns` below equals the full `allCampaigns` prop now (inRange is always true). The
+  // date picker (`pf`/`tf` filters + month selector) does all date scoping explicitly and visibly.
   const campaigns=allCampaigns.filter(inRange);
-  const periodLabel=period==="all"?"all time":period==="custom"?((cFrom||"…")+" → "+(cTo||"…")):period==="7d"?"last 7 days":period==="30d"?"last 30 days":"last 90 days";
+  const periodLabel="all time";
   const approveGate=async(c,action)=>{setApproving(c.id+action);
     try{
       const ep=action==="copy"?"brand-approve":action==="design"?"design-approve":action==="asset"?"asset-approve":action==="brand"?"brand-asset-approve":"final-approve";
@@ -4000,7 +3991,7 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns:
 
         {m==="edit"&&brief&&<div style={{background:"#fff",borderRadius:12,padding:14,border:`1px solid ${C.line}`,marginBottom:14}}>
           <div style={{fontWeight:700,fontSize:14,marginBottom:12,display:"flex",alignItems:"center",gap:7}}><PenLine size={14}color={C.coral}/>Edit brief</div>
-          <EditBriefForm brief={brief}active={c}patch={patch}onDone={()=>setM(c.id,"view")}/>
+          <EditBriefForm brief={brief}active={c}patch={patch}onDone={()=>setM(c.id,"view")}me={me}/>
         </div>}
 
         {m==="view"&&brief&&<div style={{marginBottom:14}}>
@@ -4163,7 +4154,13 @@ function BriefTab({active,patch,setTab,me,recentFeedback,saveFeedback,campaigns:
 }
 
 
-function EditBriefForm({brief,active,patch,onDone}){
+function EditBriefForm({brief,active,patch,onDone,me}){
+  // b154: load EVERY field the brief was originally filled with, word-for-word — previously this
+  // form only surfaced 7 of ~15 fields, so structural inputs (channel, CRM, product, audience,
+  // objective, offer) silently vanished on edit. Now all are shown. Copy-craft fields are editable
+  // by everyone; structural fields are editable only by leads/business and read-only for writers.
+  const _canEditStructural = seesAll(me)||isBusiness(me); // leads + business; writers get read-only
+  // Copy-craft fields (everyone can edit)
   const[b,setB]=useState({
     strategicInsight:brief.strategicInsight||"",
     trigger:brief.trigger||"",
@@ -4172,17 +4169,59 @@ function EditBriefForm({brief,active,patch,onDone}){
     whatsappNote:brief.whatsappNote||"",
     pillar:brief.pillar||"Importance",
   });
+  // Structural / top-level campaign fields (role-gated)
+  const[s,setS]=useState({
+    channel:active.channel||"",
+    crm_type:active.crm_type||"D2C",
+    product:active.product||"",
+    audience_label:active.audience_label||active.segment||"",
+    objective:active.objective||"",
+    offer:active.offer||"",
+  });
   const[goLive,setGoLive]=useState((active.go_live_date||"").slice(0,10)); // YYYY-MM-DD for the date input
   const save=()=>{
-    patch(active.id,{
+    const patchObj={
       go_live_date:goLive||null,
       campaign_week:goLive?weekOfMonth(goLive):null,
       campaign_month:goLive?monthLabel(goLive):null,
       data:{...(active.data||{}),brief:{...brief,...b}},
-    });
+    };
+    // Only leads/business may change structural fields; writers' values are ignored even if tampered.
+    if(_canEditStructural){
+      patchObj.channel=s.channel||null;
+      patchObj.crm_type=s.crm_type||null;
+      patchObj.product=s.product||null;
+      patchObj.audience_label=s.audience_label||"";
+      patchObj.segment=s.audience_label||"";
+      patchObj.objective=s.objective||"";
+      patchObj.offer=s.offer||"";
+    }
+    patch(active.id,patchObj);
     onDone();
   };
+  const roLabel=(label,val)=><div style={{marginBottom:12}}>
+    <div style={{fontSize:12.5,fontWeight:600,color:C.sub,marginBottom:4}}>{label}</div>
+    <div style={{fontSize:14,color:C.ink,background:"#F8FAFC",border:`1px solid ${C.line}`,borderRadius:10,padding:"9px 11px",minHeight:20,whiteSpace:"pre-line"}}>{val||<span style={{color:C.sub,opacity:.6}}>—</span>}</div>
+  </div>;
+  const selWrap={border:`1px solid ${C.line}`,borderRadius:10,padding:"9px 11px",fontSize:14,width:"100%",background:"#fff",boxSizing:"border-box"};
   return<div>
+    {/* ── Brief inputs (the way it was raised) ──────────────────────────── */}
+    <div style={{fontSize:10.5,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.5,margin:"2px 0 8px"}}>Brief inputs{!_canEditStructural&&<span style={{fontWeight:600,textTransform:"none",letterSpacing:0,marginLeft:6,opacity:.75}}>· read-only for writers</span>}</div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:2}}>
+      {_canEditStructural
+        ?<label style={{display:"block",marginBottom:12}}><div style={{fontSize:12.5,fontWeight:600,color:C.sub,marginBottom:5}}>Channel</div><select value={s.channel}onChange={e=>setS(x=>({...x,channel:e.target.value}))}style={selWrap}><option value="">Select…</option><option value="WhatsApp">WhatsApp</option><option value="Email">Email</option><option value="Push notification">Push notification</option></select></label>
+        :roLabel("Channel",s.channel)}
+      {_canEditStructural
+        ?<label style={{display:"block",marginBottom:12}}><div style={{fontSize:12.5,fontWeight:600,color:C.sub,marginBottom:5}}>CRM type</div><select value={s.crm_type}onChange={e=>setS(x=>({...x,crm_type:e.target.value}))}style={selWrap}><option value="D2C">D2C</option><option value="Retail">Retail</option></select></label>
+        :roLabel("CRM type",s.crm_type)}
+    </div>
+    {_canEditStructural?<Field label="Product / Brand"value={s.product}onChange={v=>setS(x=>({...x,product:v}))}/>:roLabel("Product / Brand",s.product)}
+    {_canEditStructural?<Field label="Audience (who exactly)"value={s.audience_label}onChange={v=>setS(x=>({...x,audience_label:v}))}/>:roLabel("Audience",s.audience_label)}
+    {_canEditStructural?<Field label="Objective (goal)"value={s.objective}onChange={v=>setS(x=>({...x,objective:v}))}/>:roLabel("Objective (goal)",s.objective)}
+    {_canEditStructural?<Field label="Offer"value={s.offer}onChange={v=>setS(x=>({...x,offer:v}))}/>:roLabel("Offer",s.offer)}
+
+    {/* ── Copy craft (editable by everyone) ─────────────────────────────── */}
+    <div style={{fontSize:10.5,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.5,margin:"14px 0 8px",borderTop:`1px solid ${C.line}`,paddingTop:14}}>Copy direction</div>
     <Field label="Trigger (the moment / why now)"textarea value={b.trigger}onChange={v=>setB(x=>({...x,trigger:v}))}rows={2}/>
     <Field label="Strategic insight"textarea value={b.strategicInsight}onChange={v=>setB(x=>({...x,strategicInsight:v}))}rows={2}/>
     <Field label="The idea"textarea value={b.idea}onChange={v=>setB(x=>({...x,idea:v}))}rows={2}/>
@@ -4196,7 +4235,9 @@ function EditBriefForm({brief,active,patch,onDone}){
     </label>
     <label style={{display:"block",marginBottom:14}}>
       <div style={{fontSize:12.5,fontWeight:600,color:C.sub,marginBottom:5}}>Go-live date</div>
-      <input type="date"value={goLive}onChange={e=>setGoLive(e.target.value)}style={{border:`1px solid ${C.line}`,borderRadius:10,padding:"9px 11px",fontSize:14,width:"100%",fontFamily:"inherit"}}/>
+      {_canEditStructural
+        ?<input type="date"value={goLive}onChange={e=>setGoLive(e.target.value)}style={{border:`1px solid ${C.line}`,borderRadius:10,padding:"9px 11px",fontSize:14,width:"100%",fontFamily:"inherit"}}/>
+        :<div style={{fontSize:14,color:C.ink,background:"#F8FAFC",border:`1px solid ${C.line}`,borderRadius:10,padding:"9px 11px"}}>{goLive?fmtDate(goLive):<span style={{color:C.sub,opacity:.6}}>—</span>}</div>}
     </label>
     <div style={{display:"flex",gap:8}}>
       <Btn onClick={save}><Check size={14}/>Save changes</Btn>
@@ -4367,7 +4408,7 @@ function BriefSummaryCard({active,activeBrief,copyRules,busy,refineFor,gen,genDi
   const toggle=()=>{setExpanded(v=>!v);setUserToggled(true);};
   return<div style={{marginBottom:16}}>
     {editBrief
-      ?<Card style={{padding:"14px 16px",marginBottom:6}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}><div style={{fontWeight:700,fontSize:13.5,display:"flex",alignItems:"center",gap:6}}><PenLine size={14}color={C.coral}/>Edit the brief</div><Btn small variant="ghost"onClick={()=>setEditBrief(false)}>Close</Btn></div><EditBriefForm brief={activeBrief}active={active}patch={patch}onDone={()=>setEditBrief(false)}/></Card>
+      ?<Card style={{padding:"14px 16px",marginBottom:6}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}><div style={{fontWeight:700,fontSize:13.5,display:"flex",alignItems:"center",gap:6}}><PenLine size={14}color={C.coral}/>Edit the brief</div><Btn small variant="ghost"onClick={()=>setEditBrief(false)}>Close</Btn></div><EditBriefForm brief={activeBrief}active={active}patch={patch}onDone={()=>setEditBrief(false)}me={me}/></Card>
       :<React.Fragment>
       {/* Row 1 — idea (product name already shown in the collapsed row header) */}
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:showRows?8:0,padding:"9px 13px",background:"#fff",border:`1px solid ${C.line}`,borderLeft:`3px solid ${C.coral}`,borderRadius:10}}>
@@ -4381,6 +4422,18 @@ function BriefSummaryCard({active,activeBrief,copyRules,busy,refineFor,gen,genDi
 
       {/* Expanded full brief details */}
       {expanded&&<Card style={{padding:0,marginBottom:6,overflow:"hidden"}}>
+        {/* b154: brief inputs (channel/CRM/audience/goal) — same context Ilena sees, read-only for writers */}
+        {(active.channel||active.crm_type||active.audience_label||active.segment||active.objective||active.offer)&&<div style={{padding:"11px 14px",borderBottom:`1px solid ${C.line}`,background:"#FAFAF9"}}>
+          <div style={{fontSize:10.5,fontWeight:700,color:C.sub,textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>Brief inputs</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:"9px 18px"}}>
+            {active.channel&&<div><div style={{fontSize:9.5,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.4}}>Channel</div><div style={{fontSize:13,fontWeight:600,color:C.ink,marginTop:1}}>{active.channel}</div></div>}
+            {active.crm_type&&<div><div style={{fontSize:9.5,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.4}}>CRM type</div><div style={{fontSize:13,fontWeight:600,color:C.ink,marginTop:1}}>{normCrmType(active.crm_type)}</div></div>}
+            {(active.audience_label||active.segment)&&<div style={{minWidth:0}}><div style={{fontSize:9.5,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.4}}>Audience</div><div style={{fontSize:13,fontWeight:600,color:C.ink,marginTop:1}}>{active.audience_label||active.segment}</div></div>}
+            {active.objective&&<div style={{minWidth:0}}><div style={{fontSize:9.5,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.4}}>Objective / goal</div><div style={{fontSize:13,fontWeight:600,color:C.ink,marginTop:1}}>{active.objective}</div></div>}
+            {active.offer&&<div style={{minWidth:0}}><div style={{fontSize:9.5,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.4}}>Offer</div><div style={{fontSize:13,fontWeight:600,color:C.ink,marginTop:1}}>{active.offer}</div></div>}
+            {active.go_live_date&&<div><div style={{fontSize:9.5,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:.4}}>Go-live</div><div style={{fontSize:13,fontWeight:600,color:C.ink,marginTop:1}}>{fmtDate(active.go_live_date)}</div></div>}
+          </div>
+        </div>}
         <BriefSection label="Strategic insight" content={activeBrief.strategicInsight}/>
         <BriefSection label="Copy direction" content={activeBrief.copyDirection}/>
         <BriefSection label="Channel note" content={activeBrief.whatsappNote}/>
